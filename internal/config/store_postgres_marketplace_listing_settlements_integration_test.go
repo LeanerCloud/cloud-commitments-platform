@@ -27,10 +27,10 @@ import (
 )
 
 type listingSettlementRow struct {
-	purchaseID, status string
 	listedAt           *time.Time
 	proceeds, fee      *float64
 	settledAt          *time.Time
+	purchaseID, status string
 }
 
 // readListingSettlement returns the marketplace_listing_settlements row of
@@ -305,7 +305,7 @@ func checkSettleWaitingOnClaim(ctx context.Context, t *testing.T, store *Postgre
 	done := make(chan guardedResult, 1)
 	go func() {
 		applied, settleErr := store.SettleMarketplaceListing(ctx, canceledSettlement(id, "ril-mhc-a", 88, 12))
-		done <- guardedResult{applied, settleErr}
+		done <- guardedResult{applied: applied, err: settleErr}
 	}()
 	testhelpers.WaitForLockWait(ctx, t, pool, "%listing_proceeds_received%")
 	require.NoError(t, tx.Commit(ctx))
@@ -384,7 +384,7 @@ func checkConcurrentSupersededSettles(ctx context.Context, t *testing.T, store *
 			wg.Go(func() {
 				<-start
 				applied, err := store.SettleMarketplaceListing(ctx, canceledSettlement(id, listingA, float64(100+i), float64(i)))
-				results[i] = guardedResult{applied, err}
+				results[i] = guardedResult{applied: applied, err: err}
 			})
 		}
 		close(start)
@@ -440,7 +440,7 @@ func checkConcurrentRelistAndPoll(ctx context.Context, t *testing.T, store *Post
 					<-claimed
 				}
 				applied, err := store.SettleMarketplaceListing(ctx, canceledSettlement(id, listingA, 88, 12))
-				results[i] = guardedResult{applied, err}
+				results[i] = guardedResult{applied: applied, err: err}
 			})
 		}
 		close(start)

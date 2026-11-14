@@ -56,9 +56,9 @@ func TestPostgresStoreDB_ReserveRIExchange_SerializesIndependentStores(t *testin
 
 	start := make(chan struct{})
 	type reservation struct {
+		err    error
 		record *RIExchangeRecord
 		amount string
-		err    error
 	}
 	results := make(chan reservation, 2)
 	var workers sync.WaitGroup

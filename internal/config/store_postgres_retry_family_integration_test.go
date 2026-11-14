@@ -22,10 +22,10 @@ import (
 // rows A and B (keys K:<a>, K:<b>) of one plan.
 type retryFamilyRig struct {
 	store  *PostgresStore
-	planID string
-	family string
 	root   *PurchaseExecution
 	a, b   *PurchaseExecution
+	planID string
+	family string
 }
 
 func newRetryFamilyRig(ctx context.Context, t *testing.T, store *PostgresStore) *retryFamilyRig {

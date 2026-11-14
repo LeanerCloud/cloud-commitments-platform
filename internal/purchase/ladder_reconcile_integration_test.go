@@ -121,20 +121,20 @@ func TestReconcileLadderTranches_Mappings(t *testing.T) {
 	type tc struct {
 		name       string
 		head       string
-		headProof  bool
-		visible    bool
 		wantStatus string
 		wantReason string
+		headProof  bool
+		visible    bool
 	}
 	cases := []tc{
-		{"failed with proof", "failed", true, true, "failed", "no_submission"},
-		{"failed without proof (reaper / outcome unknown) keeps netting", "failed", false, true, "fired", ""},
-		{"proof flag on a running row is ignored", "running", true, true, "fired", ""},
-		{"canceled approval", "canceled", false, true, "failed", "approval_canceled"},
-		{"expired approval", "expired", false, true, "failed", "approval_expired"},
-		{"partially completed stays fired", "partially_completed", false, true, "fired", ""},
-		{"completed and visible", "completed", false, true, "completed", "commitment_visible"},
-		{"completed, commitment not visible yet", "completed", false, false, "fired", ""},
+		{name: "failed with proof", head: "failed", headProof: true, visible: true, wantStatus: "failed", wantReason: "no_submission"},
+		{name: "failed without proof (reaper / outcome unknown) keeps netting", head: "failed", headProof: false, visible: true, wantStatus: "fired", wantReason: ""},
+		{name: "proof flag on a running row is ignored", head: "running", headProof: true, visible: true, wantStatus: "fired", wantReason: ""},
+		{name: "canceled approval", head: "canceled", headProof: false, visible: true, wantStatus: "failed", wantReason: "approval_canceled"},
+		{name: "expired approval", head: "expired", headProof: false, visible: true, wantStatus: "failed", wantReason: "approval_expired"},
+		{name: "partially completed stays fired", head: "partially_completed", headProof: false, visible: true, wantStatus: "fired", wantReason: ""},
+		{name: "completed and visible", head: "completed", headProof: false, visible: true, wantStatus: "completed", wantReason: "commitment_visible"},
+		{name: "completed, commitment not visible yet", head: "completed", headProof: false, visible: false, wantStatus: "fired", wantReason: ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

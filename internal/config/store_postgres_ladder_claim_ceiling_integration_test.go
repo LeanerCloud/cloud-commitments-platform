@@ -22,13 +22,13 @@ import (
 const usd = int64(1_000_000)
 
 type sweepCeilingFixture struct {
+	asOf   time.Time
 	ctx    context.Context
 	store  *PostgresStore
+	create func(context.Context, pgx.Tx, LadderTrancheDB) (string, error)
 	cfgID  string
 	planID string
-	asOf   time.Time
 	calls  atomic.Int64
-	create func(context.Context, pgx.Tx, LadderTrancheDB) (string, error)
 }
 
 func newSweepCeilingFixture(t *testing.T) *sweepCeilingFixture {

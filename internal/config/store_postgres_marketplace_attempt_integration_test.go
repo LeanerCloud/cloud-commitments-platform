@@ -183,13 +183,13 @@ func checkLateCancelStillWins(ctx context.Context, t *testing.T, store *Postgres
 	require.NoError(t, err)
 
 	type result struct {
-		applied bool
 		err     error
+		applied bool
 	}
 	done := make(chan result, 1)
 	go func() {
 		applied, resolveErr := store.ResolveMarketplaceListingAttempt(ctx, id, seen, "ril-C", ListingStateCancelled)
-		done <- result{applied, resolveErr}
+		done <- result{applied: applied, err: resolveErr}
 	}()
 	testhelpers.WaitForLockWait(ctx, t, pool, "%UPDATE purchase_history%NULLIF%")
 	require.NoError(t, tx.Commit(ctx))

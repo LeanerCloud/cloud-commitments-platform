@@ -130,8 +130,8 @@ func TestPostgresStoreDB_ReserveApprovedRIExchange_ConcurrentApprovalsStayWithin
 	defer env.release(t, a.ID, b.ID)
 
 	type outcome struct {
-		ceiling string
 		err     error
+		ceiling string
 	}
 	results := make([]outcome, 2)
 	// Deterministic interleave: hold the global lock from a third transaction so both
@@ -151,7 +151,7 @@ func TestPostgresStoreDB_ReserveApprovedRIExchange_ConcurrentApprovalsStayWithin
 		go func(i int, store *PostgresStore, id string) {
 			defer wg.Done()
 			ceiling, reserveErr := store.ReserveApprovedRIExchange(env.ctx, id, cap, "800.000000")
-			results[i] = outcome{ceiling, reserveErr}
+			results[i] = outcome{ceiling: ceiling, err: reserveErr}
 		}(i, run.store, run.id)
 	}
 	waiters := 0

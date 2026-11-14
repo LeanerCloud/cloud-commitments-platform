@@ -20,10 +20,10 @@ import (
 const testStaleAfter = 2 * time.Hour
 
 type revocationState struct {
-	inFlight       bool
 	inFlightAt     *time.Time
 	returnPostedAt *time.Time
 	revokedAt      *time.Time
+	inFlight       bool
 }
 
 func readRevocationState(ctx context.Context, t *testing.T, store *PostgresStore, purchaseID string) revocationState {

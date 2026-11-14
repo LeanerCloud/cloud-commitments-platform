@@ -194,13 +194,13 @@ func TestPostgresStore_PruneStaleRecommendations_ConcurrentCollection(t *testing
 	waitForLockWaiters(ctx, t, db, 1, "collection never blocked on the held state row")
 
 	type pruneResult struct {
-		deleted int64
 		err     error
+		deleted int64
 	}
 	pruneDone := make(chan pruneResult, 1)
 	go func() {
 		n, perr := store.PruneStaleRecommendations(ctx, pruneRetentionDays)
-		pruneDone <- pruneResult{n, perr}
+		pruneDone <- pruneResult{deleted: n, err: perr}
 	}()
 	waitForLockWaiters(ctx, t, db, 2, "prune never waited on the in-flight collection")
 

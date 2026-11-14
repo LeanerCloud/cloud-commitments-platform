@@ -140,7 +140,7 @@ func checkCancelBeatsActivation(ctx context.Context, t *testing.T, store *Postgr
 	done := make(chan guardedResult, 1)
 	go func() {
 		changed, err := store.RecordMarketplaceListingActive(ctx, "pending-race-cancel", "ril-prc", listedAtFixture())
-		done <- guardedResult{changed, err}
+		done <- guardedResult{applied: changed, err: err}
 	}()
 	testhelpers.WaitForLockWait(ctx, t, pool, "%listed_at%")
 	commit()
@@ -180,7 +180,7 @@ func checkClaimBeatsPendingPoll(ctx context.Context, t *testing.T, store *Postgr
 			done := make(chan guardedResult, 1)
 			go func() {
 				applied, writeErr := write(id)
-				done <- guardedResult{applied, writeErr}
+				done <- guardedResult{applied: applied, err: writeErr}
 			}()
 			testhelpers.WaitForLockWait(ctx, t, pool, "%UPDATE purchase_history%")
 			require.NoError(t, tx.Commit(ctx))

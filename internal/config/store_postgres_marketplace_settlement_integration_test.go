@@ -31,9 +31,9 @@ const cancelWriteSQL = `UPDATE purchase_history SET listing_id = $1, listing_sta
 	listing_client_token = NULL, listing_price_schedule = NULL WHERE purchase_id = $3`
 
 type settlementRow struct {
-	listingID, state string
 	listedAt         *time.Time
 	proceeds, fee    *float64
+	listingID, state string
 }
 
 func TestMarketplaceListingSettlement_Postgres(t *testing.T) {
@@ -267,8 +267,8 @@ func holdCancel(ctx context.Context, t *testing.T, pool *pgxpool.Pool, id, listi
 }
 
 type guardedResult struct {
-	applied bool
 	err     error
+	applied bool
 }
 
 // The poller read the listing as active from AWS, then the cancel handler
@@ -281,7 +281,7 @@ func checkCancelBeatsActiveRefresh(ctx context.Context, t *testing.T, store *Pos
 	done := make(chan guardedResult, 1)
 	go func() {
 		changed, err := store.RecordMarketplaceListingActive(ctx, "race-refresh", "ril-rr", listedAtFixture())
-		done <- guardedResult{changed, err}
+		done <- guardedResult{applied: changed, err: err}
 	}()
 	testhelpers.WaitForLockWait(ctx, t, pool, "%listed_at%")
 	commit()
@@ -300,7 +300,7 @@ func checkCancelBeatsClose(ctx context.Context, t *testing.T, store *PostgresSto
 	done := make(chan guardedResult, 1)
 	go func() {
 		applied, err := store.SettleMarketplaceListing(ctx, closedSettlement("race-close", "ril-rcl", 100, 10))
-		done <- guardedResult{applied, err}
+		done <- guardedResult{applied: applied, err: err}
 	}()
 	testhelpers.WaitForLockWait(ctx, t, pool, "%listing_proceeds_received%")
 	commit()
@@ -327,7 +327,7 @@ func checkSecondSettleSkips(ctx context.Context, t *testing.T, store *PostgresSt
 	done := make(chan guardedResult, 1)
 	go func() {
 		applied, settleErr := store.SettleMarketplaceListing(ctx, closedSettlement("race-settle", "ril-rs", 1, 1))
-		done <- guardedResult{applied, settleErr}
+		done <- guardedResult{applied: applied, err: settleErr}
 	}()
 	testhelpers.WaitForLockWait(ctx, t, pool, "%listing_proceeds_received%")
 	require.NoError(t, tx.Commit(ctx))
@@ -353,7 +353,7 @@ func checkParallelSettles(ctx context.Context, t *testing.T, store *PostgresStor
 			wg.Go(func() {
 				<-start
 				applied, err := store.SettleMarketplaceListing(ctx, closedSettlement(id, "ril-ps", float64(100+i), float64(i)))
-				results[i] = guardedResult{applied, err}
+				results[i] = guardedResult{applied: applied, err: err}
 			})
 		}
 		close(start)

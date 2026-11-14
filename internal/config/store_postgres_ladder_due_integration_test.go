@@ -28,12 +28,12 @@ func modePtr(m ladder.LadderMode) *string {
 func autoApproveMode() *string { return modePtr(ladder.ModeAutoApprove) }
 
 type dueFixture struct {
+	asOf   time.Time
 	ctx    context.Context
 	store  *PostgresStore
-	cfgID  string
-	asOf   time.Time
-	calls  atomic.Int64
 	create func(context.Context, pgx.Tx, LadderTrancheDB) (string, error)
+	cfgID  string
+	calls  atomic.Int64
 }
 
 func newDueFixture(t *testing.T) *dueFixture {

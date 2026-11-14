@@ -39,8 +39,8 @@ type clientTimelineRow struct {
 }
 
 type clientTimelineLoad struct {
-	ids    []string
 	total  string
+	ids    []string
 	rounds int
 }
 
@@ -139,12 +139,12 @@ func checkClientTimelineLoad(load *clientTimelineLoad, first *clientTimelinePage
 }
 
 type ladderTimelineFixture struct {
+	date      time.Time
 	store     *PostgresStore
 	cfgID     string
 	accountID string
 	runID     string
 	amendID   string
-	date      time.Time
 }
 
 // seedLadderTimelineFixture saves one planned run whose n scheduled tranches

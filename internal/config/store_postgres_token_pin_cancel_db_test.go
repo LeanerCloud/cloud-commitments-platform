@@ -137,15 +137,15 @@ func waitForBlockedUpdate(ctx context.Context, t *testing.T, store *PostgresStor
 // for: the token cancel and the immediate token approve's claim. Each reports
 // whether it moved the row.
 var tokenPinnedActions = []struct {
+	run    func(ctx context.Context, store *PostgresStore, id, rawToken string) (bool, error)
 	name   string
 	status string
-	run    func(ctx context.Context, store *PostgresStore, id, rawToken string) (bool, error)
 }{
-	{"cancel", StatusCanceled, func(ctx context.Context, store *PostgresStore, id, rawToken string) (bool, error) {
+	{name: "cancel", status: StatusCanceled, run: func(ctx context.Context, store *PostgresStore, id, rawToken string) (bool, error) {
 		canceled, _, err := pinnedCancel(ctx, store, id, rawToken)
 		return canceled, err
 	}},
-	{"approve claim", "running", func(ctx context.Context, store *PostgresStore, id, rawToken string) (bool, error) {
+	{name: "approve claim", status: "running", run: func(ctx context.Context, store *PostgresStore, id, rawToken string) (bool, error) {
 		row, err := store.TransitionExecutionStatusTokenPinned(ctx, id, []string{"pending", "notified"}, "running", nil, rawToken)
 		return row != nil, err
 	}},

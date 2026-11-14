@@ -20,17 +20,17 @@ func TestRampRetention_OldCleanupWritersPreserveHeldRows(t *testing.T) {
 	f := newRampFixture(ctx, t, 0, 0, 4)
 	cases := []struct {
 		status      string
-		unsubmitted bool
 		payload     string
+		unsubmitted bool
 	}{
-		{StatusCompleted, false, `[]`},
-		{StatusPartiallyCompleted, false, `{}`},
-		{"notified", false, `null`},
-		{"paused", false, `[]`},
-		{StatusFailed, false, `[]`},
-		{StatusFailed, true, `[]`},
-		{StatusCanceled, false, `[]`},
-		{StatusExpired, false, `[]`},
+		{status: StatusCompleted, unsubmitted: false, payload: `[]`},
+		{status: StatusPartiallyCompleted, unsubmitted: false, payload: `{}`},
+		{status: "notified", unsubmitted: false, payload: `null`},
+		{status: "paused", unsubmitted: false, payload: `[]`},
+		{status: StatusFailed, unsubmitted: false, payload: `[]`},
+		{status: StatusFailed, unsubmitted: true, payload: `[]`},
+		{status: StatusCanceled, unsubmitted: false, payload: `[]`},
+		{status: StatusExpired, unsubmitted: false, payload: `[]`},
 	}
 	for _, tc := range cases {
 		var held bool

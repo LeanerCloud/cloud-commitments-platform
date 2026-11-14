@@ -27,11 +27,11 @@ import (
 // fixture row was written moments ago, and the 15-minute age filter is not
 // what this test is about. Every other store call is the production one.
 type editAfterListStore struct {
+	editErr error
 	*config.PostgresStore
-	listed    sync.WaitGroup
 	edited    chan struct{}
 	afterList func() error
-	editErr   error
+	listed    sync.WaitGroup
 	once      sync.Once
 }
 

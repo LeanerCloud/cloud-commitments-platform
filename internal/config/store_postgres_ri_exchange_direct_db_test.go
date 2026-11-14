@@ -18,9 +18,9 @@ import (
 // directExecRow is what an auditor reads back for one direct execute.
 type directExecRow struct {
 	status, providerRef, netPayable, netCurrency, providerStatus, errText *string
-	quoted, maxPay                                                        string
 	sources                                                               *string
 	completedAt                                                           *time.Time
+	quoted, maxPay                                                        string
 }
 
 func readDirectExecRow(t *testing.T, ctx context.Context, store *PostgresStore, id string) directExecRow {

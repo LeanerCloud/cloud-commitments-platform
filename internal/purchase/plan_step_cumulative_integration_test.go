@@ -22,8 +22,8 @@ import (
 // provider purchase itself is simulated by marking the attached row completed.
 
 type cumSource struct {
-	mu    sync.Mutex
 	shown func() []config.RecommendationRecord
+	mu    sync.Mutex
 }
 
 func (s *cumSource) ListRecommendationsStrict(context.Context, config.RecommendationFilter) ([]config.RecommendationRecord, error) {
@@ -44,14 +44,14 @@ func (s cumStore) GetGlobalConfig(context.Context) (*config.GlobalConfig, error)
 }
 
 type cumFixture struct {
-	t       *testing.T
 	ctx     context.Context
+	t       *testing.T
 	store   *config.PostgresStore
 	pool    *pgxpool.Pool
 	m       *Manager
+	src     *cumSource
 	planID  string
 	account string
-	src     *cumSource
 }
 
 // cumRec is a 100-unit-style rec of one instance type; the stored row holds the

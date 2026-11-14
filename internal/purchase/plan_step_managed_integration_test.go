@@ -229,13 +229,13 @@ func TestManagedClaimWaitsForOutcome(t *testing.T) {
 	_, err = holder.Exec(ctx, `SELECT execution_id FROM purchase_executions WHERE execution_id=$1 FOR UPDATE`, root.ExecutionID)
 	require.NoError(t, err)
 	type claimResult struct {
-		token string
 		err   error
+		token string
 	}
 	done := make(chan claimResult, 1)
 	go func() {
 		_, token, _, claimErr := f.m.getOrCreateExecution(ctx, f.plan)
-		done <- claimResult{token, claimErr}
+		done <- claimResult{token: token, err: claimErr}
 	}()
 	joined := false
 	defer func() {

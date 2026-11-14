@@ -16,14 +16,14 @@ import (
 
 // directSpec describes one audit row for the list tests.
 type directSpec struct {
-	provider, status string
-	account          *string
-	region           string
-	sources          []string
 	createdAt        time.Time
+	account          *string
+	provider, status string
+	region           string
+	errText          string
+	sources          []string
 	nullRegion       bool
 	resolved         bool
-	errText          string
 }
 
 // insertDirect writes an audit row exactly as described and returns its id.

@@ -114,22 +114,22 @@ func seedDualColumnHistory(ctx context.Context, t *testing.T, conn *database.Con
 	})
 
 	rows := []struct {
-		purchaseID, provider, accountID string
 		cloudAccountID                  *string
+		purchaseID, provider, accountID string
 	}{
 		// UUID set, external number not in any filter: only the UUID half matches.
-		{"uuid-only", "aws", "000000000000", &acctA},
+		{purchaseID: "uuid-only", provider: "aws", accountID: "000000000000", cloudAccountID: &acctA},
 		// UUID and external both match: must come back exactly once.
-		{"both", "aws", "111122223333", &acctA},
+		{purchaseID: "both", provider: "aws", accountID: "111122223333", cloudAccountID: &acctA},
 		// NULL UUID (direct-execute / pre-000011 row): only the external half matches.
-		{"ext-only", "aws", "111122223333", nil},
+		{purchaseID: "ext-only", provider: "aws", accountID: "111122223333", cloudAccountID: nil},
 		// NULL UUID, unknown provider: matches on account_id alone (#931).
-		{"ext-empty-provider", "", "111122223333", nil},
+		{purchaseID: "ext-empty-provider", provider: "", accountID: "111122223333", cloudAccountID: nil},
 		// Same external number under another provider: must never leak into an aws filter.
-		{"azure-same-ext", "azure", "111122223333", nil},
+		{purchaseID: "azure-same-ext", provider: "azure", accountID: "111122223333", cloudAccountID: nil},
 		// Other account, by UUID and by external number.
-		{"other-uuid", "aws", "444455556666", &acctC},
-		{"other-ext", "aws", "444455556666", nil},
+		{purchaseID: "other-uuid", provider: "aws", accountID: "444455556666", cloudAccountID: &acctC},
+		{purchaseID: "other-ext", provider: "aws", accountID: "444455556666", cloudAccountID: nil},
 	}
 	for _, r := range rows {
 		_, err := conn.Exec(ctx, `
@@ -160,8 +160,8 @@ func TestGetPurchaseHistoryFiltered_DualColumnAccount_Integration(t *testing.T) 
 
 	cases := []struct {
 		name   string
-		filter PurchaseHistoryFilter
 		want   []string
+		filter PurchaseHistoryFilter
 	}{
 		{
 			// What the API sends for the account-A chip: its UUID plus its

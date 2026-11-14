@@ -20,13 +20,13 @@ import (
 // query sees it. Zero values mean: aws, USD, 100 cap, completed_at stamped as
 // the status requires (migration 000131's CHECK).
 type directSpendRow struct {
+	createdAt              time.Time
+	netPayable, netCurrent *string
+	completedAt            *time.Time
 	provider, status       string
 	maxDue, maxCurrency    string
-	netPayable, netCurrent *string
 	resolved               string // resolved_status; "" leaves the row unresolved
 	account                string
-	createdAt              time.Time
-	completedAt            *time.Time
 }
 
 func at(t time.Time) *time.Time { return &t }

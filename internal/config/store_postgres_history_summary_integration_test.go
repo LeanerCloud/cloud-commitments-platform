@@ -20,11 +20,11 @@ import (
 // historySummaryFixture seeds two accounts with purchase_history rows and
 // executions covering every shape the History summary groups on.
 type historySummaryFixture struct {
+	base     time.Time
 	store    *PostgresStore
 	accountA string
 	accountB string
 	userID   string
-	base     time.Time
 }
 
 func newHistorySummaryFixture(ctx context.Context, t *testing.T) *historySummaryFixture {
@@ -130,8 +130,8 @@ func execGroupKey(status string, cloudAccountID, createdBy *string, recs []Recom
 }
 
 type purchaseTally struct {
-	count   int
 	upfront *float64
+	count   int
 	savings float64
 }
 

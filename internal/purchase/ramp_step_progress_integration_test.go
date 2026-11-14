@@ -53,19 +53,17 @@ func rampStepStore(ctx context.Context, t *testing.T) (*config.PostgresStore, *p
 // CurrentStep=2 of 4 with three cloud accounts attached, and a manager wired to
 // the real store with a provider that always sells.
 type rampStepFixture struct {
-	store    *config.PostgresStore
-	pool     *pgxpool.Pool
-	manager  *Manager
-	email    *MockEmailSender
-	plan     *config.PurchasePlan
-	accounts []config.CloudAccount
-
-	mu        sync.Mutex
-	purchased []string // one entry per commitment that reached the fake cloud
-	counts    []int
-
+	store   *config.PostgresStore
+	pool    *pgxpool.Pool
+	manager *Manager
+	email   *MockEmailSender
+	plan    *config.PurchasePlan
 	// onPurchase, when set, runs inside each fake provider call (issue #829 tests).
 	onPurchase func()
+	accounts   []config.CloudAccount
+	purchased  []string // one entry per commitment that reached the fake cloud
+	counts     []int
+	mu         sync.Mutex
 }
 
 // newRampStepFixture builds the fixture. accountA is credential-resolvable from

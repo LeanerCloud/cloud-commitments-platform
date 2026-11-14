@@ -61,15 +61,15 @@ func TestLadderFire_RefusesUnannouncedFourEyesAndNonConvertible(t *testing.T) {
 	f := newRampStepFixture(ctx, t)
 	f.email.On("SendPurchaseFailedNotification", mock.Anything, mock.Anything).Return(nil).Maybe()
 	cases := []struct {
+		mutate  func(*config.GlobalConfig)
 		name    string
 		layer   ladder.LayerType
-		stamped bool
-		mutate  func(*config.GlobalConfig)
 		want    string
+		stamped bool
 	}{
-		{"notification_sent NULL", ladder.LayerComputeSP, false, func(*config.GlobalConfig) {}, ladderNoticeNotSentNote},
-		{"4-eyes on", ladder.LayerComputeSP, true, func(g *config.GlobalConfig) { g.RequireDifferentApprover = true }, ladderNeedsSecondApproverNote},
-		{"RI layer, class switched to standard", ladder.LayerConvertibleRI, true, func(g *config.GlobalConfig) { g.OfferingClass = "standard" }, ladderRINeedsConvertibleNote},
+		{name: "notification_sent NULL", layer: ladder.LayerComputeSP, stamped: false, mutate: func(*config.GlobalConfig) {}, want: ladderNoticeNotSentNote},
+		{name: "4-eyes on", layer: ladder.LayerComputeSP, stamped: true, mutate: func(g *config.GlobalConfig) { g.RequireDifferentApprover = true }, want: ladderNeedsSecondApproverNote},
+		{name: "RI layer, class switched to standard", layer: ladder.LayerConvertibleRI, stamped: true, mutate: func(g *config.GlobalConfig) { g.OfferingClass = "standard" }, want: ladderRINeedsConvertibleNote},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

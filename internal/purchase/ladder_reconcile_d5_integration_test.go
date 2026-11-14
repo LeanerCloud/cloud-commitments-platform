@@ -97,14 +97,14 @@ func TestLadderD5_FailedVerdictsDisableTheConfig(t *testing.T) {
 	cases := []struct {
 		name                string
 		head                string
+		wantReason          string
 		proof               bool
 		laddering, executes bool
-		wantReason          string
 	}{
-		{"canceled tail", "canceled", false, true, true, "approval_canceled"},
-		{"expired tail", "expired", false, true, true, "approval_expired"},
-		{"proven failure with every switch on", "failed", true, true, true, "no_submission"},
-		{"a revoke is never exempt, switches off", "canceled", false, false, false, "approval_canceled"},
+		{name: "canceled tail", head: "canceled", proof: false, laddering: true, executes: true, wantReason: "approval_canceled"},
+		{name: "expired tail", head: "expired", proof: false, laddering: true, executes: true, wantReason: "approval_expired"},
+		{name: "proven failure with every switch on", head: "failed", proof: true, laddering: true, executes: true, wantReason: "no_submission"},
+		{name: "a revoke is never exempt, switches off", head: "canceled", proof: false, laddering: false, executes: false, wantReason: "approval_canceled"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -157,17 +157,17 @@ func TestLadderD5_SwitchCausedRefusalsKeepTheConfigEnabled(t *testing.T) {
 
 func TestLadderD5_UnknownOutcomesAreUntouched(t *testing.T) {
 	cases := []struct {
-		name  string
 		setup func(r *ladderRig) string
+		name  string
 	}{
-		{"failed without proof", func(r *ladderRig) string { id, _ := r.firedTranche("failed", false, time.Minute); return id }},
-		{"partially completed", func(r *ladderRig) string {
+		{name: "failed without proof", setup: func(r *ladderRig) string { id, _ := r.firedTranche("failed", false, time.Minute); return id }},
+		{name: "partially completed", setup: func(r *ladderRig) string {
 			id, _ := r.firedTranche("partially_completed", false, time.Minute)
 			return id
 		}},
-		{"scheduled tail", func(r *ladderRig) string { id, _ := r.firedTranche("scheduled", false, time.Minute); return id }},
-		{"running", func(r *ladderRig) string { id, _ := r.firedTranche("running", true, time.Minute); return id }},
-		{"retry chain with an unproven node", func(r *ladderRig) string {
+		{name: "scheduled tail", setup: func(r *ladderRig) string { id, _ := r.firedTranche("scheduled", false, time.Minute); return id }},
+		{name: "running", setup: func(r *ladderRig) string { id, _ := r.firedTranche("running", true, time.Minute); return id }},
+		{name: "retry chain with an unproven node", setup: func(r *ladderRig) string {
 			id, e1 := r.firedTranche("failed", false, time.Minute)
 			r.link(e1, r.provenFailedExecution())
 			return id

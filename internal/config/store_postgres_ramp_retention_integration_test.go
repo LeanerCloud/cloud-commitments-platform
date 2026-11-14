@@ -27,9 +27,9 @@ func TestRampRetention_NullServicesRemainEditable(t *testing.T) {
 func TestRampRetention_FreshEditsRequireContinuousUnheldLineage(t *testing.T) {
 	cases := []struct {
 		name, status, lineage string
-		noSubmission          bool
-		count                 int
 		want                  string
+		count                 int
+		noSubmission          bool
 	}{
 		{name: "fresh", want: "new"},
 		{name: "empty pending", status: "pending", want: "legacy"},

@@ -29,8 +29,8 @@ import (
 // save variant keeps the replay identical before and after the fix.
 type interleaveStore struct {
 	*config.PostgresStore
-	once   sync.Once
 	before func()
+	once   sync.Once
 }
 
 func (s *interleaveStore) fire() { s.once.Do(s.before) }
@@ -124,14 +124,14 @@ func TestPostCASSave_ConcurrentStatusChangeSurvives(t *testing.T) {
 	// save; the revocation-token rotation and the ramp-refusal note then write
 	// the caller's in-memory "completed" row. Neither may erase the request.
 	for _, tc := range []struct {
-		name  string
 		write func(t *testing.T, exec *config.PurchaseExecution)
+		name  string
 	}{
-		{"revocation token rotation", func(t *testing.T, exec *config.PurchaseExecution) {
+		{name: "revocation token rotation", write: func(t *testing.T, exec *config.PurchaseExecution) {
 			_, err := f.manager.rotateApprovalToken(ctx, exec, config.RevocationWindow)
 			assert.ErrorIs(t, err, config.ErrExecutionNotInExpectedStatus)
 		}},
-		{"ramp-advance refusal note", func(_ *testing.T, exec *config.PurchaseExecution) {
+		{name: "ramp-advance refusal note", write: func(_ *testing.T, exec *config.PurchaseExecution) {
 			f.manager.recordRampAdvanceRefusal(ctx, exec, errors.New("plan row changed"))
 		}},
 	} {

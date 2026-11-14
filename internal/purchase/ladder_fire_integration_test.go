@@ -154,26 +154,26 @@ func TestLadderFire_EveryRefusalCreatesNothing(t *testing.T) {
 		return func() { _, err := f.pool.Exec(f.ctx, q, f.cfgID); require.NoError(t, err) }
 	}
 	cases := []struct {
-		name    string
 		breakIt func()
 		mut     func(*LadderFireDeps)
+		name    string
 	}{
-		{"laddering off", func() { f.global(func(g *config.GlobalConfig) { g.LadderingEnabled = false }) }, nil},
-		{"execution off", func() { f.global(func(g *config.GlobalConfig) { g.LadderExecutionEnabled = false }) }, nil},
-		{"4-eyes on", func() { f.global(func(g *config.GlobalConfig) { g.RequireDifferentApprover = true }) }, nil},
-		{"delay 23", func() { f.global(func(g *config.GlobalConfig) { g.PurchaseDelayHours = 23 }) }, nil},
-		{"no recipient", func() { f.global(func(g *config.GlobalConfig) { g.NotificationEmail = nil }) }, nil},
-		{"no notifier", nil, func(d *LadderFireDeps) { d.Notifier = nil }},
-		{"no dashboard", nil, func(d *LadderFireDeps) { d.DashboardURL = "" }},
-		{"other account", nil, func(d *LadderFireDeps) { d.OwnAccountID = strings.Repeat("9", 12) }},
-		{"config disabled", sql(`UPDATE ladder_configs SET enabled = false WHERE id = $1`), nil},
-		{"email approval", sql(`UPDATE ladder_configs SET mode = 'email_approval' WHERE id = $1`), nil},
-		{"azure", sql(`UPDATE ladder_configs SET provider = 'azure' WHERE id = $1`), nil},
-		{"no cap", sql(`UPDATE ladder_configs SET max_hourly_commit_per_run = NULL WHERE id = $1`), nil},
-		{"no ceiling", sql(`UPDATE ladder_configs SET max_hourly_commit_per_sweep = NULL WHERE id = $1`), nil},
-		{"canceled run", func() { f.setRunStatus("canceled") }, nil},
-		{"legacy canceled run", func() { f.setRunStatus("cancelled") }, nil}, //nolint:misspell // legacy stored spelling
-		{"run planned for email approval", func() { f.setRunMode("email_approval") }, nil},
+		{name: "laddering off", breakIt: func() { f.global(func(g *config.GlobalConfig) { g.LadderingEnabled = false }) }, mut: nil},
+		{name: "execution off", breakIt: func() { f.global(func(g *config.GlobalConfig) { g.LadderExecutionEnabled = false }) }, mut: nil},
+		{name: "4-eyes on", breakIt: func() { f.global(func(g *config.GlobalConfig) { g.RequireDifferentApprover = true }) }, mut: nil},
+		{name: "delay 23", breakIt: func() { f.global(func(g *config.GlobalConfig) { g.PurchaseDelayHours = 23 }) }, mut: nil},
+		{name: "no recipient", breakIt: func() { f.global(func(g *config.GlobalConfig) { g.NotificationEmail = nil }) }, mut: nil},
+		{name: "no notifier", breakIt: nil, mut: func(d *LadderFireDeps) { d.Notifier = nil }},
+		{name: "no dashboard", breakIt: nil, mut: func(d *LadderFireDeps) { d.DashboardURL = "" }},
+		{name: "other account", breakIt: nil, mut: func(d *LadderFireDeps) { d.OwnAccountID = strings.Repeat("9", 12) }},
+		{name: "config disabled", breakIt: sql(`UPDATE ladder_configs SET enabled = false WHERE id = $1`), mut: nil},
+		{name: "email approval", breakIt: sql(`UPDATE ladder_configs SET mode = 'email_approval' WHERE id = $1`), mut: nil},
+		{name: "azure", breakIt: sql(`UPDATE ladder_configs SET provider = 'azure' WHERE id = $1`), mut: nil},
+		{name: "no cap", breakIt: sql(`UPDATE ladder_configs SET max_hourly_commit_per_run = NULL WHERE id = $1`), mut: nil},
+		{name: "no ceiling", breakIt: sql(`UPDATE ladder_configs SET max_hourly_commit_per_sweep = NULL WHERE id = $1`), mut: nil},
+		{name: "canceled run", breakIt: func() { f.setRunStatus("canceled") }, mut: nil},
+		{name: "legacy canceled run", breakIt: func() { f.setRunStatus("cancelled") }, mut: nil}, //nolint:misspell // legacy stored spelling
+		{name: "run planned for email approval", breakIt: func() { f.setRunMode("email_approval") }, mut: nil},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

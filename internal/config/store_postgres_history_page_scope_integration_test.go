@@ -98,17 +98,17 @@ func TestIntegration_ListHistoryExecutionsPage_Pushdown(t *testing.T) {
 
 	tests := []struct {
 		name string
-		q    HistoryExecutionsPageQuery
 		want []string
+		q    HistoryExecutionsPageQuery
 	}{
-		{"no filter", HistoryExecutionsPageQuery{}, []string{"noRecs", "recsB", "onB", "mixMy", "recsA", "onA"}},
-		{"provider azure", HistoryExecutionsPageQuery{Provider: "azure"}, []string{"recsB", "onB", "mixMy"}},
-		{"account A", HistoryExecutionsPageQuery{AccountIDs: []string{a}}, []string{"mixMy", "recsA", "onA"}},
-		{"scope A", HistoryExecutionsPageQuery{Scope: &ExecutionScope{UserID: user, AccountIDs: []string{a}}}, []string{"mixMy", "recsA", "onA"}},
-		{"scope B for another user", HistoryExecutionsPageQuery{Scope: &ExecutionScope{UserID: "00000000-0000-4000-8000-000000000000", AccountIDs: []string{b}}},
-			[]string{"recsB", "onB", "mixMy"}},
-		{"empty scope keeps only the caller's unattributed rows", HistoryExecutionsPageQuery{Scope: &ExecutionScope{UserID: user}}, []string{"mixMy"}},
-		{"filters and scope combine", HistoryExecutionsPageQuery{Provider: "azure", Scope: &ExecutionScope{UserID: user, AccountIDs: []string{a}}}, []string{"mixMy"}},
+		{name: "no filter", q: HistoryExecutionsPageQuery{}, want: []string{"noRecs", "recsB", "onB", "mixMy", "recsA", "onA"}},
+		{name: "provider azure", q: HistoryExecutionsPageQuery{Provider: "azure"}, want: []string{"recsB", "onB", "mixMy"}},
+		{name: "account A", q: HistoryExecutionsPageQuery{AccountIDs: []string{a}}, want: []string{"mixMy", "recsA", "onA"}},
+		{name: "scope A", q: HistoryExecutionsPageQuery{Scope: &ExecutionScope{UserID: user, AccountIDs: []string{a}}}, want: []string{"mixMy", "recsA", "onA"}},
+		{name: "scope B for another user", q: HistoryExecutionsPageQuery{Scope: &ExecutionScope{UserID: "00000000-0000-4000-8000-000000000000", AccountIDs: []string{b}}},
+			want: []string{"recsB", "onB", "mixMy"}},
+		{name: "empty scope keeps only the caller's unattributed rows", q: HistoryExecutionsPageQuery{Scope: &ExecutionScope{UserID: user}}, want: []string{"mixMy"}},
+		{name: "filters and scope combine", q: HistoryExecutionsPageQuery{Provider: "azure", Scope: &ExecutionScope{UserID: user, AccountIDs: []string{a}}}, want: []string{"mixMy"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

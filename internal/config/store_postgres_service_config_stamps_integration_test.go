@@ -86,9 +86,9 @@ func TestUpdateServiceConfigAtomic_ConcurrentSavesReportTheirOwnStamps(t *testin
 
 	const writers = 8
 	type outcome struct {
-		coverage float64
-		saved    *ServiceConfig
 		err      error
+		saved    *ServiceConfig
+		coverage float64
 	}
 	results := make([]outcome, writers)
 	var wg sync.WaitGroup

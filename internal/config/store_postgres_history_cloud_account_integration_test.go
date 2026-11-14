@@ -100,13 +100,13 @@ func TestSavePurchaseHistory_StampsCloudAccountID(t *testing.T) {
 	// committed purchase's history would be an audit gap (#621). Readers
 	// still find them through the external account_id.
 	unmatched := []struct {
-		name string
 		rec  *PurchaseHistoryRecord
+		name string
 	}{
-		{"unregistered ambient account", stampRecord("aws", stampUnknownExt, "ph-unregistered")},
-		{"empty account id", stampRecord("aws", "", "ph-empty-account")},
-		{"empty provider", stampRecord("", stampSharedExt, "ph-empty-provider")},
-		{"subscription differing only in case", stampRecord("azure", "8F0E2B6A-3C1D-4E5F-9A7B-1C2D3E4F5A6B", "ph-case")},
+		{name: "unregistered ambient account", rec: stampRecord("aws", stampUnknownExt, "ph-unregistered")},
+		{name: "empty account id", rec: stampRecord("aws", "", "ph-empty-account")},
+		{name: "empty provider", rec: stampRecord("", stampSharedExt, "ph-empty-provider")},
+		{name: "subscription differing only in case", rec: stampRecord("azure", "8F0E2B6A-3C1D-4E5F-9A7B-1C2D3E4F5A6B", "ph-case")},
 	}
 	for _, tc := range unmatched {
 		t.Run(tc.name, func(t *testing.T) {

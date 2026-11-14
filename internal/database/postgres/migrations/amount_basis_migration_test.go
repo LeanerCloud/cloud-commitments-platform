@@ -16,11 +16,11 @@ import (
 )
 
 type amountBasisFixture struct {
+	upfront  *float64
 	id       string
 	provider string
 	payment  string
 	at       string
-	upfront  *float64
 	monthly  float64
 	flagged  bool
 }
@@ -111,17 +111,17 @@ func runAmountBasisScenario(t *testing.T, rows []amountBasisFixture) {
 func TestMigrationAmountBasis_ClampBoundary(t *testing.T) {
 	t.Parallel()
 	runAmountBasisScenario(t, []amountBasisFixture{
-		{"early-sig", "azure", "monthly", "2026-10-01T00:00:00Z", ab(0), 50, true},
-		{"old-all-upfront", "azure", "all-upfront", "2026-09-01T00:00:00Z", ab(1000), 0, true},
-		{"old-null-upfront", "azure", "all-upfront", "2026-09-02T00:00:00Z", nil, 0, true},
-		{"before-clamp", "azure", "all-upfront", "2026-10-05T00:00:00Z", ab(900), 0, true},
-		{"between-old-and-corrected-clamp", "azure", "all-upfront", "2026-10-08T08:00:00Z", ab(900), 0, true},
-		{"after-clamp", "azure", "all-upfront", "2026-10-09T00:00:00Z", ab(900), 0, false},
-		{"monthly-with-upfront-after", "azure", "monthly", "2026-11-01T00:00:00Z", ab(120), 5, true},
-		{"advisor-zero-cost", "azure", "monthly", "2026-11-02T00:00:00Z", ab(0), 0, false},
-		{"mixed-case", "Azure", "no-upfront", "2026-09-03T00:00:00Z", ab(10), 0, true},
-		{"aws-old", "aws", "all-upfront", "2026-01-01T00:00:00Z", ab(100), 0, false},
-		{"gcp-old", "gcp", "monthly", "2026-01-01T00:00:00Z", ab(100), 3, false},
+		{id: "early-sig", provider: "azure", payment: "monthly", at: "2026-10-01T00:00:00Z", upfront: ab(0), monthly: 50, flagged: true},
+		{id: "old-all-upfront", provider: "azure", payment: "all-upfront", at: "2026-09-01T00:00:00Z", upfront: ab(1000), monthly: 0, flagged: true},
+		{id: "old-null-upfront", provider: "azure", payment: "all-upfront", at: "2026-09-02T00:00:00Z", upfront: nil, monthly: 0, flagged: true},
+		{id: "before-clamp", provider: "azure", payment: "all-upfront", at: "2026-10-05T00:00:00Z", upfront: ab(900), monthly: 0, flagged: true},
+		{id: "between-old-and-corrected-clamp", provider: "azure", payment: "all-upfront", at: "2026-10-08T08:00:00Z", upfront: ab(900), monthly: 0, flagged: true},
+		{id: "after-clamp", provider: "azure", payment: "all-upfront", at: "2026-10-09T00:00:00Z", upfront: ab(900), monthly: 0, flagged: false},
+		{id: "monthly-with-upfront-after", provider: "azure", payment: "monthly", at: "2026-11-01T00:00:00Z", upfront: ab(120), monthly: 5, flagged: true},
+		{id: "advisor-zero-cost", provider: "azure", payment: "monthly", at: "2026-11-02T00:00:00Z", upfront: ab(0), monthly: 0, flagged: false},
+		{id: "mixed-case", provider: "Azure", payment: "no-upfront", at: "2026-09-03T00:00:00Z", upfront: ab(10), monthly: 0, flagged: true},
+		{id: "aws-old", provider: "aws", payment: "all-upfront", at: "2026-01-01T00:00:00Z", upfront: ab(100), monthly: 0, flagged: false},
+		{id: "gcp-old", provider: "gcp", payment: "monthly", at: "2026-01-01T00:00:00Z", upfront: ab(100), monthly: 3, flagged: false},
 	})
 }
 
@@ -129,11 +129,11 @@ func TestMigrationAmountBasis_ClampBoundary(t *testing.T) {
 func TestMigrationAmountBasis_SignatureBoundary(t *testing.T) {
 	t.Parallel()
 	runAmountBasisScenario(t, []amountBasisFixture{
-		{"sig", "azure", "monthly", "2026-10-20T00:00:00Z", ab(0), 50, false},
-		{"between-clamp-and-sig", "azure", "all-upfront", "2026-10-15T00:00:00Z", ab(900), 0, true},
-		{"after-sig", "azure", "all-upfront", "2026-10-21T00:00:00Z", ab(900), 0, false},
-		{"partial-with-upfront", "azure", "partial-upfront", "2026-10-22T00:00:00Z", ab(50), 5, true},
-		{"aws-old", "aws", "all-upfront", "2026-01-01T00:00:00Z", ab(100), 0, false},
+		{id: "sig", provider: "azure", payment: "monthly", at: "2026-10-20T00:00:00Z", upfront: ab(0), monthly: 50, flagged: false},
+		{id: "between-clamp-and-sig", provider: "azure", payment: "all-upfront", at: "2026-10-15T00:00:00Z", upfront: ab(900), monthly: 0, flagged: true},
+		{id: "after-sig", provider: "azure", payment: "all-upfront", at: "2026-10-21T00:00:00Z", upfront: ab(900), monthly: 0, flagged: false},
+		{id: "partial-with-upfront", provider: "azure", payment: "partial-upfront", at: "2026-10-22T00:00:00Z", upfront: ab(50), monthly: 5, flagged: true},
+		{id: "aws-old", provider: "aws", payment: "all-upfront", at: "2026-01-01T00:00:00Z", upfront: ab(100), monthly: 0, flagged: false},
 	})
 }
 
@@ -141,9 +141,9 @@ func TestMigrationAmountBasis_SignatureBoundary(t *testing.T) {
 func TestMigrationAmountBasis_NoSignatureFlagsAllAzure(t *testing.T) {
 	t.Parallel()
 	runAmountBasisScenario(t, []amountBasisFixture{
-		{"az-old", "azure", "all-upfront", "2026-09-01T00:00:00Z", ab(1000), 0, true},
-		{"az-new", "azure", "all-upfront", "2026-12-01T00:00:00Z", ab(1000), 0, true},
-		{"advisor-zero-cost", "azure", "monthly", "2026-12-02T00:00:00Z", ab(0), 0, true},
-		{"aws", "aws", "all-upfront", "2026-12-01T00:00:00Z", ab(100), 0, false},
+		{id: "az-old", provider: "azure", payment: "all-upfront", at: "2026-09-01T00:00:00Z", upfront: ab(1000), monthly: 0, flagged: true},
+		{id: "az-new", provider: "azure", payment: "all-upfront", at: "2026-12-01T00:00:00Z", upfront: ab(1000), monthly: 0, flagged: true},
+		{id: "advisor-zero-cost", provider: "azure", payment: "monthly", at: "2026-12-02T00:00:00Z", upfront: ab(0), monthly: 0, flagged: true},
+		{id: "aws", provider: "aws", payment: "all-upfront", at: "2026-12-01T00:00:00Z", upfront: ab(100), monthly: 0, flagged: false},
 	})
 }

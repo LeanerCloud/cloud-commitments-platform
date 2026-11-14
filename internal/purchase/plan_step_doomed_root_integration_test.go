@@ -16,14 +16,14 @@ import (
 // condition flips exactly one case.
 type doomedRootCase struct {
 	name    string
+	status  string        // "" means pending
+	recs    string        // "nil" (jsonb null, as Add Purchases writes), "empty" ('[]') or "full"
 	days    int           // notification_days_before
-	managed bool          // ramp_schedule.dates_managed
 	step    int           // execution step_number; 0 means the plan's next step (1)
 	offset  time.Duration // scheduled_date relative to now
-	status  string        // "" means pending
-	account bool          // child row of a fanned-out step
 	retry   int           // retry_attempt_n
-	recs    string        // "nil" (jsonb null, as Add Purchases writes), "empty" ('[]') or "full"
+	managed bool          // ramp_schedule.dates_managed
+	account bool          // child row of a fanned-out step
 	want    bool
 }
 

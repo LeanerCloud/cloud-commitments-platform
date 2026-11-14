@@ -75,9 +75,9 @@ func TestPostgresStoreDB_TransitionRIExchangeStatus_ConcurrentLosersGetNotInExpe
 
 		start := make(chan struct{})
 		type outcome struct {
-			to  string
-			rec *RIExchangeRecord
 			err error
+			rec *RIExchangeRecord
+			to  string
 		}
 		results := make(chan outcome, callers)
 		var wg sync.WaitGroup

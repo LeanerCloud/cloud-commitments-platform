@@ -140,21 +140,21 @@ func TestResolveLadderTrancheFailed_UnknownOutcome(t *testing.T) {
 	store := setupLadderStore(ctx, t)
 	old := []resolveNode{{"failed", false, 7 * time.Hour}} // reaped: no proof
 	cases := []struct {
+		want  error
+		tweak func(*LadderResolveFailed, *resolveRig)
 		name  string
 		nodes []resolveNode
-		tweak func(*LadderResolveFailed, *resolveRig)
-		want  error
 	}{
-		{"no acknowledgement", old, func(q *LadderResolveFailed, _ *resolveRig) { q.Acknowledge, q.Check = false, nil }, ErrLadderResolveConflict},
-		{"acknowledged without check", old, func(q *LadderResolveFailed, _ *resolveRig) { q.Check = nil }, ErrLadderResolveConflict},
-		{"changed 5m ago though created long ago", []resolveNode{{"failed", false, 5 * time.Minute}}, nil, ErrLadderResolveConflict},
-		{"unproven predecessor with proven tail", []resolveNode{{"failed", false, 8 * time.Hour}, {"failed", true, 7 * time.Hour}}, nil, nil},
-		{"wrong account", old, func(q *LadderResolveFailed, _ *resolveRig) { q.Check.AccountID = "acct-other" }, ErrLadderResolveInvalid},
-		{"wrong service", old, func(q *LadderResolveFailed, _ *resolveRig) { q.Check.Service = "rds" }, ErrLadderResolveInvalid},
-		{"checked in the future", old, func(q *LadderResolveFailed, _ *resolveRig) { q.Check.CheckedAt = q.Now.Add(time.Hour) }, ErrLadderResolveInvalid},
-		{"checked before the last change", old, func(q *LadderResolveFailed, _ *resolveRig) { q.Check.CheckedAt = q.Now.Add(-8 * time.Hour) }, ErrLadderResolveInvalid},
-		{"valid", old, nil, nil},
-		{"valid with provider account number", old, func(q *LadderResolveFailed, r *resolveRig) { q.Check.AccountID = r.external }, nil},
+		{name: "no acknowledgement", nodes: old, tweak: func(q *LadderResolveFailed, _ *resolveRig) { q.Acknowledge, q.Check = false, nil }, want: ErrLadderResolveConflict},
+		{name: "acknowledged without check", nodes: old, tweak: func(q *LadderResolveFailed, _ *resolveRig) { q.Check = nil }, want: ErrLadderResolveConflict},
+		{name: "changed 5m ago though created long ago", nodes: []resolveNode{{"failed", false, 5 * time.Minute}}, tweak: nil, want: ErrLadderResolveConflict},
+		{name: "unproven predecessor with proven tail", nodes: []resolveNode{{"failed", false, 8 * time.Hour}, {"failed", true, 7 * time.Hour}}, tweak: nil, want: nil},
+		{name: "wrong account", nodes: old, tweak: func(q *LadderResolveFailed, _ *resolveRig) { q.Check.AccountID = "acct-other" }, want: ErrLadderResolveInvalid},
+		{name: "wrong service", nodes: old, tweak: func(q *LadderResolveFailed, _ *resolveRig) { q.Check.Service = "rds" }, want: ErrLadderResolveInvalid},
+		{name: "checked in the future", nodes: old, tweak: func(q *LadderResolveFailed, _ *resolveRig) { q.Check.CheckedAt = q.Now.Add(time.Hour) }, want: ErrLadderResolveInvalid},
+		{name: "checked before the last change", nodes: old, tweak: func(q *LadderResolveFailed, _ *resolveRig) { q.Check.CheckedAt = q.Now.Add(-8 * time.Hour) }, want: ErrLadderResolveInvalid},
+		{name: "valid", nodes: old, tweak: nil, want: nil},
+		{name: "valid with provider account number", nodes: old, tweak: func(q *LadderResolveFailed, r *resolveRig) { q.Check.AccountID = r.external }, want: nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

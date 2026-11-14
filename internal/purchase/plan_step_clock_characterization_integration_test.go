@@ -22,22 +22,22 @@ type b3C1Root struct {
 
 type b3C1Snapshot struct {
 	plan                          *config.PurchasePlan
-	rows                          [3][]config.PurchaseExecution
 	rawSteps                      map[int][]json.RawMessage
+	ledger                        string
+	rows                          [3][]config.PurchaseExecution
 	rawPlan, rawRows, rawAccounts []byte
 	baseline                      []byte
-	ledger                        string
-	suppressed                    int
 	rawSuppressions               []byte
 	suppressions                  []config.PurchaseSuppression
+	suppressed                    int
 }
 
 type b3C1Fixture struct {
+	now, formula time.Time
 	*cumFixture
-	now, formula  time.Time
-	calls         atomic.Int32
 	sender        *countingSender
 	before, after b3C1Snapshot
+	calls         atomic.Int32
 }
 
 func b3C1Read(f *cumFixture) b3C1Snapshot {

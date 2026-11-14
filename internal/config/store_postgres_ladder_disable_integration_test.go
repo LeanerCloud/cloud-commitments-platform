@@ -15,10 +15,10 @@ import (
 )
 
 type ladderConfigSnapshot struct {
-	enabled   bool
+	updatedAt time.Time
 	mode      string
 	cadence   string
-	updatedAt time.Time
+	enabled   bool
 }
 
 func readLadderConfigSnapshot(ctx context.Context, t *testing.T, store *PostgresStore, id string) ladderConfigSnapshot {

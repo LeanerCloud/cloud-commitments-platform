@@ -19,8 +19,8 @@ import (
 // and against a concurrent Finalize, in both orders.
 
 type lockedBuffer struct {
-	mu  sync.Mutex
 	buf bytes.Buffer
+	mu  sync.Mutex
 }
 
 func (b *lockedBuffer) Write(p []byte) (int, error) {
