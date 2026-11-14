@@ -183,3 +183,5 @@
 # validation test. Same whole-line anchoring as above. One character in the middle
 # of the flagged run is bracketed, so this file does not match the detector itself.
 ^internal/api/handler_federation_test\.go:[0-9]+:[[:space:]]*\{"990F4193972F2BEC[F]12DDEDA5237F9C952F20D9E",[[:space:]]+"uppercase[[:space:]]+hex"\},[[:space:]]*$
+^internal/config/store_postgres_history_account_provider_integration_test\.go:[0-9]+:[[:space:]]*\{purchaseID:[[:space:]]+"[a-z-]+",[[:space:]]+provider:[[:space:]]+"[a-z]*",[[:space:]]+accountID:[[:space:]]+"[0-9]{12}",[[:space:]]+cloudAccountID:[[:space:]]+(&acct[A-C]|nil)\},[[:space:]]*$
+^internal/config/store_postgres_active_history_integration_test\.go:[0-9]+:[[:space:]]*\{id:[[:space:]]+"[a-z0-9-]+",[[:space:]]+account:[[:space:]]+"[0-9]{12}",[[:space:]]+ts:[^"]*$
