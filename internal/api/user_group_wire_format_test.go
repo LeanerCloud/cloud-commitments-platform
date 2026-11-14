@@ -183,6 +183,7 @@ func wireFormatCases(t *testing.T) []wireCase {
 }
 
 func TestUserGroupWrites_WireFormat(t *testing.T) {
+	t.Parallel()
 	for _, tc := range wireFormatCases(t) {
 		t.Run(tc.name, func(t *testing.T) {
 			mockAuth := new(MockAuthService)
@@ -233,6 +234,7 @@ func TestUserGroupWrites_WireFormat(t *testing.T) {
 // wrong request type is a compile error instead of the runtime "invalid
 // request type" the any signatures allowed (issue #169).
 func TestAuthServiceInterface_UserGroupWritesAreTyped(t *testing.T) {
+	t.Parallel()
 	iface := reflect.TypeOf((*AuthServiceInterface)(nil)).Elem()
 	cases := []struct {
 		method string

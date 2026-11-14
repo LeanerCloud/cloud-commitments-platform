@@ -506,6 +506,7 @@ func TestValidateAWSWebIdentityTokenFile(t *testing.T) {
 // zero, numeric, and invalid inputs, and that the "usd" and "pct" paths
 // produce independent parsing results (preventing unit conflation at parse time).
 func TestParseMinSavingsParam(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name      string
 		raw       string

@@ -79,6 +79,7 @@ func spanTwoAccounts(t *testing.T, store *MockConfigStore, approver string) {
 }
 
 func TestTokenApprove_FailureBodyOmitsRunErrorText(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	execID := "b1234567-b123-b123-b123-b1234567abcd"
 	for _, tc := range tokenFailureCases() {
@@ -104,6 +105,7 @@ func TestTokenApprove_FailureBodyOmitsRunErrorText(t *testing.T) {
 // The session caller gets the execution reference and a category message; the
 // provider's own text (ARNs, account IDs) stays in the server log.
 func TestSessionApprove_FailureShowsSummaryNotRunErrorText(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	execID := "c1234567-c123-c123-c123-c1234567abcd"
 	for _, tc := range tokenFailureCases()[:3] {
@@ -122,6 +124,7 @@ func TestSessionApprove_FailureShowsSummaryNotRunErrorText(t *testing.T) {
 
 // The delayed token approve answers a store failure without its text.
 func TestTokenApprove_DelayedScheduleFailureOmitsStoreText(t *testing.T) {
+	t.Parallel()
 	future := time.Now().Add(time.Hour)
 	exec := &config.PurchaseExecution{Status: "pending", ApprovalToken: config.HashApprovalToken(tokenErrRawToken), ApprovalTokenExpiresAt: &future}
 	h := delayTokenHandler(t, exec)

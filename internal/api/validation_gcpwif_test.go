@@ -47,6 +47,7 @@ func require400(t *testing.T, err error, msg string) {
 }
 
 func TestValidateCredentialPayload_GCPWIFEndpoints(t *testing.T) {
+	t.Parallel()
 	require.NoError(t, validateCredentialPayload("gcp_workload_identity_config", gcloudWIFConfig()))
 
 	noImpersonation := gcloudWIFConfig()

@@ -9,6 +9,7 @@ import (
 )
 
 func TestPlanRequest_toPurchasePlan(t *testing.T) {
+	t.Parallel()
 	t.Run("basic conversion with defaults", func(t *testing.T) {
 		req := &PlanRequest{
 			Name:         "Test Plan",
@@ -205,6 +206,7 @@ func planFromBody(t *testing.T, body string) *PlanRequest {
 }
 
 func TestPlanRequest_TargetCoverageDefault(t *testing.T) {
+	t.Parallel()
 	const base = `{"name":"p","provider":"aws","service":"ec2"`
 	tests := []struct {
 		name string
@@ -224,6 +226,7 @@ func TestPlanRequest_TargetCoverageDefault(t *testing.T) {
 }
 
 func TestPlanRequest_validateTargetCoverage(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		body    string
@@ -254,6 +257,7 @@ func TestPlanRequest_validateTargetCoverage(t *testing.T) {
 // An unknown ramp_schedule used to fall back to the immediate preset (the whole
 // base bought in one step); the request is now refused with a 400.
 func TestDecodePlanRequest_RampSchedule(t *testing.T) {
+	t.Parallel()
 	for _, ramp := range []string{"", "immediate", "weekly-25pct", "monthly-10pct", "custom"} {
 		t.Run("accepts "+ramp, func(t *testing.T) {
 			_, err := decodePlanRequest(`{"name":"p","ramp_schedule":"` + ramp + `"}`)

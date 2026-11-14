@@ -72,6 +72,7 @@ func runTargetOfferingsForZone(t *testing.T, scope ec2types.Scope, az string) (a
 }
 
 func TestListTargetOfferings_ZonalSourceForwardsAvailabilityZone(t *testing.T) {
+	t.Parallel()
 	res, api, err := runTargetOfferingsForZone(t, ec2types.ScopeAvailabilityZone, "us-east-1b")
 
 	require.NoError(t, err)
@@ -85,6 +86,7 @@ func TestListTargetOfferings_ZonalSourceForwardsAvailabilityZone(t *testing.T) {
 }
 
 func TestListTargetOfferings_RegionalSourcePassesNoAvailabilityZone(t *testing.T) {
+	t.Parallel()
 	_, api, err := runTargetOfferingsForZone(t, ec2types.ScopeRegional, "")
 
 	require.NoError(t, err)
@@ -95,6 +97,7 @@ func TestListTargetOfferings_RegionalSourcePassesNoAvailabilityZone(t *testing.T
 }
 
 func TestListTargetOfferings_ZonalSourceWithoutAZIs422(t *testing.T) {
+	t.Parallel()
 	_, api, err := runTargetOfferingsForZone(t, ec2types.ScopeAvailabilityZone, "")
 
 	require.Error(t, err)
@@ -107,6 +110,7 @@ func TestListTargetOfferings_ZonalSourceWithoutAZIs422(t *testing.T) {
 }
 
 func TestIsOfferingZoneRefusal(t *testing.T) {
+	t.Parallel()
 	assert.False(t, isOfferingZoneRefusal(assert.AnError))
 	for _, msg := range offeringZoneRefusals {
 		assert.True(t, isOfferingZoneRefusal(&clientError{message: "wrapped: " + msg}), msg)
@@ -114,6 +118,7 @@ func TestIsOfferingZoneRefusal(t *testing.T) {
 }
 
 func TestListTargetOfferings_RegionalSourceWithAZIs422(t *testing.T) {
+	t.Parallel()
 	_, api, err := runTargetOfferingsForZone(t, ec2types.ScopeRegional, "us-east-1b")
 
 	require.Error(t, err)

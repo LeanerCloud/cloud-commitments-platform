@@ -82,6 +82,7 @@ func listPlanIDs(t *testing.T, h *Handler, params map[string]string) []string {
 }
 
 func TestListPlans_ScopedCallerSeesOnlyInScopePlans(t *testing.T) {
+	t.Parallel()
 	h, base := scopedHandler(t, scopedInAccount)
 	h.config = newPlanListStore(base)
 
@@ -90,6 +91,7 @@ func TestListPlans_ScopedCallerSeesOnlyInScopePlans(t *testing.T) {
 }
 
 func TestListPlans_ScopedCallerOutOfScopeFilterReturnsNothing(t *testing.T) {
+	t.Parallel()
 	h, base := scopedHandler(t, scopedInAccount)
 	store := newPlanListStore(base)
 	h.config = store
@@ -101,6 +103,7 @@ func TestListPlans_ScopedCallerOutOfScopeFilterReturnsNothing(t *testing.T) {
 }
 
 func TestListPlans_UnrestrictedCallerStillSeesUnassignedPlans(t *testing.T) {
+	t.Parallel()
 	h, base := scopedHandler(t)
 	h.config = newPlanListStore(base)
 
@@ -109,6 +112,7 @@ func TestListPlans_UnrestrictedCallerStillSeesUnassignedPlans(t *testing.T) {
 }
 
 func TestListPlans_ScopeLookupErrorFailsClosed(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -127,6 +131,7 @@ func TestListPlans_ScopeLookupErrorFailsClosed(t *testing.T) {
 }
 
 func TestListActiveCommitments_ScopedCallerOutOfScopeAccountFilterSkipsStore(t *testing.T) {
+	t.Parallel()
 	h, store := scopedHandler(t, scopedInAccount)
 	store.ListCloudAccountsFn = func(_ context.Context, _ config.CloudAccountFilter) ([]config.CloudAccount, error) {
 		return []config.CloudAccount{inScopeAccount(), outOfScopeAccount()}, nil
@@ -141,6 +146,7 @@ func TestListActiveCommitments_ScopedCallerOutOfScopeAccountFilterSkipsStore(t *
 }
 
 func TestListActiveCommitments_ScopedCallerInScopeAccountFilterReachesStore(t *testing.T) {
+	t.Parallel()
 	h, store := scopedHandler(t, scopedInAccount)
 	store.ListCloudAccountsFn = func(_ context.Context, _ config.CloudAccountFilter) ([]config.CloudAccount, error) {
 		return []config.CloudAccount{inScopeAccount(), outOfScopeAccount()}, nil
@@ -177,6 +183,7 @@ func quoteHandler(t *testing.T, deploymentAccount string) (*Handler, *[]exchange
 const quoteBody = `{"ri_ids":["ri-123"],"target_offering_id":"4b2293b4-5fbc-4017-9c75-d5a9d3aa8c91","target_count":1}`
 
 func TestGetExchangeQuote_OutOfScopeDeploymentAccountReturns403(t *testing.T) {
+	t.Parallel()
 	h, quotes := quoteHandler(t, scopedOutAccount)
 
 	_, err := h.getExchangeQuote(context.Background(), &events.LambdaFunctionURLRequest{
@@ -192,6 +199,7 @@ func TestGetExchangeQuote_OutOfScopeDeploymentAccountReturns403(t *testing.T) {
 }
 
 func TestGetExchangeQuote_InScopeDeploymentAccountPassesGate(t *testing.T) {
+	t.Parallel()
 	h, quotes := quoteHandler(t, scopedInAccount)
 
 	_, err := h.getExchangeQuote(context.Background(), &events.LambdaFunctionURLRequest{

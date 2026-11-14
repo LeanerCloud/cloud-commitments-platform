@@ -49,6 +49,7 @@ func targetOfferingsRequest() *events.LambdaFunctionURLRequest {
 }
 
 func TestRouterDispatch_TargetOfferings_DeploymentAccountOutOfScope(t *testing.T) {
+	t.Parallel()
 	h := targetOfferingsHandler(t, scopedOutAccount, true)
 
 	res, err := NewRouter(h).Route(context.Background(), "GET", "/api/ri-exchange/target-offerings", targetOfferingsRequest())
@@ -58,6 +59,7 @@ func TestRouterDispatch_TargetOfferings_DeploymentAccountOutOfScope(t *testing.T
 }
 
 func TestRouterDispatch_TargetOfferings_DeploymentAccountInScope(t *testing.T) {
+	t.Parallel()
 	h := targetOfferingsHandler(t, scopedInAccount, true)
 
 	res, err := NewRouter(h).Route(context.Background(), "GET", "/api/ri-exchange/target-offerings", targetOfferingsRequest())
@@ -69,6 +71,7 @@ func TestRouterDispatch_TargetOfferings_DeploymentAccountInScope(t *testing.T) {
 }
 
 func TestRouterDispatch_TargetOfferings_UnscopedUserSkipsAccountLookup(t *testing.T) {
+	t.Parallel()
 	h := targetOfferingsHandler(t, scopedOutAccount, false)
 	// No ListCloudAccounts expectation: any scope lookup would panic the mock.
 	h.reshapeAccountResolver = func(_ context.Context) (string, error) {
@@ -84,6 +87,7 @@ func TestRouterDispatch_TargetOfferings_UnscopedUserSkipsAccountLookup(t *testin
 }
 
 func TestRouterDispatch_TargetOfferings_ResolverErrorPropagates(t *testing.T) {
+	t.Parallel()
 	h := targetOfferingsHandler(t, scopedInAccount, true)
 	resolveErr := errors.New("deployment account lookup failed")
 	h.reshapeAccountResolver = func(_ context.Context) (string, error) { return "", resolveErr }
@@ -96,6 +100,7 @@ func TestRouterDispatch_TargetOfferings_ResolverErrorPropagates(t *testing.T) {
 }
 
 func TestListTargetOfferings_PermissionCheckPrecedesVisibility(t *testing.T) {
+	t.Parallel()
 	h := targetOfferingsHandler(t, scopedOutAccount, true)
 	req := targetOfferingsRequest()
 	req.Headers = nil // no session
