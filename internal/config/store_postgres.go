@@ -3390,11 +3390,11 @@ func (s *PostgresStore) ReserveRIExchange(ctx context.Context, record *RIExchang
 func (s *PostgresStore) ReserveApprovedRIExchange(ctx context.Context, id, dailyCapUSD, perExchangeCapUSD string) (string, error) {
 	dailyCap, err := riExchangeMicros(dailyCapUSD)
 	if err != nil {
-		return "", fmt.Errorf("invalid daily RI exchange cap: %w", err)
+		return "", fmt.Errorf("%w: invalid daily RI exchange cap: %w", ErrRIExchangeReservationInvalid, err)
 	}
 	perCap, err := riExchangeMicros(perExchangeCapUSD)
 	if err != nil {
-		return "", fmt.Errorf("invalid per-exchange RI cap: %w", err)
+		return "", fmt.Errorf("%w: invalid per-exchange RI cap: %w", ErrRIExchangeReservationInvalid, err)
 	}
 
 	var ceiling string
@@ -3405,14 +3405,14 @@ func (s *PostgresStore) ReserveApprovedRIExchange(ctx context.Context, id, daily
 			`SELECT payment_due::text, source_ri_ids FROM ri_exchange_history WHERE id = $1 AND status = 'processing' FOR UPDATE`, id,
 		).Scan(&initialText, &sources)
 		if errors.Is(scanErr, pgx.ErrNoRows) {
-			return fmt.Errorf("ri exchange %s is not processing", id)
+			return fmt.Errorf("%w: ri exchange %s is not processing", ErrRIExchangeReservationInvalid, id)
 		}
 		if scanErr != nil {
 			return fmt.Errorf("failed to read RI exchange %s: %w", id, scanErr)
 		}
 		initial, parseErr := riExchangeMicros(initialText)
 		if parseErr != nil {
-			return fmt.Errorf("invalid initial RI exchange payment: %w", parseErr)
+			return fmt.Errorf("%w: invalid initial RI exchange payment: %w", ErrRIExchangeReservationInvalid, parseErr)
 		}
 		var reserveErr error
 		ceiling, reserveErr = reserveRIExchangeCeiling(ctx, tx, &id, initialText, initial, dailyCap, perCap, dailyCapUSD)
@@ -3542,6 +3542,11 @@ func refuseRIExchangeSourceInFlightDirect(ctx context.Context, tx pgx.Tx, source
 // initial quote does not fit the remaining daily or per-exchange headroom.
 var ErrRIExchangeDailyCapExceeded = errors.New("RI exchange daily cap exceeded")
 
+// ErrRIExchangeReservationInvalid marks a reservation that can never succeed
+// as stored: a malformed cap, quote or spend value, or a row that is not
+// processing. Retrying cannot help, unlike a connection or lock failure.
+var ErrRIExchangeReservationInvalid = errors.New("RI exchange reservation is invalid")
+
 // lockRIExchangeSpend takes the transaction-scoped advisory lock every RI
 // exchange reservation and direct-execute save serializes on.
 func lockRIExchangeSpend(ctx context.Context, tx pgx.Tx) error {
@@ -3565,7 +3570,7 @@ func reserveRIExchangeCeiling(ctx context.Context, tx pgx.Tx, excludeID *string,
 	}
 	spend, parseErr := riExchangeMicros(spendText)
 	if parseErr != nil {
-		return "", fmt.Errorf("invalid RI exchange daily spend: %w", parseErr)
+		return "", fmt.Errorf("%w: invalid RI exchange daily spend: %w", ErrRIExchangeReservationInvalid, parseErr)
 	}
 	remaining := new(big.Int).Sub(dailyCap, spend)
 	if remaining.Cmp(perCap) > 0 {

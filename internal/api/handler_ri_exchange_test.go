@@ -2770,7 +2770,8 @@ func TestExecuteApprovedExchange_SettlesAcceptedAmountWithinReservedCeiling(t *t
 
 // TestExecuteApprovedExchange_ReservationInfrastructureError_HidesDetail asserts
 // that a non-cap reservation error (lock/DB failure) is logged, not echoed to the
-// approver, and the provider is never called.
+// approver, the provider is never called, and the row is released back to
+// pending with an error (HTTP 500) rather than failed with a 200 (#100).
 func TestExecuteApprovedExchange_ReservationInfrastructureError_HidesDetail(t *testing.T) {
 	ctx := context.Background()
 	const id = "550e8400-e29b-41d4-a716-000000000658"
@@ -2782,7 +2783,8 @@ func TestExecuteApprovedExchange_ReservationInfrastructureError_HidesDetail(t *t
 	}, nil)
 	mockStore.On("ReserveApprovedRIExchange", ctx, id, "1000.000000", "500.000000").
 		Return("", errors.New("failed to lock RI exchange daily spend: connection reset by peer"))
-	mockStore.On("FailRIExchange", mock.Anything, id, "daily spending cap check failed").Return(nil)
+	mockStore.On("TransitionRIExchangeStatus", mock.Anything, id, "processing", "pending", (*string)(nil)).
+		Return(&config.RIExchangeRecord{ID: id}, nil).Once()
 
 	called := false
 	h := &Handler{config: mockStore, executeExchangeFn: func(context.Context, exchange.ExchangeExecuteRequest) (string, *exchange.ExchangeQuoteSummary, error) {
@@ -2792,9 +2794,80 @@ func TestExecuteApprovedExchange_ReservationInfrastructureError_HidesDetail(t *t
 	resp, err := h.executeApprovedExchange(ctx, id, &config.RIExchangeRecord{
 		ID: id, Region: "us-east-1", SourceRIIDs: []string{"ri-1"}, TargetOfferingID: "o", TargetCount: 1, PaymentDue: "10.00",
 	})
-	require.NoError(t, err)
-	assert.Equal(t, "daily spending cap check failed", resp.(map[string]any)["reason"])
+	require.Error(t, err)
+	assert.Nil(t, resp)
+	assert.NotContains(t, err.Error(), "daily spending cap check failed")
+	mockStore.AssertNotCalled(t, "FailRIExchange", mock.Anything, mock.Anything, mock.Anything)
 	assert.False(t, called)
+}
+
+// A reservation that can never succeed (malformed stored value, row not
+// processing) must still fail the row: releasing it to pending would loop on a
+// 500 forever (#100).
+func TestExecuteApprovedExchange_DeterministicReservationError_FailsTheRow(t *testing.T) {
+	for name, cause := range map[string]string{
+		"not processing":  "ri exchange x is not processing",
+		"invalid payment": "invalid initial RI exchange payment: bad",
+		"invalid cap":     "invalid daily RI exchange cap: bad",
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			const id = "550e8400-e29b-41d4-a716-000000000102"
+			mockStore := new(MockConfigStore)
+			t.Cleanup(func() { mockStore.AssertExpectations(t) })
+			mockStore.On("GetGlobalConfig", ctx).Return(&config.GlobalConfig{
+				RIExchangeMaxDailyUSD: 1000, RIExchangeMaxPerExchangeUSD: 500,
+			}, nil)
+			mockStore.On("ReserveApprovedRIExchange", ctx, id, "1000.000000", "500.000000").
+				Return("", fmt.Errorf("%w: %s", config.ErrRIExchangeReservationInvalid, cause))
+			mockStore.On("FailRIExchange", mock.Anything, id, "daily spending cap check failed").Return(nil).Once()
+
+			h := &Handler{config: mockStore}
+			resp, err := h.executeApprovedExchange(ctx, id, &config.RIExchangeRecord{ID: id, Region: "us-east-1"})
+
+			require.NoError(t, err)
+			assert.Equal(t, "failed", resp.(map[string]any)["status"])
+			mockStore.AssertNotCalled(t, "TransitionRIExchangeStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+		})
+	}
+}
+
+// A config read blip before execution must not permanently fail an approved
+// exchange: the row goes back to pending and the caller sees an error (#100).
+func TestExecuteApprovedExchange_ConfigLoadError_ReleasesToPending(t *testing.T) {
+	ctx := context.Background()
+	const id = "550e8400-e29b-41d4-a716-000000000100"
+
+	mockStore := new(MockConfigStore)
+	t.Cleanup(func() { mockStore.AssertExpectations(t) })
+	mockStore.On("GetGlobalConfig", ctx).Return(nil, errors.New("connection reset by peer"))
+	mockStore.On("TransitionRIExchangeStatus", mock.Anything, id, "processing", "pending", (*string)(nil)).
+		Return(&config.RIExchangeRecord{ID: id}, nil).Once()
+
+	h := &Handler{config: mockStore}
+	resp, err := h.executeApprovedExchange(ctx, id, &config.RIExchangeRecord{ID: id, Region: "us-east-1"})
+
+	require.Error(t, err)
+	assert.Nil(t, resp)
+	mockStore.AssertNotCalled(t, "FailRIExchange", mock.Anything, mock.Anything, mock.Anything)
+}
+
+// When the release itself fails the row stays in processing for the
+// stale-processing alarm; the caller still gets the original error (#100).
+func TestExecuteApprovedExchange_ReleaseFailure_StillReturnsError(t *testing.T) {
+	ctx := context.Background()
+	const id = "550e8400-e29b-41d4-a716-000000000101"
+
+	mockStore := new(MockConfigStore)
+	t.Cleanup(func() { mockStore.AssertExpectations(t) })
+	mockStore.On("GetGlobalConfig", ctx).Return(nil, errors.New("db down"))
+	mockStore.On("TransitionRIExchangeStatus", mock.Anything, id, "processing", "pending", (*string)(nil)).
+		Return(nil, errors.New("db still down")).Once()
+
+	h := &Handler{config: mockStore}
+	_, err := h.executeApprovedExchange(ctx, id, &config.RIExchangeRecord{ID: id, Region: "us-east-1"})
+
+	require.ErrorContains(t, err, "db down")
 }
 
 // A convertible RI with a non-positive Duration has no computable monthly
