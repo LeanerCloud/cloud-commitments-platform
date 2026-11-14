@@ -25,7 +25,7 @@ const activeExpiryIndex = "idx_purchase_history_active_expiry"
 type activeHistoryRow struct {
 	ts      time.Time
 	id      string
-	account string
+	acct    string
 	term    int
 	revoked bool
 }
@@ -42,22 +42,22 @@ func activeHistoryBoundaryRows(asOf time.Time) []activeHistoryRow {
 	}
 	us := time.Microsecond
 	return []activeHistoryRow{
-		{id: "t1-exact", account: "111111111111", ts: asOf.Add(-year), term: 1, revoked: false},
-		{id: "t1-1us-before", account: "111111111111", ts: asOf.Add(-year - us), term: 1, revoked: false},
-		{id: "t1-1us-after", account: "111111111111", ts: asOf.Add(-year + us), term: 1, revoked: false},
-		{id: "t3-exact", account: "222222222222", ts: asOf.Add(-3 * year), term: 3, revoked: false},
-		{id: "t3-1us-before", account: "222222222222", ts: asOf.Add(-3*year - us), term: 3, revoked: false},
-		{id: "t3-1us-after", account: "222222222222", ts: asOf.Add(-3*year + us), term: 3, revoked: false},
-		{id: "t1-calendar-year", account: "111111111111", ts: asOf.AddDate(-1, 0, 0), term: 1, revoked: false},
-		{id: "t3-calendar-years", account: "222222222222", ts: asOf.AddDate(-3, 0, 0), term: 3, revoked: false},
-		{id: "t1-dst-zone", account: "333333333333", ts: asOf.Add(-year).In(ny), term: 1, revoked: false},
-		{id: "t1-dst-zone-1us-before", account: "333333333333", ts: asOf.Add(-year - us).In(ny), term: 1, revoked: false},
-		{id: "t0", account: "111111111111", ts: asOf, term: 0, revoked: false},
-		{id: "t-negative", account: "111111111111", ts: asOf, term: -1, revoked: false},
-		{id: "t1-revoked", account: "111111111111", ts: asOf.Add(-time.Hour), term: 1, revoked: true},
-		{id: "t1-future", account: "222222222222", ts: asOf.Add(48 * time.Hour), term: 1, revoked: false},
-		{id: "t1-long-expired", account: "333333333333", ts: asOf.AddDate(-10, 0, 0), term: 1, revoked: false},
-		{id: "t50", account: "333333333333", ts: asOf.AddDate(-40, 0, 0), term: 50, revoked: false},
+		{id: "t1-exact", acct: "111111111111", ts: asOf.Add(-year), term: 1, revoked: false},
+		{id: "t1-1us-before", acct: "111111111111", ts: asOf.Add(-year - us), term: 1, revoked: false},
+		{id: "t1-1us-after", acct: "111111111111", ts: asOf.Add(-year + us), term: 1, revoked: false},
+		{id: "t3-exact", acct: "222222222222", ts: asOf.Add(-3 * year), term: 3, revoked: false},
+		{id: "t3-1us-before", acct: "222222222222", ts: asOf.Add(-3*year - us), term: 3, revoked: false},
+		{id: "t3-1us-after", acct: "222222222222", ts: asOf.Add(-3*year + us), term: 3, revoked: false},
+		{id: "t1-calendar-year", acct: "111111111111", ts: asOf.AddDate(-1, 0, 0), term: 1, revoked: false},
+		{id: "t3-calendar-years", acct: "222222222222", ts: asOf.AddDate(-3, 0, 0), term: 3, revoked: false},
+		{id: "t1-dst-zone", acct: "333333333333", ts: asOf.Add(-year).In(ny), term: 1, revoked: false},
+		{id: "t1-dst-zone-1us-before", acct: "333333333333", ts: asOf.Add(-year - us).In(ny), term: 1, revoked: false},
+		{id: "t0", acct: "111111111111", ts: asOf, term: 0, revoked: false},
+		{id: "t-negative", acct: "111111111111", ts: asOf, term: -1, revoked: false},
+		{id: "t1-revoked", acct: "111111111111", ts: asOf.Add(-time.Hour), term: 1, revoked: true},
+		{id: "t1-future", acct: "222222222222", ts: asOf.Add(48 * time.Hour), term: 1, revoked: false},
+		{id: "t1-long-expired", acct: "333333333333", ts: asOf.AddDate(-10, 0, 0), term: 1, revoked: false},
+		{id: "t50", acct: "333333333333", ts: asOf.AddDate(-40, 0, 0), term: 50, revoked: false},
 	}
 }
 
@@ -73,7 +73,7 @@ func insertActiveHistoryRows(ctx context.Context, t *testing.T, conn *database.C
 			INSERT INTO purchase_history (account_id, purchase_id, timestamp, provider, service, region,
 			                              resource_type, term, payment, ramp_step, revoked_at)
 			VALUES ($1, $2, $3, 'aws', 'ec2', 'us-east-1', 'm5.large', $4, 'all-upfront', 0, $5)`,
-			r.account, r.id, r.ts, r.term, revokedAt)
+			r.acct, r.id, r.ts, r.term, revokedAt)
 		require.NoError(t, err, r.id)
 	}
 }

@@ -21,7 +21,7 @@ import (
 // provider, and these rows model legacy or hand-written data.
 func seedProviderVariantHistory(ctx context.Context, t *testing.T, conn *database.Connection) {
 	t.Helper()
-	rows := []struct{ purchaseID, provider, accountID string }{
+	rows := []struct{ purchaseID, provider, extID string }{
 		{"ri-lower", "aws", "111122223333"},
 		{"ri-upper", "AWS", "111122223333"},
 		{"ri-mixed", "Aws", "111122223333"},
@@ -34,7 +34,7 @@ func seedProviderVariantHistory(ctx context.Context, t *testing.T, conn *databas
 		_, err := conn.Pool().Exec(ctx, `
 			INSERT INTO purchase_history (account_id, purchase_id, timestamp, provider, service, region, resource_type, term, payment, ramp_step)
 			VALUES ($1, $2, now(), $3, 'ec2', 'us-east-1', 'm5.large', 1, 'all-upfront', 0)`,
-			r.accountID, r.purchaseID, r.provider)
+			r.extID, r.purchaseID, r.provider)
 		require.NoError(t, err, "seed %s", r.purchaseID)
 	}
 }
@@ -114,28 +114,28 @@ func seedDualColumnHistory(ctx context.Context, t *testing.T, conn *database.Con
 	})
 
 	rows := []struct {
-		cloudAccountID                  *string
-		purchaseID, provider, accountID string
+		cloudAccountID              *string
+		purchaseID, provider, extID string
 	}{
 		// UUID set, external number not in any filter: only the UUID half matches.
-		{purchaseID: "uuid-only", provider: "aws", accountID: "000000000000", cloudAccountID: &acctA},
+		{purchaseID: "uuid-only", provider: "aws", extID: "000000000000", cloudAccountID: &acctA},
 		// UUID and external both match: must come back exactly once.
-		{purchaseID: "both", provider: "aws", accountID: "111122223333", cloudAccountID: &acctA},
+		{purchaseID: "both", provider: "aws", extID: "111122223333", cloudAccountID: &acctA},
 		// NULL UUID (direct-execute / pre-000011 row): only the external half matches.
-		{purchaseID: "ext-only", provider: "aws", accountID: "111122223333", cloudAccountID: nil},
+		{purchaseID: "ext-only", provider: "aws", extID: "111122223333", cloudAccountID: nil},
 		// NULL UUID, unknown provider: matches on account_id alone (#931).
-		{purchaseID: "ext-empty-provider", provider: "", accountID: "111122223333", cloudAccountID: nil},
+		{purchaseID: "ext-empty-provider", provider: "", extID: "111122223333", cloudAccountID: nil},
 		// Same external number under another provider: must never leak into an aws filter.
-		{purchaseID: "azure-same-ext", provider: "azure", accountID: "111122223333", cloudAccountID: nil},
+		{purchaseID: "azure-same-ext", provider: "azure", extID: "111122223333", cloudAccountID: nil},
 		// Other account, by UUID and by external number.
-		{purchaseID: "other-uuid", provider: "aws", accountID: "444455556666", cloudAccountID: &acctC},
-		{purchaseID: "other-ext", provider: "aws", accountID: "444455556666", cloudAccountID: nil},
+		{purchaseID: "other-uuid", provider: "aws", extID: "444455556666", cloudAccountID: &acctC},
+		{purchaseID: "other-ext", provider: "aws", extID: "444455556666", cloudAccountID: nil},
 	}
 	for _, r := range rows {
 		_, err := conn.Exec(ctx, `
 			INSERT INTO purchase_history (account_id, purchase_id, timestamp, provider, service, region, resource_type, term, payment, ramp_step, cloud_account_id)
 			VALUES ($1, $2, now(), $3, 'ec2', 'us-east-1', 'm5.large', 1, 'all-upfront', 0, $4)`,
-			r.accountID, r.purchaseID, r.provider, r.cloudAccountID)
+			r.extID, r.purchaseID, r.provider, r.cloudAccountID)
 		require.NoError(t, err, "seed %s", r.purchaseID)
 	}
 	return acctA, acctC
