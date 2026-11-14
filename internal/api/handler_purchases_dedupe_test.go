@@ -37,22 +37,22 @@ func TestMatchDuplicateInList(t *testing.T) {
 	}
 	for _, tc := range []struct {
 		name    string
-		cand    config.PurchaseExecution
 		creator string
 		key     string
+		cand    config.PurchaseExecution
 		wantDup bool
 	}{
-		{"exact match", exec(nil), creator, key, true},
-		{"window start is inclusive", exec(func(e *config.PurchaseExecution) { e.ScheduledDate = now.Add(-purchaseIdempotencyWindow) }), creator, key, true},
-		{"before the window", exec(func(e *config.PurchaseExecution) {
+		{name: "exact match", cand: exec(nil), creator: creator, key: key, wantDup: true},
+		{name: "window start is inclusive", cand: exec(func(e *config.PurchaseExecution) { e.ScheduledDate = now.Add(-purchaseIdempotencyWindow) }), creator: creator, key: key, wantDup: true},
+		{name: "before the window", cand: exec(func(e *config.PurchaseExecution) {
 			e.ScheduledDate = now.Add(-purchaseIdempotencyWindow - time.Second)
-		}), creator, key, false},
-		{"not web-submitted", exec(func(e *config.PurchaseExecution) { e.Source = common.PurchaseSourceCLI }), creator, key, false},
-		{"other creator", exec(func(e *config.PurchaseExecution) { e.CreatedByUserID = &other }), creator, key, false},
-		{"no creator vs a creator", exec(func(e *config.PurchaseExecution) { e.CreatedByUserID = nil }), creator, key, false},
-		{"no creator on both sides", exec(func(e *config.PurchaseExecution) { e.CreatedByUserID = nil }), "", mustPurchaseIdempotencyKey("", recs, 100), true},
-		{"different capacity", exec(func(e *config.PurchaseExecution) { e.CapacityPercent = 50 }), creator, key, false},
-		{"different rec set", exec(func(e *config.PurchaseExecution) { e.Recommendations[0].Count++ }), creator, key, false},
+		}), creator: creator, key: key, wantDup: false},
+		{name: "not web-submitted", cand: exec(func(e *config.PurchaseExecution) { e.Source = common.PurchaseSourceCLI }), creator: creator, key: key, wantDup: false},
+		{name: "other creator", cand: exec(func(e *config.PurchaseExecution) { e.CreatedByUserID = &other }), creator: creator, key: key, wantDup: false},
+		{name: "no creator vs a creator", cand: exec(func(e *config.PurchaseExecution) { e.CreatedByUserID = nil }), creator: creator, key: key, wantDup: false},
+		{name: "no creator on both sides", cand: exec(func(e *config.PurchaseExecution) { e.CreatedByUserID = nil }), creator: "", key: mustPurchaseIdempotencyKey("", recs, 100), wantDup: true},
+		{name: "different capacity", cand: exec(func(e *config.PurchaseExecution) { e.CapacityPercent = 50 }), creator: creator, key: key, wantDup: false},
+		{name: "different rec set", cand: exec(func(e *config.PurchaseExecution) { e.Recommendations[0].Count++ }), creator: creator, key: key, wantDup: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

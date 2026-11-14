@@ -27,9 +27,9 @@ type fakeListingDB struct {
 	*MockConfigStore
 	// staleOnce, when set, is returned by the next GetPurchaseHistoryByPurchaseID.
 	staleOnce *config.PurchaseHistoryRecord
-	row       config.PurchaseHistoryRecord
 	token     string
 	schedule  []byte
+	row       config.PurchaseHistoryRecord
 	// failRecords makes the next N UpdatePurchaseHistoryListing calls fail.
 	failRecords int
 }

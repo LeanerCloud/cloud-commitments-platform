@@ -27,8 +27,8 @@ func TestShouldReadoptExpiredPlan_Admission(t *testing.T) {
 	recent := now.Add(-time.Hour)
 	for _, tc := range []struct {
 		global *config.GlobalConfig
-		plan   config.PurchasePlan
 		name   string
+		plan   config.PurchasePlan
 		auto   bool
 		listed bool
 		want   bool

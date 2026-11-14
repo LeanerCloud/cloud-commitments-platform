@@ -540,11 +540,11 @@ func TestAuthorizeSessionRevoke_RevokeAny_ProviderAndUUIDAuthority(t *testing.T)
 	const denied = "account you do not have access to"
 	cases := []struct {
 		listErr  error
-		rec      config.PurchaseHistoryRecord
 		name     string
 		wantErr  string
 		scope    []string
 		accounts []config.CloudAccount
+		rec      config.PurchaseHistoryRecord
 	}{
 		{name: "same external id, scope holds other provider account, aws first", scope: []string{"u-az"},
 			accounts: []config.CloudAccount{awsDev, azProd}, rec: config.PurchaseHistoryRecord{Provider: "aws", AccountID: "123"}, wantErr: denied},

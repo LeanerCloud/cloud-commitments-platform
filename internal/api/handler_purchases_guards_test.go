@@ -39,13 +39,13 @@ func TestValidatePurchaseRecommendation(t *testing.T) {
 		return r
 	}
 	tests := []struct {
-		rec  config.RecommendationRecord
 		name string
 		// wantPayment is set ONLY on rows whose input token gets rewritten: it
 		// is asserted against rec.Payment after a successful call. "" means the
 		// token was already canonical for the provider (case-only differences
 		// included).
 		wantPayment string
+		rec         config.RecommendationRecord
 		wantError   bool
 		// wantAdjustment marks the rows whose rewrite changes the BILLING
 		// SCHEDULE rather than just the spelling, and so must surface a

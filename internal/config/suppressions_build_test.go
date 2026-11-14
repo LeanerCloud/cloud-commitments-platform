@@ -281,15 +281,15 @@ func TestBuildSuppressions_LegacyShapesCanonicalised(t *testing.T) {
 			Count: 1, AvailabilityZone: field, Details: []byte(details)}
 	}
 	for name, tc := range map[string]struct {
-		rec  RecommendationRecord
 		want SuppressionVariant
+		rec  RecommendationRecord
 	}{
-		"legacy shared tenancy":   {mk("ec2", "us-east-1a", `{"platform":"Linux/UNIX","tenancy":"shared"}`), SuppressionVariant{"us-east-1a", "Linux/UNIX", "default", ""}},
-		"compute slug shared":     {mk("compute", "", `{"platform":"Linux/UNIX","tenancy":"shared"}`), SuppressionVariant{"", "Linux/UNIX", "default", ""}},
-		"AZ only in details":      {mk("ec2", "", `{"availability_zone":"us-east-1a","platform":"Linux/UNIX","tenancy":"default"}`), SuppressionVariant{"us-east-1a", "Linux/UNIX", "default", ""}},
-		"field wins over details": {mk("ec2", "us-east-1b", `{"availability_zone":"us-east-1a","platform":"Linux/UNIX","tenancy":"default"}`), SuppressionVariant{"us-east-1b", "Linux/UNIX", "default", ""}},
-		"modern rec unchanged":    {mk("ec2", "us-east-1a", `{"availability_zone":"us-east-1a","platform":"Linux/UNIX","tenancy":"dedicated"}`), SuppressionVariant{"us-east-1a", "Linux/UNIX", "dedicated", ""}},
-		"non-EC2 untouched":       {RecommendationRecord{Provider: "aws", Service: "rds", Region: "r", ResourceType: "db", Count: 1, Details: []byte(`{"availability_zone":"us-east-1a","tenancy":"shared"}`)}, SuppressionVariant{"", "", "shared", ""}},
+		"legacy shared tenancy":   {rec: mk("ec2", "us-east-1a", `{"platform":"Linux/UNIX","tenancy":"shared"}`), want: SuppressionVariant{"us-east-1a", "Linux/UNIX", "default", ""}},
+		"compute slug shared":     {rec: mk("compute", "", `{"platform":"Linux/UNIX","tenancy":"shared"}`), want: SuppressionVariant{"", "Linux/UNIX", "default", ""}},
+		"AZ only in details":      {rec: mk("ec2", "", `{"availability_zone":"us-east-1a","platform":"Linux/UNIX","tenancy":"default"}`), want: SuppressionVariant{"us-east-1a", "Linux/UNIX", "default", ""}},
+		"field wins over details": {rec: mk("ec2", "us-east-1b", `{"availability_zone":"us-east-1a","platform":"Linux/UNIX","tenancy":"default"}`), want: SuppressionVariant{"us-east-1b", "Linux/UNIX", "default", ""}},
+		"modern rec unchanged":    {rec: mk("ec2", "us-east-1a", `{"availability_zone":"us-east-1a","platform":"Linux/UNIX","tenancy":"dedicated"}`), want: SuppressionVariant{"us-east-1a", "Linux/UNIX", "dedicated", ""}},
+		"non-EC2 untouched":       {rec: RecommendationRecord{Provider: "aws", Service: "rds", Region: "r", ResourceType: "db", Count: 1, Details: []byte(`{"availability_zone":"us-east-1a","tenancy":"shared"}`)}, want: SuppressionVariant{"", "", "shared", ""}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			sups := BuildSuppressions([]RecommendationRecord{tc.rec}, "exec-1", &GlobalConfig{}, time.Now())

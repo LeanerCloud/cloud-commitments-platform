@@ -650,9 +650,9 @@ func TestServiceConfig_Validate(t *testing.T) {
 
 func TestRampSchedule_Validate(t *testing.T) {
 	tests := []struct {
-		sched   RampSchedule
 		name    string
 		errMsg  string
+		sched   RampSchedule
 		wantErr bool
 	}{
 		{
@@ -825,9 +825,9 @@ func TestRampSchedule_Validate(t *testing.T) {
 
 func TestPurchasePlan_Validate(t *testing.T) {
 	tests := []struct {
-		plan    PurchasePlan
 		name    string
 		errMsg  string
+		plan    PurchasePlan
 		wantErr bool
 	}{
 		{

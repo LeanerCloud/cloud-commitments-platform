@@ -1117,17 +1117,17 @@ func TestHandler_executePurchase_EmptyIDDiscriminatorMismatchesRefused(t *testin
 	}
 	cases := []struct {
 		name   string
-		stored config.RecommendationRecord
 		rec    string
 		field  string
+		stored config.RecommendationRecord
 	}{
-		{"platform", ec2(full), ec2Rec(`{"platform":"Windows"}`), "platform"},
-		{"scope", ec2(full), ec2Rec(`{"platform":"Linux/UNIX","tenancy":"default","scope":"availability-zone"}`), "scope"},
-		{"memory_gb", ec2(full), ec2Rec(`{"platform":"Linux/UNIX","tenancy":"default","memory_gb":32}`), "memory_gb"},
-		{"legacy stored row with empty details", ec2(``), ec2Rec(`{"tenancy":"dedicated"}`), "tenancy"},
-		{"rds az_config", rdsStored,
-			`{"id":"","provider":"aws","service":"rds","region":"us-east-1","resource_type":"db.m5.large","engine":"postgres","count":1,"term":1,"payment":"all-upfront","upfront_cost":1200,"savings":100,"details":{"az_config":"single-az"}}`,
-			"az_config"},
+		{name: "platform", stored: ec2(full), rec: ec2Rec(`{"platform":"Windows"}`), field: "platform"},
+		{name: "scope", stored: ec2(full), rec: ec2Rec(`{"platform":"Linux/UNIX","tenancy":"default","scope":"availability-zone"}`), field: "scope"},
+		{name: "memory_gb", stored: ec2(full), rec: ec2Rec(`{"platform":"Linux/UNIX","tenancy":"default","memory_gb":32}`), field: "memory_gb"},
+		{name: "legacy stored row with empty details", stored: ec2(``), rec: ec2Rec(`{"tenancy":"dedicated"}`), field: "tenancy"},
+		{name: "rds az_config", stored: rdsStored,
+			rec:   `{"id":"","provider":"aws","service":"rds","region":"us-east-1","resource_type":"db.m5.large","engine":"postgres","count":1,"term":1,"payment":"all-upfront","upfront_cost":1200,"savings":100,"details":{"az_config":"single-az"}}`,
+			field: "az_config"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

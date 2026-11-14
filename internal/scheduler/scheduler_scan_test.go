@@ -44,8 +44,8 @@ func (m *scanStore) ListStoredRecommendationsChunk(_ context.Context, _ config.R
 		return config.RecommendationChunk{}, m.chunkErr
 	}
 	type row struct {
-		rec config.RecommendationRecord
 		key config.RecommendationScanKey
+		rec config.RecommendationRecord
 	}
 	rows := make([]row, len(m.recs))
 	for i := range m.recs {

@@ -53,8 +53,8 @@ func (k HistoryPageKey) SortsBefore(o HistoryPageKey) bool {
 // for rows that share a timestamp, which purchase_id cannot be because legacy
 // rows may repeat it (migration 000108).
 type PurchaseHistoryPageRow struct {
-	PurchaseHistoryRecord
 	RowID string
+	PurchaseHistoryRecord
 }
 
 // Key returns the row's position in the History stream.

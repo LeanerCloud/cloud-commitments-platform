@@ -126,8 +126,8 @@ func TestCollectProvider_RegisteredAccountPartialSweep(t *testing.T) {
 	for _, tc := range []struct {
 		partialErr error
 		collect    func(*Scheduler) ([]config.RecommendationRecord, []string, *sweepGap, error)
-		account    config.CloudAccount
 		provider   string
+		account    config.CloudAccount
 	}{
 		{
 			provider: "aws",

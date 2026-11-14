@@ -123,8 +123,8 @@ func (m *mockAnalyticsStore) Close() error {
 // other config.StoreInterface method is promoted from the shared mock, so a new
 // store method needs a stub in internal/mocks only, not here as well (issue #76).
 type mockConfigStore struct {
-	mocks.MockConfigStore
 	getActivePurchaseHistoryFunc func(ctx context.Context, asOf time.Time, accountIDs []string, externalIDsByProvider map[string][]string) ([]config.PurchaseHistoryRecord, error)
+	mocks.MockConfigStore
 }
 
 func (m *mockConfigStore) GetActivePurchaseHistory(ctx context.Context, asOf time.Time, accountIDs []string, externalIDsByProvider map[string][]string) ([]config.PurchaseHistoryRecord, error) {

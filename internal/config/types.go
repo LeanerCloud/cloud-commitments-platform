@@ -243,22 +243,22 @@ type ServiceConfig struct {
 
 // PurchasePlan represents a saved purchase plan for automated execution.
 type PurchasePlan struct {
-	CreatedAt time.Time `json:"created_at" dynamodbav:"created_at"`
-	UpdatedAt time.Time `json:"updated_at" dynamodbav:"updated_at"`
+	CreatedAt            time.Time                `json:"created_at" dynamodbav:"created_at"`
+	UpdatedAt            time.Time                `json:"updated_at" dynamodbav:"updated_at"`
+	Services             map[string]ServiceConfig `json:"services" dynamodbav:"services"`
+	LastNotificationSent *time.Time               `json:"last_notification_sent,omitempty" dynamodbav:"last_notification_sent,omitempty"`
+	LastExecutionDate    *time.Time               `json:"last_execution_date,omitempty" dynamodbav:"last_execution_date,omitempty"`
+	NextExecutionDate    *time.Time               `json:"next_execution_date,omitempty" dynamodbav:"next_execution_date,omitempty"`
 	// MaxStepCommitment caps the TOTAL commitment (RecommendationRecord.TotalCommitment)
 	// one ramp step may auto-purchase. nil means no cap is set, and auto-purchase of
 	// recommendation-bearing steps is refused (fail closed). Always > 0 when set.
-	MaxStepCommitment      *float64                 `json:"max_step_commitment,omitempty" dynamodbav:"max_step_commitment,omitempty"`
-	LastNotificationSent   *time.Time               `json:"last_notification_sent,omitempty" dynamodbav:"last_notification_sent,omitempty"`
-	LastExecutionDate      *time.Time               `json:"last_execution_date,omitempty" dynamodbav:"last_execution_date,omitempty"`
-	NextExecutionDate      *time.Time               `json:"next_execution_date,omitempty" dynamodbav:"next_execution_date,omitempty"`
-	Services               map[string]ServiceConfig `json:"services" dynamodbav:"services"`
-	RampSchedule           RampSchedule             `json:"ramp_schedule" dynamodbav:"ramp_schedule"`
-	ID                     string                   `json:"id" dynamodbav:"id"`
-	Name                   string                   `json:"name" dynamodbav:"name"`
-	NotificationDaysBefore int                      `json:"notification_days_before" dynamodbav:"notification_days_before"`
-	AutoPurchase           bool                     `json:"auto_purchase" dynamodbav:"auto_purchase"`
-	Enabled                bool                     `json:"enabled" dynamodbav:"enabled"`
+	MaxStepCommitment      *float64     `json:"max_step_commitment,omitempty" dynamodbav:"max_step_commitment,omitempty"`
+	ID                     string       `json:"id" dynamodbav:"id"`
+	Name                   string       `json:"name" dynamodbav:"name"`
+	RampSchedule           RampSchedule `json:"ramp_schedule" dynamodbav:"ramp_schedule"`
+	NotificationDaysBefore int          `json:"notification_days_before" dynamodbav:"notification_days_before"`
+	AutoPurchase           bool         `json:"auto_purchase" dynamodbav:"auto_purchase"`
+	Enabled                bool         `json:"enabled" dynamodbav:"enabled"`
 	// Unassigned is true when the plan has zero rows in plan_accounts.
 	// This can happen for legacy plans created before target_accounts was
 	// required (issue #743). Such plans are invisible when an account filter

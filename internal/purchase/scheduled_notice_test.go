@@ -13,8 +13,8 @@ import (
 )
 
 type fakeScheduledNotifier struct {
-	got email.NotificationData
 	err error
+	got email.NotificationData
 }
 
 func (f *fakeScheduledNotifier) SendPurchaseScheduledNotification(_ context.Context, d email.NotificationData) error {

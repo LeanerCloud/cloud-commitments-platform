@@ -13,9 +13,9 @@ import (
 // LadderBuildInput is everything a builder may read. Evidence fields for
 // later instruments are added here, so builder signatures never change.
 type LadderBuildInput struct {
-	Tranche        config.LadderTrancheDB // read-only; Build never mutates it.
 	CloudAccountID string                 // cloud_accounts.id, not the 12-digit number.
 	Region         string                 // deployment region.
+	Tranche        config.LadderTrancheDB // read-only; Build never mutates it.
 }
 
 // LadderInstrumentBuilder turns one claimed tranche into the records to buy.

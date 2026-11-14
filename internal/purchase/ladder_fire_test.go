@@ -17,22 +17,22 @@ import (
 // fakeFireStore is a LadderFireStore whose claim runs the create callback on
 // the first claimTake due rows (all when negative).
 type fakeFireStore struct {
-	globalErr     error
 	stampErr      error
 	ceilingErr    error
+	globalErr     error
 	claimErrFor   map[string]error
 	ceiling       *int64
 	rows          map[string][]config.LadderDueRow
-	settle        settleFake
 	acctExt       string
-	claimedFor    []string
-	globals       []*config.GlobalConfig // popped per GetGlobalConfig call, the last one sticks.
 	stampExpected []string
+	saved         []*config.PurchaseExecution
+	globals       []*config.GlobalConfig // popped per GetGlobalConfig call, the last one sticks.
+	claimedFor    []string
 	configs       []config.LadderConfigDB
 	listLayers    []ladder.LayerType
 	stamped       []*config.PurchaseExecution
-	saved         []*config.PurchaseExecution
 	filter        config.LadderClaimFilter
+	settle        settleFake
 	listCalls     int
 	claimLimit    int
 	claimTake     int

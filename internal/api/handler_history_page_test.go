@@ -31,8 +31,8 @@ func pageUUID(group, i int) string {
 // streamFixture is one paged-stream row of a test fixture: its key and the
 // purchase_id the response carries for it.
 type streamFixture struct {
-	key config.HistoryPageKey
 	id  string
+	key config.HistoryPageKey
 }
 
 func purchaseFixture(id, account string, ts time.Time, rowID string) (config.PurchaseHistoryPageRow, streamFixture) {

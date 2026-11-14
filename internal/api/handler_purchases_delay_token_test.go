@@ -43,13 +43,13 @@ func TestHandleRequest_ApproveViaToken_DelayConfigured_ValidatesToken(t *testing
 
 	cases := []struct {
 		name  string
-		exec  config.PurchaseExecution
 		token string
+		exec  config.PurchaseExecution
 		want  int
 	}{
-		{"wrong token", config.PurchaseExecution{Status: "pending", ApprovalToken: hash, ApprovalTokenExpiresAt: &future}, "WRONG", 403},
-		{"expired token", config.PurchaseExecution{Status: "pending", ApprovalToken: hash, ApprovalTokenExpiresAt: &past}, tokenErrRawToken, 410},
-		{"execution without a stored token", config.PurchaseExecution{Status: "pending", ApprovalTokenExpiresAt: &future}, tokenErrRawToken, 403},
+		{name: "wrong token", exec: config.PurchaseExecution{Status: "pending", ApprovalToken: hash, ApprovalTokenExpiresAt: &future}, token: "WRONG", want: 403},
+		{name: "expired token", exec: config.PurchaseExecution{Status: "pending", ApprovalToken: hash, ApprovalTokenExpiresAt: &past}, token: tokenErrRawToken, want: 410},
+		{name: "execution without a stored token", exec: config.PurchaseExecution{Status: "pending", ApprovalTokenExpiresAt: &future}, token: tokenErrRawToken, want: 403},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

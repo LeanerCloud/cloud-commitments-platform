@@ -515,9 +515,9 @@ type PlansResponse struct {
 // badge. Any concrete default would be a fabricated number an operator
 // could not tell apart from a measured one.
 type PlanWithHealth struct {
-	config.PurchasePlan
 	HealthScore   *int               `json:"health_score"`
 	HealthFactors []PlanHealthFactor `json:"health_factors,omitempty"`
+	config.PurchasePlan
 }
 
 // CurrentUserResponse holds the current user response.
@@ -1022,12 +1022,12 @@ type CreatePlannedPurchasesResponse struct {
 type HistoryResponse struct {
 	// NextCursor is the opaque position after the last paged row of this
 	// response, set only when HasMore is true.
-	NextCursor string `json:"next_cursor,omitempty"`
+	NextCursor string                         `json:"next_cursor,omitempty"`
+	Purchases  []config.PurchaseHistoryRecord `json:"purchases"`
 	// Summary covers every row matching the request's filters and the caller's
 	// account scope, including rows beyond the row caps (issue #675), unless
 	// SummaryComplete is false.
-	Summary   HistorySummary                 `json:"summary"`
-	Purchases []config.PurchaseHistoryRecord `json:"purchases"`
+	Summary HistorySummary `json:"summary"`
 	// Limit is the page size: the most completed purchase_history rows and
 	// terminal executions (failed, expired, canceled, ...) together that one
 	// response lists (issue #674).

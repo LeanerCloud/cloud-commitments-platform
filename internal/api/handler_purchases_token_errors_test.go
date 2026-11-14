@@ -98,22 +98,22 @@ func TestHandleRequest_TokenActions_TokenAndStatusErrorsAre4xx(t *testing.T) {
 	cases := []struct {
 		name   string
 		action string
-		exec   config.PurchaseExecution
 		token  string
+		exec   config.PurchaseExecution
 		want   int
 	}{
-		{"approve invalid token", "approve", config.PurchaseExecution{Status: "pending", ApprovalToken: hash, ApprovalTokenExpiresAt: &future}, "wrong", 403},
-		{"approve expired token", "approve", config.PurchaseExecution{Status: "pending", ApprovalToken: hash, ApprovalTokenExpiresAt: &past}, tokenErrRawToken, 410},
-		{"cancel invalid token", "cancel", config.PurchaseExecution{Status: "pending", ApprovalToken: hash, ApprovalTokenExpiresAt: &future}, "wrong", 403},
-		{"cancel expired token", "cancel", config.PurchaseExecution{Status: "pending", ApprovalToken: hash, ApprovalTokenExpiresAt: &past}, tokenErrRawToken, 410},
-		{"cancel non-cancelable status", "cancel", config.PurchaseExecution{Status: "completed", ApprovalToken: hash, ApprovalTokenExpiresAt: &future}, tokenErrRawToken, 409},
+		{name: "approve invalid token", action: "approve", exec: config.PurchaseExecution{Status: "pending", ApprovalToken: hash, ApprovalTokenExpiresAt: &future}, token: "wrong", want: 403},
+		{name: "approve expired token", action: "approve", exec: config.PurchaseExecution{Status: "pending", ApprovalToken: hash, ApprovalTokenExpiresAt: &past}, token: tokenErrRawToken, want: 410},
+		{name: "cancel invalid token", action: "cancel", exec: config.PurchaseExecution{Status: "pending", ApprovalToken: hash, ApprovalTokenExpiresAt: &future}, token: "wrong", want: 403},
+		{name: "cancel expired token", action: "cancel", exec: config.PurchaseExecution{Status: "pending", ApprovalToken: hash, ApprovalTokenExpiresAt: &past}, token: tokenErrRawToken, want: 410},
+		{name: "cancel non-cancelable status", action: "cancel", exec: config.PurchaseExecution{Status: "completed", ApprovalToken: hash, ApprovalTokenExpiresAt: &future}, token: tokenErrRawToken, want: 409},
 		// Issue #587: revoke uses the same mapping as approve and cancel, and
 		// the token is matched before its expiry is read.
-		{"approve wrong token on an expired link", "approve", config.PurchaseExecution{Status: "pending", ApprovalToken: hash, ApprovalTokenExpiresAt: &past}, "wrong", 403},
-		{"revoke invalid token", "revoke", config.PurchaseExecution{Status: "completed", ApprovalToken: hash, ApprovalTokenExpiresAt: &future}, "wrong", 403},
-		{"revoke expired token", "revoke", config.PurchaseExecution{Status: "completed", ApprovalToken: hash, ApprovalTokenExpiresAt: &past}, tokenErrRawToken, 410},
-		{"revoke wrong token on an expired link", "revoke", config.PurchaseExecution{Status: "completed", ApprovalToken: hash, ApprovalTokenExpiresAt: &past}, "wrong", 403},
-		{"revoke non-revocable status", "revoke", config.PurchaseExecution{Status: "pending", ApprovalToken: hash, ApprovalTokenExpiresAt: &future}, tokenErrRawToken, 409},
+		{name: "approve wrong token on an expired link", action: "approve", exec: config.PurchaseExecution{Status: "pending", ApprovalToken: hash, ApprovalTokenExpiresAt: &past}, token: "wrong", want: 403},
+		{name: "revoke invalid token", action: "revoke", exec: config.PurchaseExecution{Status: "completed", ApprovalToken: hash, ApprovalTokenExpiresAt: &future}, token: "wrong", want: 403},
+		{name: "revoke expired token", action: "revoke", exec: config.PurchaseExecution{Status: "completed", ApprovalToken: hash, ApprovalTokenExpiresAt: &past}, token: tokenErrRawToken, want: 410},
+		{name: "revoke wrong token on an expired link", action: "revoke", exec: config.PurchaseExecution{Status: "completed", ApprovalToken: hash, ApprovalTokenExpiresAt: &past}, token: "wrong", want: 403},
+		{name: "revoke non-revocable status", action: "revoke", exec: config.PurchaseExecution{Status: "pending", ApprovalToken: hash, ApprovalTokenExpiresAt: &future}, token: tokenErrRawToken, want: 409},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -212,10 +212,10 @@ func TestHandleRequest_RevokeViaEmail_WrongTokenOnLapsedRowIsInvalid(t *testing.
 	longAgo := time.Now().Add(-2 * config.RevocationWindow)
 	hash := config.HashApprovalToken(tokenErrRawToken)
 	cases := []struct {
-		exec      config.PurchaseExecution
 		name      string
 		token     string
 		wantInMsg string
+		exec      config.PurchaseExecution
 		want      int
 	}{
 		{name: "wrong token on an expired link", exec: config.PurchaseExecution{Status: "completed", ApprovalToken: hash, ApprovalTokenExpiresAt: &past}, token: "wrong", want: 403, wantInMsg: "invalid revocation token"},

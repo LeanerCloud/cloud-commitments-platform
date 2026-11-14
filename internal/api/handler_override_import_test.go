@@ -270,14 +270,14 @@ func TestImportOverrides_StoreFailureRollsBackEveryWrite(t *testing.T) {
 func TestImportOverrides_RejectsValuesOutsideColumnBounds(t *testing.T) {
 	t.Parallel()
 	cases := map[string]struct {
-		row  OverrideTransferRow
 		want string
+		row  OverrideTransferRow
 	}{
-		"ramp too long":      {OverrideTransferRow{RampSchedule: ptr(strings.Repeat("é", 33))}, "ramp_schedule is 33 characters"},
-		"ramp control char":  {OverrideTransferRow{RampSchedule: ptr("weekly\n")}, "ramp_schedule must not contain control characters"},
-		"coverage precision": {OverrideTransferRow{Coverage: ptr(33.333)}, "coverage must have at most 2 decimal places"},
-		"list NUL":           {OverrideTransferRow{IncludeTypes: []string{"m5\x00"}}, "include_types must not contain control characters"},
-		"list tab":           {OverrideTransferRow{ExcludeRegions: []string{"\tus-east-1"}}, "exclude_regions must not contain control characters"},
+		"ramp too long":      {row: OverrideTransferRow{RampSchedule: ptr(strings.Repeat("é", 33))}, want: "ramp_schedule is 33 characters"},
+		"ramp control char":  {row: OverrideTransferRow{RampSchedule: ptr("weekly\n")}, want: "ramp_schedule must not contain control characters"},
+		"coverage precision": {row: OverrideTransferRow{Coverage: ptr(33.333)}, want: "coverage must have at most 2 decimal places"},
+		"list NUL":           {row: OverrideTransferRow{IncludeTypes: []string{"m5\x00"}}, want: "include_types must not contain control characters"},
+		"list tab":           {row: OverrideTransferRow{ExcludeRegions: []string{"\tus-east-1"}}, want: "exclude_regions must not contain control characters"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

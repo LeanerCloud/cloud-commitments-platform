@@ -21,22 +21,22 @@ const historyExecutionsPredicate = `status = ANY($1)
 
 // HistorySummaryFilter selects the rows HistorySummaryAggregate counts.
 type HistorySummaryFilter struct {
-	// History selects purchase_history rows with exactly the predicate
-	// GetPurchaseHistoryFiltered applies (purchaseHistoryFilterWhere). Limit is
-	// ignored: the aggregate covers every matching row.
-	History PurchaseHistoryFilter
-	// ExecutionStatuses selects purchase_executions rows with exactly the
-	// predicate GetExecutionsByStatuses applies (historyExecutionsPredicate).
-	// Empty skips the executions half.
-	ExecutionStatuses []string
 	// ExecutionStart/ExecutionEnd bound purchase_executions.scheduled_date,
 	// inclusive on both sides like the History handler's in-memory date check.
 	// nil leaves that side open.
 	ExecutionStart *time.Time
 	ExecutionEnd   *time.Time
+	// ExecutionStatuses selects purchase_executions rows with exactly the
+	// predicate GetExecutionsByStatuses applies (historyExecutionsPredicate).
+	// Empty skips the executions half.
+	ExecutionStatuses []string
 	// ExecutionDateExemptStatuses are not bounded by ExecutionStart/End: the
 	// History row path never date-filters actionable executions (#1685).
 	ExecutionDateExemptStatuses []string
+	// History selects purchase_history rows with exactly the predicate
+	// GetPurchaseHistoryFiltered applies (purchaseHistoryFilterWhere). Limit is
+	// ignored: the aggregate covers every matching row.
+	History PurchaseHistoryFilter
 }
 
 // HistorySummaryGroups is the result of HistorySummaryAggregate: row counts and

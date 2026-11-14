@@ -2176,9 +2176,9 @@ func TestExecutionToHistoryRow_RedriveUnsafe(t *testing.T) {
 	}
 	const persistent = "FROM_EMAIL not configured"
 	tests := []struct {
-		exec       config.PurchaseExecution
 		name       string
 		wantHint   string
+		exec       config.PurchaseExecution
 		wantUnsafe bool
 	}{
 		{name: "azure savings plans", exec: failed("azure", "savingsplans", "boom"), wantUnsafe: true, wantHint: ""},
@@ -2217,18 +2217,18 @@ func TestExecutionToHistoryRow_RedshiftHistoryHintUsesAppClock(t *testing.T) {
 	}
 	tests := []struct {
 		name       string
-		exec       config.PurchaseExecution
 		wantReason string
+		exec       config.PurchaseExecution
 	}{
-		{"stampless legacy failed row", row("failed", 1, false, nil, "boom"), "no first dispatch time recorded"},
-		{"stampless attempt 0 that sent", row("failed", 0, false, nil, "boom"), "no first dispatch time recorded"},
-		{"legacy armed refusal row", row("failed", 1, false, nil, legacyArmedRefusal), "no first dispatch time recorded"},
-		{"past the 24h horizon", row("failed", 1, false, stampedAgo(25*time.Hour), "boom"), "at least 24h ago"},
-		{"inside the horizon stays retryable", row("failed", 1, false, stampedAgo(time.Hour), "boom"), ""},
-		{"never submitted attempt 0 skips the stamp rules", row("failed", 0, true, nil, "boom"), ""},
-		{"never submitted attempt 0 past the horizon", row("failed", 0, true, stampedAgo(48*time.Hour), "boom"), ""},
-		{"failure-reason hint kept inside the horizon", row("failed", 1, false, stampedAgo(time.Hour), "FROM_EMAIL not configured"), ""},
-		{"pending row gets no hint", row("pending", 1, false, nil, ""), ""},
+		{name: "stampless legacy failed row", exec: row("failed", 1, false, nil, "boom"), wantReason: "no first dispatch time recorded"},
+		{name: "stampless attempt 0 that sent", exec: row("failed", 0, false, nil, "boom"), wantReason: "no first dispatch time recorded"},
+		{name: "legacy armed refusal row", exec: row("failed", 1, false, nil, legacyArmedRefusal), wantReason: "no first dispatch time recorded"},
+		{name: "past the 24h horizon", exec: row("failed", 1, false, stampedAgo(25*time.Hour), "boom"), wantReason: "at least 24h ago"},
+		{name: "inside the horizon stays retryable", exec: row("failed", 1, false, stampedAgo(time.Hour), "boom"), wantReason: ""},
+		{name: "never submitted attempt 0 skips the stamp rules", exec: row("failed", 0, true, nil, "boom"), wantReason: ""},
+		{name: "never submitted attempt 0 past the horizon", exec: row("failed", 0, true, stampedAgo(48*time.Hour), "boom"), wantReason: ""},
+		{name: "failure-reason hint kept inside the horizon", exec: row("failed", 1, false, stampedAgo(time.Hour), "FROM_EMAIL not configured"), wantReason: ""},
+		{name: "pending row gets no hint", exec: row("pending", 1, false, nil, ""), wantReason: ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

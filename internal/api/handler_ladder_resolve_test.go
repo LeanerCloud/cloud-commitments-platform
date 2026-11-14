@@ -25,8 +25,8 @@ type resolveTestStore struct {
 	err error
 	*MockConfigStore
 	res     *config.LadderResolveResult
-	got     config.LadderResolveFailed
 	account string
+	got     config.LadderResolveFailed
 	called  int
 }
 

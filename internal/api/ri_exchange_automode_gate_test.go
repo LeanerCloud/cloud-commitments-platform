@@ -244,8 +244,8 @@ func TestRIExchangeAutoModeGate(t *testing.T) {
 	tests := []struct {
 		name        string
 		mode        string
-		stored      config.GlobalConfig
 		perms       []auth.Permission
+		stored      config.GlobalConfig
 		perExchange float64
 		daily       float64
 		enabled     bool

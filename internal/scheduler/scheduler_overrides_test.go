@@ -16,12 +16,12 @@ import (
 // override path touches. Mirrors the pattern used by mockSuppressionStore
 // in scheduler_suppressions_test.go to keep tests self-contained.
 type mockOverrideStore struct {
-	MockConfigStore
 	getGlobalErr   error
 	getOverrideErr error
 	globals        map[string]*config.ServiceConfig
 	overrides      map[string]*config.AccountServiceOverride
 	recs           []config.RecommendationRecord
+	MockConfigStore
 }
 
 func (m *mockOverrideStore) ListStoredRecommendations(_ context.Context, filter config.RecommendationFilter) ([]config.RecommendationRecord, error) {

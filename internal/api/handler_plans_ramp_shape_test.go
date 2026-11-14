@@ -55,10 +55,10 @@ func TestUpdatePlan_RampShapeChange(t *testing.T) {
 	custom30 := config.RampSchedule{Type: "custom", PercentPerStep: 30, StepIntervalDays: 7, TotalSteps: 3}
 
 	tests := []struct {
-		stored     config.RampSchedule
 		name       string
 		body       string
 		wantType   string
+		stored     config.RampSchedule
 		step       int
 		wantStatus int
 		wantStep   int
@@ -109,9 +109,9 @@ func TestUpdatePlan_EquivalentCustomRampKeepsStoredSchedule(t *testing.T) {
 	custom25 := config.RampSchedule{Type: "custom", PercentPerStep: 25, StepIntervalDays: 7, TotalSteps: 4}
 
 	tests := []struct {
-		stored config.RampSchedule
 		name   string
 		body   string
+		stored config.RampSchedule
 		step   int
 	}{
 		{name: "in-progress weekly 20%, renamed via custom", stored: weekly20, step: 3,
@@ -162,19 +162,19 @@ func TestUpdatePlan_RealRampChangeOnNonPresetStillRefused(t *testing.T) {
 
 	tests := []struct {
 		name   string
-		stored config.RampSchedule
 		body   string
+		stored config.RampSchedule
 	}{
-		{"different percent and step count", weekly20,
-			`{"name":"p","ramp_schedule":"custom","custom_step_percent":25,"custom_interval_days":7}`},
-		{"different interval", weekly20,
-			`{"name":"p","ramp_schedule":"custom","custom_step_percent":20,"custom_interval_days":14}`},
-		{"different percent, same step count", weekly30,
-			`{"name":"p","ramp_schedule":"custom","custom_step_percent":33,"custom_interval_days":7}`},
-		{"weekly to immediate", weekly20, `{"name":"p","ramp_schedule":"immediate"}`},
-		{"immediate to custom 100%", immediate,
-			`{"name":"p","ramp_schedule":"custom","custom_step_percent":100,"custom_interval_days":1}`},
-		{"custom 100% to immediate", custom100, `{"name":"p","ramp_schedule":"immediate"}`},
+		{name: "different percent and step count", stored: weekly20,
+			body: `{"name":"p","ramp_schedule":"custom","custom_step_percent":25,"custom_interval_days":7}`},
+		{name: "different interval", stored: weekly20,
+			body: `{"name":"p","ramp_schedule":"custom","custom_step_percent":20,"custom_interval_days":14}`},
+		{name: "different percent, same step count", stored: weekly30,
+			body: `{"name":"p","ramp_schedule":"custom","custom_step_percent":33,"custom_interval_days":7}`},
+		{name: "weekly to immediate", stored: weekly20, body: `{"name":"p","ramp_schedule":"immediate"}`},
+		{name: "immediate to custom 100%", stored: immediate,
+			body: `{"name":"p","ramp_schedule":"custom","custom_step_percent":100,"custom_interval_days":1}`},
+		{name: "custom 100% to immediate", stored: custom100, body: `{"name":"p","ramp_schedule":"immediate"}`},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -203,10 +203,10 @@ func TestUpdatePlan_OmittedRampSchedule(t *testing.T) {
 	partialOneStep := config.RampSchedule{Type: "custom", PercentPerStep: 60, StepIntervalDays: 7, TotalSteps: 1}
 
 	tests := []struct {
-		stored     config.RampSchedule
 		name       string
 		body       string
 		wantType   string
+		stored     config.RampSchedule
 		wantStatus int
 	}{
 		{name: "omitted over a stored weekly ramp is refused", stored: weekly, body: `{"name":"renamed"}`, wantStatus: 409, wantType: ""},

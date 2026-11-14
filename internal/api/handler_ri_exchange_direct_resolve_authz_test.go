@@ -15,19 +15,19 @@ func TestResolveRIExchangeDirect_Authorization(t *testing.T) {
 	unattributed := dlRow(dlID2, nil, drRegion, "unknown", 3)
 	tests := []struct {
 		name   string
-		caller drCaller
 		id     string
+		caller drCaller
 		want   int // 0 = allowed
 	}{
-		{"execute:ri-exchange, unrestricted", drCaller{perms: riExecute}, dlID1, 0},
-		{"view-only user", drCaller{perms: []auth.Permission{{Action: auth.ActionView, Resource: auth.ResourcePurchases}}}, dlID1, 403},
-		{"admin API key has no identity to stamp", drCaller{adminKey: true}, dlID1, 403},
-		{"row account inside the session's accounts", drCaller{perms: riExecute, accounts: []string{dlAcctA}}, dlID1, 0},
-		{"row account outside the session's accounts reads as missing", drCaller{perms: riExecute, accounts: []string{dlAcctB}}, dlID1, 404},
-		{"unattributed row needs an unrestricted session", drCaller{perms: riExecute, accounts: []string{dlAcctA}}, dlID2, 404},
-		{"unattributed row, unrestricted session", drCaller{perms: riExecute}, dlID2, 0},
-		{"unknown id", drCaller{perms: riExecute}, dlID3, 404},
-		{"id that is not a uuid", drCaller{perms: riExecute}, "not-a-uuid", 400},
+		{name: "execute:ri-exchange, unrestricted", caller: drCaller{perms: riExecute}, id: dlID1, want: 0},
+		{name: "view-only user", caller: drCaller{perms: []auth.Permission{{Action: auth.ActionView, Resource: auth.ResourcePurchases}}}, id: dlID1, want: 403},
+		{name: "admin API key has no identity to stamp", caller: drCaller{adminKey: true}, id: dlID1, want: 403},
+		{name: "row account inside the session's accounts", caller: drCaller{perms: riExecute, accounts: []string{dlAcctA}}, id: dlID1, want: 0},
+		{name: "row account outside the session's accounts reads as missing", caller: drCaller{perms: riExecute, accounts: []string{dlAcctB}}, id: dlID1, want: 404},
+		{name: "unattributed row needs an unrestricted session", caller: drCaller{perms: riExecute, accounts: []string{dlAcctA}}, id: dlID2, want: 404},
+		{name: "unattributed row, unrestricted session", caller: drCaller{perms: riExecute}, id: dlID2, want: 0},
+		{name: "unknown id", caller: drCaller{perms: riExecute}, id: dlID3, want: 404},
+		{name: "id that is not a uuid", caller: drCaller{perms: riExecute}, id: "not-a-uuid", want: 400},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

@@ -29,8 +29,8 @@ func (f fakeSource) ListRecommendationsStrict(context.Context, config.Recommenda
 type fakeStore struct {
 	listErr   error
 	globalErr error
-	global    config.GlobalConfig
 	rows      []config.RecommendationRecord
+	global    config.GlobalConfig
 }
 
 func (f fakeStore) ListStoredRecommendations(context.Context, config.RecommendationFilter) ([]config.RecommendationRecord, error) {

@@ -951,15 +951,15 @@ func TestExecuteRIExchangeReshape_DailyCapHitMidRun(t *testing.T) {
 // --- Mock types ---
 
 type mockConfigStoreForExchange struct {
-	mockConfigStoreForHealth  // embed base mock for unused methods
-	globalConfig              *config.GlobalConfig
 	globalConfigErr           error
+	globalConfig              *config.GlobalConfig
 	saveRIExchangeRecordFunc  func(ctx context.Context, record *config.RIExchangeRecord) error
 	reserveRIExchangeFunc     func(ctx context.Context, record *config.RIExchangeRecord, dailyCapUSD, perExchangeCapUSD string) (string, error)
 	completeWithPaymentFunc   func(ctx context.Context, id, exchangeID, acceptedPaymentDue string) error
 	cancelAllPendingFunc      func(ctx context.Context) (int64, error)
 	cancelPendingByOriginFunc func(ctx context.Context, origin common.ExchangeOrigin) (int64, error)
 	getDailySpendFunc         func(ctx context.Context, date time.Time) (string, error)
+	mockConfigStoreForHealth  // embed base mock for unused methods
 }
 
 func (m *mockConfigStoreForExchange) GetGlobalConfig(ctx context.Context) (*config.GlobalConfig, error) {

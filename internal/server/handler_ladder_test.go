@@ -119,14 +119,13 @@ func (f *fakeLadderCapability) ReshapeBuffer(_ context.Context, _ pkgladder.Scop
 // Capture fields (saveLadderRunFn, saveLadderTranchesFn) let individual tests
 // assert on what was persisted without importing a testify mock.
 type ladderTestStore struct {
-	mockConfigStoreForHealth
+	inFlightErr           error
 	latestRunAtErr        error
 	globalCfgErr          error
 	saveLadderTranchesErr error
 	ladderConfigsErr      error
 	saveLadderRunErr      error
 	cloudAcctErr          error
-	inFlightErr           error
 	// L5: configurable in-flight hourly commitment handed to the plan builder
 	// by PlanAndSaveLadderRun. Defaults to zero.
 	inFlightUSDHr *float64
@@ -147,6 +146,7 @@ type ladderTestStore struct {
 	savedRuns     []*config.LadderRunDB
 	savedTranches []config.LadderTrancheDB
 	ladderConfigs []config.LadderConfigDB
+	mockConfigStoreForHealth
 }
 
 func (s *ladderTestStore) GetGlobalConfig(_ context.Context) (*config.GlobalConfig, error) {
@@ -1321,9 +1321,9 @@ func TestRatToFloat64Ptr_PositiveValue(t *testing.T) {
 // The tests below drive the REAL executeLadderRun -> Allocate -> BuildTranches
 // -> persist pipeline; only the store and capability are fakes.
 type ladderStatefulStore struct {
-	mockConfigStoreForHealth
 	tranches []config.LadderTrancheDB // every persisted tranche, live status
 	runs     []*config.LadderRunDB
+	mockConfigStoreForHealth
 }
 
 // scheduledSum totals the config's currently-scheduled tranche amounts,

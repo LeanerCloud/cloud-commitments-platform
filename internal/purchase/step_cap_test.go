@@ -152,8 +152,8 @@ func TestScheduler_RefusesBeforeClaim(t *testing.T) {
 		cfgErr     error
 		plan       *config.PurchasePlan
 		cfg        *config.GlobalConfig
-		exec       config.PurchaseExecution
 		name       string
+		exec       config.PurchaseExecution
 		wantFailed int // 0 = silently skipped, 1 = surfaced as a failure
 	}{
 		{name: "kill switch off", plan: capped(f64(1000)), exec: dueRecExec("notified", upfrontRec(10)), cfg: &config.GlobalConfig{}, cfgErr: nil, wantFailed: 0},

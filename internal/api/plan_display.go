@@ -8,11 +8,11 @@ import (
 
 // planDisplay is what the dashboard and planned-purchase rows show for a plan.
 type planDisplay struct {
-	svc config.ServiceConfig
 	// providers lists a bound plan's distinct enabled group providers, so a
 	// provider filter can match a plan whose groups span providers. Nil for
 	// unmarked plans, whose rows keep today's JSON shape.
 	providers []string
+	svc       config.ServiceConfig
 }
 
 // planDisplayFor summarizes a plan for display. Unmarked plans show their first

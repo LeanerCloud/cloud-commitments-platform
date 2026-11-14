@@ -10,11 +10,11 @@ package config
 // request: the query-string filter plus the handler-side filters, all applied
 // to the decoded payload the way the Go filters see it.
 type RecommendationListScope struct {
-	Filter RecommendationFilter
 	// EnabledProviders keeps only rows whose provider is listed. Empty keeps
 	// every provider (FilterRecommendationsByEnabledProviders).
 	EnabledProviders  []string
 	AllowedAccountIDs []string
+	Filter            RecommendationFilter
 	// Restricted keeps only rows whose cloud_account_id is one of
 	// AllowedAccountIDs; rows without an account are dropped. The caller
 	// resolves the account scope to the exact set of IDs it allows.
@@ -45,8 +45,8 @@ type RecommendationOverrideRule struct {
 
 // StoredRecommendation is a decoded cache row with its table primary key.
 type StoredRecommendation struct {
-	Rec   RecommendationRecord
 	RowID string
+	Rec   RecommendationRecord
 }
 
 // RecommendationPageQuery parameterizes PageStoredRecommendations.
@@ -65,9 +65,9 @@ type RecommendationPageQuery struct {
 	// AfterID returns only rows whose ID sorts byte-wise after it; "" starts
 	// at the first row.
 	AfterID         string
-	Scope           RecommendationListScope
 	Rules           []RecommendationOverrideRule
 	SuppressionKeys []string
+	Scope           RecommendationListScope
 	// Limit caps the returned rows.
 	Limit int
 }

@@ -16,9 +16,9 @@ import (
 // applySuppressions path touches plus the default no-ops forwarded
 // through the embedded MockConfigStore in scheduler_test.go.
 type mockSuppressionStore struct {
-	MockConfigStore
 	recs []config.RecommendationRecord
 	sups []config.PurchaseSuppression
+	MockConfigStore
 }
 
 func (m *mockSuppressionStore) ListStoredRecommendations(_ context.Context, _ config.RecommendationFilter) ([]config.RecommendationRecord, error) {
@@ -418,18 +418,18 @@ func TestApplySuppressions_LegacyEC2Shapes(t *testing.T) {
 	sharedPurchase := ec2VariantRec("p", "us-east-1a", "Linux/UNIX", "shared")
 	exp := time.Now().Add(time.Hour)
 	for name, tc := range map[string]struct {
-		rec  config.RecommendationRecord
 		sups []config.PurchaseSuppression
+		rec  config.RecommendationRecord
 		want int
 	}{
-		"stored shared row vs default rec": {modern, []config.PurchaseSuppression{{ExecutionID: "e", AccountID: "acct-1", Provider: "aws", Service: "compute", Region: "us-east-1",
-			ResourceType: "m5.large", SuppressedCount: 2, ExpiresAt: exp, Variant: &config.SuppressionVariant{AvailabilityZone: "us-east-1a", Platform: "Linux/UNIX", Tenancy: "shared"}}}, 3},
-		"built from shared rec": {modern, config.BuildSuppressions([]config.RecommendationRecord{withCount(sharedPurchase, 2)}, "e",
-			&config.GlobalConfig{GracePeriodDays: map[string]int{"aws": 7}}, time.Now()), 3},
-		"rec AZ only in details, row has AZ": {azOnlyInDetails, config.BuildSuppressions([]config.RecommendationRecord{withCount(modern, 2)}, "e",
-			&config.GlobalConfig{GracePeriodDays: map[string]int{"aws": 7}}, time.Now()), 3},
-		"purchase AZ only in details": {modern, config.BuildSuppressions([]config.RecommendationRecord{withCount(azOnlyInDetails, 2)}, "e",
-			&config.GlobalConfig{GracePeriodDays: map[string]int{"aws": 7}}, time.Now()), 3},
+		"stored shared row vs default rec": {rec: modern, sups: []config.PurchaseSuppression{{ExecutionID: "e", AccountID: "acct-1", Provider: "aws", Service: "compute", Region: "us-east-1",
+			ResourceType: "m5.large", SuppressedCount: 2, ExpiresAt: exp, Variant: &config.SuppressionVariant{AvailabilityZone: "us-east-1a", Platform: "Linux/UNIX", Tenancy: "shared"}}}, want: 3},
+		"built from shared rec": {rec: modern, sups: config.BuildSuppressions([]config.RecommendationRecord{withCount(sharedPurchase, 2)}, "e",
+			&config.GlobalConfig{GracePeriodDays: map[string]int{"aws": 7}}, time.Now()), want: 3},
+		"rec AZ only in details, row has AZ": {rec: azOnlyInDetails, sups: config.BuildSuppressions([]config.RecommendationRecord{withCount(modern, 2)}, "e",
+			&config.GlobalConfig{GracePeriodDays: map[string]int{"aws": 7}}, time.Now()), want: 3},
+		"purchase AZ only in details": {rec: modern, sups: config.BuildSuppressions([]config.RecommendationRecord{withCount(azOnlyInDetails, 2)}, "e",
+			&config.GlobalConfig{GracePeriodDays: map[string]int{"aws": 7}}, time.Now()), want: 3},
 	} {
 		t.Run(name, func(t *testing.T) {
 			index := aggregateSuppressions(tc.sups)

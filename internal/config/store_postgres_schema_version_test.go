@@ -39,8 +39,8 @@ func TestSettlementSchemaReady(t *testing.T) {
 	t.Parallel()
 	v := settlementMigrationVersion
 	cases := []struct {
-		row  fakeVersionRow
 		name string
+		row  fakeVersionRow
 		want bool
 	}{
 		{name: "nothing applied", row: fakeVersionRow{err: pgx.ErrNoRows}, want: false},
@@ -64,8 +64,8 @@ func TestDirectResolveSchemaReady(t *testing.T) {
 	t.Parallel()
 	v := directResolveMigrationVersion
 	cases := []struct {
-		row  fakeVersionRow
 		name string
+		row  fakeVersionRow
 		want bool
 	}{
 		{name: "nothing applied", row: fakeVersionRow{err: pgx.ErrNoRows}, want: false},
@@ -89,8 +89,8 @@ func TestReadoptSchemaReady(t *testing.T) {
 	t.Parallel()
 	v := readoptMigrationVersion
 	cases := []struct {
-		row  fakeVersionRow
 		name string
+		row  fakeVersionRow
 		want bool
 	}{
 		{name: "nothing applied", row: fakeVersionRow{err: pgx.ErrNoRows}, want: false},
@@ -127,8 +127,8 @@ func TestSweepCeilingSchemaReady(t *testing.T) {
 	t.Parallel()
 	v := sweepCeilingMigrationVersion
 	cases := []struct {
-		row  fakeVersionRow
 		name string
+		row  fakeVersionRow
 		want bool
 	}{
 		{name: "nothing applied", row: fakeVersionRow{err: pgx.ErrNoRows}, want: false},
@@ -174,8 +174,8 @@ func TestAmountBasisMigrationApplied(t *testing.T) {
 	t.Parallel()
 	v := amountBasisMigrationVersion
 	cases := []struct {
-		row  fakeVersionRow
 		name string
+		row  fakeVersionRow
 		want bool
 	}{
 		{name: "nothing applied", row: fakeVersionRow{err: pgx.ErrNoRows}, want: false},

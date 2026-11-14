@@ -110,10 +110,10 @@ func TestAzurePricingHold(t *testing.T) {
 // orderStore models a collection commit landing right after the gate's first
 // read: the first read gets the pre-commit state, anything after it the new one.
 type orderStore struct {
-	oldRow config.RecommendationRecord
-	newRow config.RecommendationRecord
 	*MockConfigStore
 	calls     []string
+	oldRow    config.RecommendationRecord
+	newRow    config.RecommendationRecord
 	committed bool
 }
 

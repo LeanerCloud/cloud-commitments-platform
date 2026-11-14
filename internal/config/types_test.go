@@ -44,8 +44,8 @@ func TestLadderTrancheDB_AmountProvenanceJSON(t *testing.T) {
 
 func TestRampSchedule_GetCurrentCoverage(t *testing.T) {
 	tests := []struct {
-		schedule     RampSchedule
 		name         string
+		schedule     RampSchedule
 		baseCoverage float64
 		expected     float64
 	}{
@@ -172,9 +172,9 @@ func TestRampSchedule_GetNextPurchaseDate(t *testing.T) {
 	startDate := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	tests := []struct {
-		schedule RampSchedule
 		expected time.Time
 		name     string
+		schedule RampSchedule
 	}{
 		{
 			name: "zero start date returns now",
@@ -231,8 +231,8 @@ func TestRampSchedule_GetNextPurchaseDate(t *testing.T) {
 
 func TestRampSchedule_IsComplete(t *testing.T) {
 	tests := []struct {
-		schedule RampSchedule
 		name     string
+		schedule RampSchedule
 		expected bool
 	}{
 		{

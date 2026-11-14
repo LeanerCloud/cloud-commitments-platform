@@ -27,9 +27,9 @@ func historyExecutionStatuses() []string {
 // groups the summary totals are built from, so a scoped user's totals never
 // include a row the scoped user could not see in the list (issue #675).
 type historyScope struct {
-	allowed  auth.AccountScope
 	userID   string
 	accounts []config.CloudAccount
+	allowed  auth.AccountScope
 }
 
 // loadHistoryScope resolves the session's account scope. The cloud account

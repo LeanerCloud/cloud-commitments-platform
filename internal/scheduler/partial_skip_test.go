@@ -24,8 +24,8 @@ type skipErr struct {
 // kindSkipErr is skipErr that also reports a kind per skip reason, as Azure's
 // PartialResultError does (cloud-commitments-go#670).
 type kindSkipErr struct {
-	skipErr
 	kinds []azureprovider.SkipKind
+	skipErr
 }
 
 func (e *kindSkipErr) SkipKinds() []azureprovider.SkipKind { return e.kinds }

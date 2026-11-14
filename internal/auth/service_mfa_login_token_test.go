@@ -108,8 +108,8 @@ func TestLoginWithMFAToken_MalformedFormRefused(t *testing.T) {
 func TestLoginWithMFAToken_BindingMismatchRefused(t *testing.T) {
 	ctx := context.Background()
 	cases := map[string]struct {
-		claim  MFALoginToken
 		mutate func(u *User)
+		claim  MFALoginToken
 	}{
 		"other-user": {claim: MFALoginToken{UserID: "someone-else", PasswordVersion: 3}, mutate: func(u *User) {
 			u.ID, u.Email = "someone-else", "someone-else@example.com"

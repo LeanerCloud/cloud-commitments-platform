@@ -270,11 +270,11 @@ func TestAccountScope_EditorControlledExternalIDGrantsNothing(t *testing.T) {
 
 	for _, tc := range []struct {
 		name     string
-		editor   config.CloudAccount
 		targetID string
+		editor   config.CloudAccount
 	}{
-		{"editor's external ID is the victim's ID", shadowEditor, shadowVictim.ID},
-		{"ambiguous external ID", sameNumber, shadowVictim.ExternalID},
+		{name: "editor's external ID is the victim's ID", editor: shadowEditor, targetID: shadowVictim.ID},
+		{name: "ambiguous external ID", editor: sameNumber, targetID: shadowVictim.ExternalID},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

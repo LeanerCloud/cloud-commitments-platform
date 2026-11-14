@@ -28,8 +28,8 @@ func (f failingRoundTripper) RoundTrip(_ *http.Request) (*http.Response, error) 
 // SQL query. Returns a configurable result set or error.
 type fakeRecsLister struct {
 	err       error
-	gotFilter config.RecommendationFilter
 	out       []config.RecommendationRecord
+	gotFilter config.RecommendationFilter
 	calls     int
 }
 

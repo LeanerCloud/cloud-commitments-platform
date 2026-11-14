@@ -40,8 +40,8 @@ func hasRedshiftRec(exec *config.PurchaseExecution) bool {
 // go client adopts a node it finds for the same offering and count, so the second would buy nothing.
 func hasDuplicateRedshiftTuple(exec *config.PurchaseExecution) bool {
 	type key struct {
-		tuple   config.RedshiftTuple
 		account string
+		tuple   config.RedshiftTuple
 	}
 	seen := map[key]bool{}
 	for _, t := range redshiftTuples(exec) {
@@ -53,7 +53,7 @@ func hasDuplicateRedshiftTuple(exec *config.PurchaseExecution) bool {
 			account = *exec.CloudAccountID
 		}
 		t.CloudAccountID = nil
-		k := key{t, account}
+		k := key{tuple: t, account: account}
 		if seen[k] {
 			return true
 		}
