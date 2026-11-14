@@ -84,7 +84,7 @@ func newCreateConcurrencyFixture(ctx context.Context, t *testing.T) *createConcu
 	return &createConcurrencyFixture{
 		store:   store,
 		pool:    container.DB.Pool(),
-		handler: &Handler{config: store, auth: mockAuth},
+		handler: &Handler{config: store, auth: mockAuth, rateLimiter: NewInMemoryRateLimiter()},
 		planID:  plan.ID,
 	}
 }

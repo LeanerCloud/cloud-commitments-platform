@@ -75,7 +75,7 @@ func oracleRequest(action, id, token string, headers map[string]string) *events.
 func TestRIExchangeTokenRoutes_Integration_MissingAnswersLikeWrongToken(t *testing.T) {
 	ctx := context.Background()
 	store := setupOracleExchangeStore(ctx, t)
-	h := &Handler{config: store}
+	h := &Handler{config: store, rateLimiter: NewInMemoryRateLimiter()}
 
 	_, lookupErr := store.GetRIExchangeRecord(ctx, oracleMissingID)
 	require.ErrorIs(t, lookupErr, config.ErrNotFound, "fixture: the id must be missing, reported as PostgresStore does")
@@ -126,7 +126,7 @@ func TestApproveRIExchange_Integration_SessionMissingIs404(t *testing.T) {
 	a.On("ValidateSession", mock.Anything, "admin-bearer").Return(&Session{UserID: "admin-uuid", Email: "admin@example.com"}, nil).Maybe()
 	a.grantAdminPurchaser()
 	a.On("ValidateCSRFToken", mock.Anything, "admin-bearer", "csrf-ok").Return(nil).Maybe()
-	h := &Handler{config: store, auth: a}
+	h := &Handler{config: store, auth: a, rateLimiter: NewInMemoryRateLimiter()}
 
 	resp, err := h.HandleRequest(ctx, oracleRequest("approve", oracleMissingID, "",
 		map[string]string{"authorization": "Bearer admin-bearer", "x-csrf-token": "csrf-ok"}))
