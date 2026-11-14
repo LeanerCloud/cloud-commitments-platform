@@ -73,10 +73,10 @@ type requirement struct {
 }
 
 type module struct {
+	locks    map[string]version
 	dir      string // repo-relative, slash separated
 	reqs     []requirement
 	children []string // repo-relative dirs of local module calls
-	locks    map[string]version
 }
 
 var (

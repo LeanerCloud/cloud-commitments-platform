@@ -33,8 +33,8 @@ const hostAccountNum = "111111111111"
 
 // fakeSTSEndpoint answers AssumeRole and records the access key that signed it.
 type fakeSTSEndpoint struct {
-	mu      sync.Mutex
 	signers []string
+	mu      sync.Mutex
 }
 
 func (f *fakeSTSEndpoint) Do(r *http.Request) (*http.Response, error) {

@@ -24,8 +24,8 @@ import (
 // internal/config/store_postgres_collection_invocation_test.go.
 type markerStore struct {
 	*mocks.MockConfigStore
-	mu    sync.Mutex
 	owner string
+	mu    sync.Mutex
 	set   bool
 }
 

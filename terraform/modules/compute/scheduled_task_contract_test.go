@@ -17,8 +17,8 @@ import (
 // task name the scheduler will send to the server, and the minimum number of
 // references expected (guards against the regexp silently matching nothing).
 var schedulerRefs = []struct {
-	file string
 	re   *regexp.Regexp
+	file string
 	min  int
 }{
 	{file: "gcp/cloud-run/main.tf", re: regexp.MustCompile(`/api/scheduled/([A-Za-z0-9_-]+)`), min: 2},

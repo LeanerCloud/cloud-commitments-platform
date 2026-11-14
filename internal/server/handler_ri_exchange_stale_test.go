@@ -19,8 +19,8 @@ import (
 // the resolve path is covered against real PostgreSQL in internal/config.
 
 type lockedBuffer struct {
-	mu  sync.Mutex
 	buf bytes.Buffer
+	mu  sync.Mutex
 }
 
 func (b *lockedBuffer) Write(p []byte) (int, error) {

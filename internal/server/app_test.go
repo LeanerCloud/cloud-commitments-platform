@@ -147,8 +147,8 @@ func TestLoadApplicationConfig_TrustedProxyHops(t *testing.T) {
 func TestLoadApplicationConfig_FireSweepOff(t *testing.T) {
 	cases := []struct {
 		name  string
-		set   bool
 		value string
+		set   bool
 		want  bool
 	}{
 		{name: "unset", set: false, value: "", want: false},

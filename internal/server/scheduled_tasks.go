@@ -44,10 +44,10 @@ func extendScheduledWriteDeadline(w http.ResponseWriter) {
 // task would keep running after server shutdown and main would close the
 // database under it. The zero value is ready to use.
 type scheduledTaskTracker struct {
-	mu      sync.Mutex
-	wg      sync.WaitGroup
-	stopped bool
 	stopCh  chan struct{}
+	wg      sync.WaitGroup
+	mu      sync.Mutex
+	stopped bool
 }
 
 // start returns the context a scheduled task runs on: parent's values, no

@@ -16,11 +16,11 @@ var ladderTestGlobal = ladderTerms{term: pkgladder.Term1Year, payment: pkgladder
 func TestLadderGlobalTerms(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name    string
-		years   int
-		payment string
 		want    ladderTerms
+		name    string
+		payment string
 		errText string
+		years   int
 	}{
 		{name: "3y all-upfront", years: 3, payment: "all-upfront", want: ladderTerms{pkgladder.Term3Year, pkgladder.PaymentAllUpfront}, errText: ""},
 		{name: "1y no-upfront", years: 1, payment: "no-upfront", want: ladderTerms{pkgladder.Term1Year, pkgladder.PaymentNoUpfront}, errText: ""},

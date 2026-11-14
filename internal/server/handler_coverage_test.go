@@ -52,12 +52,12 @@ func TestHandleCleanupExpiredRecords_NilAuthAndConfig(t *testing.T) {
 // ----- handleRefreshAnalytics -----
 
 type mockAnalyticsStore struct {
+	createPartMonth        time.Time
 	refreshErr             error
 	createPartErr          error
 	createFuturePartErr    error
-	createPartCalls        int
-	createPartMonth        time.Time
 	dropOldPartErr         error
+	createPartCalls        int
 	createFuturePartMonths int
 	dropOldPartRetention   int
 	// *HadDeadline capture whether each DDL step ran under a bounded context, so

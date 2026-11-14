@@ -279,10 +279,10 @@ func envFixture(task, def string) (mod, env, compute string) {
 func TestEnvChecksNegatives(t *testing.T) {
 	const cr, process = "collect_recommendations", "process_scheduled_purchases"
 	type fixture struct {
-		task, def  string
 		edit       func(mod, env, compute string) (string, string, string)
-		wantProb   bool
+		task, def  string
 		wantGapDim string
+		wantProb   bool
 	}
 	same := func(m, e, c string) (string, string, string) { return m, e, c }
 	for name, f := range map[string]fixture{

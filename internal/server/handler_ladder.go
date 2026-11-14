@@ -380,20 +380,19 @@ func (app *Application) executeLadderRun(
 // on-demand-equivalent netting total into the run row and tranche rows to persist. plan is pure
 // compute (it runs while the per-config lock is held).
 type ladderRunPlanner struct {
-	dbCfg       *config.LadderConfigDB
-	engineCfg   pkgladder.LadderConfig
-	baseline    pkgladder.UsageBaseline
+	now         time.Time
 	layerStates map[pkgladder.LayerType]pkgladder.LayerState
+	dbCfg       *config.LadderConfigDB
 	rates       map[pkgladder.LayerType]float64
-	layers      []pkgladder.LayerSpec
+	global      ladderTerms // reference pair for hold rationale only
 	term        pkgladder.Term
 	paymentOpt  pkgladder.PaymentOption
-	global      ladderTerms // reference pair for hold rationale only
-	now         time.Time
+	layers      []pkgladder.LayerSpec
 	// missing lists the layers whose existing coverage has no rate. When set,
 	// the run is a Hold-only run (planMissingRateHold) and layerStates is nil.
-	missing []ladderMissingRate
-
+	missing                      []ladderMissingRate
+	baseline                     pkgladder.UsageBaseline
+	engineCfg                    pkgladder.LadderConfig
 	allocations, tranches, holds int // set by plan, for the log line
 }
 

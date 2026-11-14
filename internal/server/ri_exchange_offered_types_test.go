@@ -30,10 +30,10 @@ const (
 // catalogEC2 serves one convertible 1x m5.4xlarge RI (32 normalized units)
 // and a configurable instance type catalog, and records offering lookups.
 type catalogEC2 struct {
-	offered      []string
 	offeredErr   error
-	offeredCalls int
+	offered      []string
 	lookups      []string
+	offeredCalls int
 }
 
 func (f *catalogEC2) ListConvertibleReservedInstances(context.Context) ([]ec2svc.ConvertibleRI, error) {
@@ -83,8 +83,8 @@ func validQuoteClient() *mockExchangeClient {
 }
 
 type lockedLog struct {
-	mu  sync.Mutex
 	buf bytes.Buffer
+	mu  sync.Mutex
 }
 
 func (l *lockedLog) Write(p []byte) (int, error) {
@@ -146,8 +146,8 @@ func TestNewRIExchangeClients_RoutesToClients(t *testing.T) {
 // reshapeEntryPoints are the two scheduled paths that run RunAutoExchange:
 // the standalone RI-exchange task and the ladder's exchange runner.
 var reshapeEntryPoints = []struct {
-	name string
 	run  func(t *testing.T, clients riExchangeClients) *exchange.AutoExchangeResult
+	name string
 }{
 	{
 		name: "standalone",
@@ -187,13 +187,13 @@ var reshapeEntryPoints = []struct {
 
 func TestRIExchangeReshape_OfferedCatalog(t *testing.T) {
 	cases := []struct {
-		name        string
 		ec2         func() *catalogEC2
-		wantLookups []string
+		name        string
 		wantTarget  string
-		wantCount   int32
 		wantSkip    string
 		wantWarning string
+		wantLookups []string
+		wantCount   int32
 	}{
 		{
 			name:        "catalog limits the target to offered sizes",

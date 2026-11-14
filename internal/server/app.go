@@ -40,28 +40,38 @@ import (
 
 // Application holds all components of the CUDly server.
 type Application struct {
-	Config      config.StoreInterface
-	API         *api.Handler
-	Scheduler   SchedulerInterface
-	Purchase    PurchaseManagerInterface
-	Email       email.SenderInterface // Multi-cloud email sender (AWS SES, GCP SendGrid, Azure ACS)
-	Auth        *auth.Service
-	RateLimiter api.RateLimiterInterface // Distributed rate limiter (DB-backed for multi-instance)
-	Analytics   AnalyticsStoreInterface  // Analytics store for savings data
+	// scheduledTasks tracks detached HTTP-triggered scheduled tasks so server
+	// shutdown can cancel and wait for them (#784).
+	scheduledTasks      scheduledTaskTracker
+	migrationFinishedAt time.Time
+	secretResolver      secrets.Resolver
+	Purchase            PurchaseManagerInterface
+	Email               email.SenderInterface // Multi-cloud email sender (AWS SES, GCP SendGrid, Azure ACS)
+	lifeCtx             context.Context
+	RateLimiter         api.RateLimiterInterface // Distributed rate limiter (DB-backed for multi-instance)
+	Analytics           AnalyticsStoreInterface  // Analytics store for savings data
 	// AnalyticsCollector aggregates savings into snapshots on a schedule.
 	// Nil until reinitializeAfterConnect wires it; the collect task no-ops
 	// when nil so test builds without a DB stay quiet.
 	AnalyticsCollector AnalyticsCollectorInterface
-	Version            string
-	DB                 *database.Connection // PostgreSQL database connection
-	TaskLocker         TaskLocker           // Advisory lock for scheduled tasks (defaults to DB)
-
-	// LadderCapabilityFactory constructs a LadderCapability for the given region
-	// and accountID. It is called once per ladder_run task invocation.
-	// Defaults to awsladder.NewFromAWSConfig in production; tests replace it
-	// with a fake factory that returns a hermetic LadderCapability.
-	LadderCapabilityFactory func(ctx context.Context, region, accountID string) (pkgladder.LadderCapability, error)
-
+	// State from the most recent migration attempt. Surfaced by /health so
+	// ops can see failures. Protected by its OWN dedicated mutex -- NOT
+	// dbMu, because ensureDB holds dbMu for its full duration. If /health
+	// reached into dbMu it would block behind a long-running ensureDB,
+	// which defeats the point of non-fatal migrations.
+	migrationErr error
+	// marketplacePoller polls RI Marketplace listings during the
+	// finalize_revocations sweep (issue #27). Nil means the API handler; only
+	// tests set it.
+	marketplacePoller marketplaceListingPoller
+	TaskLocker        TaskLocker // Advisory lock for scheduled tasks (defaults to DB)
+	signer            oidc.Signer
+	Scheduler         SchedulerInterface
+	dbErr             error
+	Config            config.StoreInterface
+	DB                *database.Connection // PostgreSQL database connection
+	scheduledAuth     *scheduledauth.Validator
+	lifeCancel        context.CancelFunc
 	// LadderAccountResolver resolves the Lambda's own AWS account ID and region
 	// for the single-account ladder gate (Q1). It MUST fail loud when the
 	// account cannot be determined: the account ID gates which configs run, so a
@@ -69,64 +79,48 @@ type Application struct {
 	// skip every config as multi-account. Nil in production -> the default
 	// STS-backed resolver (defaultLadderAccountResolver); tests inject a stub.
 	LadderAccountResolver func(ctx context.Context) (accountID, region string, err error)
-
-	// Static file serving directory (from STATIC_DIR env var)
-	staticDir string
-
+	archera               *archera.Provider
 	// Lazy initialization fields for PostgreSQL (Lambda ENI readiness)
-	dbConfig          *database.Config
-	secretResolver    secrets.Resolver
-	archera           *archera.Provider
-	dbMu              sync.Mutex
-	dbConnected       bool
-	dbErr             error
-	appConfig         ApplicationConfig
-	signer            oidc.Signer
-	scheduledAuth     *scheduledauth.Validator
-	runMigrationsFunc func(ctx context.Context, pool *pgxpool.Pool, migrationsPath, adminEmail, adminPassword string) error
-	migrationsTimeout time.Duration
-	migrationMu       sync.Mutex
-
-	// lifeCtx outlives any request; Close cancels it. rlCleanupStop stops the
-	// previous cleanup worker when a retried reinitializeAfterConnect starts
-	// a new one, so at most one worker runs.
-	lifeMu        sync.Mutex
-	lifeCtx       context.Context
-	lifeCancel    context.CancelFunc
-	rlCleanupStop context.CancelFunc
-
-	// initRetryDelay is the pause between background database-initialization
-	// attempts (see startBackgroundInit). Zero means backgroundInitRetryDelay.
-	// Only tests set it.
-	initRetryDelay time.Duration
-
-	// scheduledTasks tracks detached HTTP-triggered scheduled tasks so server
-	// shutdown can cancel and wait for them (#784).
-	scheduledTasks scheduledTaskTracker
-
-	// marketplacePoller polls RI Marketplace listings during the
-	// finalize_revocations sweep (issue #27). Nil means the API handler; only
-	// tests set it.
-	marketplacePoller marketplaceListingPoller
-
+	dbConfig *database.Config
+	// LadderCapabilityFactory constructs a LadderCapability for the given region
+	// and accountID. It is called once per ladder_run task invocation.
+	// Defaults to awsladder.NewFromAWSConfig in production; tests replace it
+	// with a fake factory that returns a hermetic LadderCapability.
+	LadderCapabilityFactory func(ctx context.Context, region, accountID string) (pkgladder.LadderCapability, error)
+	rlCleanupStop           context.CancelFunc
+	runMigrationsFunc       func(ctx context.Context, pool *pgxpool.Pool, migrationsPath, adminEmail, adminPassword string) error
+	API                     *api.Handler
+	Auth                    *auth.Service
 	// encKeySource is the env var name that resolved the credential encryption
 	// key (e.g. "CREDENTIAL_ENCRYPTION_KEY_SECRET_NAME"). Set during
 	// reinitializeAfterConnect. /health reports only a generic degraded state
 	// from it, never the source itself (#15).
 	encKeySource string
-
-	// State from the most recent migration attempt. Surfaced by /health so
-	// ops can see failures. Protected by its OWN dedicated mutex -- NOT
-	// dbMu, because ensureDB holds dbMu for its full duration. If /health
-	// reached into dbMu it would block behind a long-running ensureDB,
-	// which defeats the point of non-fatal migrations.
-	migrationErr        error
-	migrationFinishedAt time.Time
+	Version      string
+	// Static file serving directory (from STATIC_DIR env var)
+	staticDir string
+	appConfig ApplicationConfig
+	// initRetryDelay is the pause between background database-initialization
+	// attempts (see startBackgroundInit). Zero means backgroundInitRetryDelay.
+	// Only tests set it.
+	initRetryDelay    time.Duration
+	migrationsTimeout time.Duration
+	dbMu              sync.Mutex
+	// lifeCtx outlives any request; Close cancels it. rlCleanupStop stops the
+	// previous cleanup worker when a retried reinitializeAfterConnect starts
+	// a new one, so at most one worker runs.
+	lifeMu      sync.Mutex
+	migrationMu sync.Mutex
+	dbConnected bool
 }
 
 // ApplicationConfig holds all env-based configuration for the application.
 type ApplicationConfig struct {
-	ScheduledTaskSecret     string
+	// RecommendationSchedule is RECOMMENDATION_SCHEDULE: the schedule
+	// Terraform gave the deployment's recommendation-collection trigger
+	// (EventBridge rate()/cron() or five-field cron), empty when scheduled
+	// collection is off. Only read to report the next run (issue #756).
+	RecommendationSchedule  string
 	IssuerURL               string
 	ScheduledTaskSecretName string
 	Version                 string
@@ -135,32 +129,28 @@ type ApplicationConfig struct {
 	DashboardURL            string
 	DashboardBucket         string
 	APIKeySecretARN         string
+	ScheduledTaskSecret     string
 	Analytics               AnalyticsConfig
 	NotificationDaysBefore  int
-	// ScheduledPurchaseMaxOverdue is SCHEDULED_PURCHASE_MAX_OVERDUE, the
-	// fire and process sweeps' due-row age cap (issue #712). Zero means
-	// purchase.DefaultMaxDueRowAge.
-	ScheduledPurchaseMaxOverdue time.Duration
-	DefaultCoverage             float64
-	DefaultTerm                 int
-	EnableDashboard             bool
-	IsLambda                    bool
+	DefaultCoverage         float64
+	DefaultTerm             int
 	// TrustedProxyHops is the number of proxies that append to
 	// X-Forwarded-For before the app (CUDLY_TRUSTED_PROXY_HOPS). 0 ignores
 	// the header and uses the peer address.
 	TrustedProxyHops int
-	// RecommendationSchedule is RECOMMENDATION_SCHEDULE: the schedule
-	// Terraform gave the deployment's recommendation-collection trigger
-	// (EventBridge rate()/cron() or five-field cron), empty when scheduled
-	// collection is off. Only read to report the next run (issue #756).
-	RecommendationSchedule string
+	// ScheduledPurchaseMaxOverdue is SCHEDULED_PURCHASE_MAX_OVERDUE, the
+	// fire and process sweeps' due-row age cap (issue #712). Zero means
+	// purchase.DefaultMaxDueRowAge.
+	ScheduledPurchaseMaxOverdue time.Duration
+	// authBcryptCost is passed to auth.ServiceConfig.BcryptCost. Only tests
+	// in this package set it; zero keeps the production bcrypt cost.
+	authBcryptCost  int
+	EnableDashboard bool
+	IsLambda        bool
 	// FireSweepOff is FIRE_SWEEP_SCHEDULED=false: Terraform scheduled no
 	// fire_scheduled_purchases sweep, so delayed purchases cannot execute
 	// (issue #1588). Unset means unknown and leaves saves unrestricted.
 	FireSweepOff bool
-	// authBcryptCost is passed to auth.ServiceConfig.BcryptCost. Only tests
-	// in this package set it; zero keeps the production bcrypt cost.
-	authBcryptCost int
 }
 
 // ExternalDeps holds pre-built external dependencies that require infrastructure.

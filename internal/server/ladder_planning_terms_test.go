@@ -40,10 +40,10 @@ func TestLowerOfTwoRates(t *testing.T) {
 	ri, ec2, comp := pkgladder.LayerConvertibleRI, pkgladder.LayerEC2InstanceSP, pkgladder.LayerComputeSP
 	held := map[pkgladder.LayerType]bool{ri: true, ec2: true, comp: true}
 	tests := []struct {
-		name        string
 		sizing, ref rateMap
 		held        map[pkgladder.LayerType]bool
 		want        rateMap
+		name        string
 	}{
 		{name: "ref lower", sizing: rateMap{ri: 0.75}, ref: rateMap{ri: 0.5}, held: held, want: rateMap{ri: 0.5}},
 		{name: "sizing lower", sizing: rateMap{ri: 0.5}, ref: rateMap{ri: 0.75}, held: held, want: rateMap{ri: 0.5}},

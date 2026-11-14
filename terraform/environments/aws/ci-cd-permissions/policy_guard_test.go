@@ -844,8 +844,8 @@ func actionPermitted(allowed []string, action string) bool {
 func TestActionPermittedMatchesWholeActionCaseInsensitively(t *testing.T) {
 	cases := []struct {
 		name    string
-		allowed []string
 		action  string
+		allowed []string
 		want    bool
 	}{
 		{name: "exact match", allowed: []string{"ecs:RunTask"}, action: "ecs:RunTask", want: true},
@@ -1695,8 +1695,8 @@ func TestPolicyDocumentsUseLiteralActionAndResourceLists(t *testing.T) {
 		for _, stmt := range stmts {
 			scanned++
 			for _, list := range []struct {
-				what    string
 				pattern *regexp.Regexp
+				what    string
 			}{
 				{what: "Action", pattern: actionAssignmentPattern},
 				{what: "Resource", pattern: resourceAssignmentPattern},

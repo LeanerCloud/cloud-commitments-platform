@@ -18,8 +18,8 @@ import (
 // and the global-config read are implemented; any other call panics.
 type reconcileFakeStore struct {
 	config.StoreInterface
-	fired    []config.LadderTrancheDB
 	firedErr error
+	fired    []config.LadderTrancheDB
 	listed   int
 	global   int
 }

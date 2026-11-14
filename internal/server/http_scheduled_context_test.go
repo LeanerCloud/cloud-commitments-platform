@@ -28,10 +28,10 @@ func TestHandleScheduledHTTP_RequestCancelDoesNotCancelTask(t *testing.T) {
 	release := make(chan struct{})
 	type ctxKey struct{}
 	type observation struct {
+		deadline    time.Time
 		err         error
 		value       any
 		hasDeadline bool
-		deadline    time.Time
 	}
 	observed := make(chan observation, 1)
 

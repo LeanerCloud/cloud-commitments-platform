@@ -33,8 +33,8 @@ const (
 
 type seqJWKS struct {
 	*httptest.Server
-	hits    atomic.Int64
 	release chan struct{}
+	hits    atomic.Int64
 	once    sync.Once
 }
 

@@ -20,14 +20,14 @@ const termsTestAccount = "123456789012"
 // golden value is exact. The target is 10 on-demand USD/hr (low-water 12.5 at
 // 80% coverage) on a single flex Convertible RI layer.
 type termsFixture struct {
-	globalYears   int
-	globalPayment string
+	globalErr     error
 	planRI        *float64 // RI rate at the constant pair; nil is absent
 	globalRI      *float64 // RI rate at the global pair; nil is absent
-	existing      float64
 	observed      rateMap
+	globalPayment string
 	inFlight      []config.LadderInFlightRow
-	globalErr     error
+	globalYears   int
+	existing      float64
 }
 
 func (f termsFixture) run(t *testing.T) (*ladderTestStore, *termRecorder, *LadderRunResult) {
@@ -140,9 +140,9 @@ func TestHandleLadderRun_ExistingCoverageConvertsAtLowerRate(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name           string
+		rate           string
 		planRI, global float64
 		amount         float64
-		rate           string
 	}{
 		{name: "global lower", planRI: 0.75, global: 0.5, amount: 3.0, rate: "3/4"},
 		{name: "plan lower", planRI: 0.5, global: 0.75, amount: 2.0, rate: "1/2"},
@@ -162,8 +162,8 @@ func TestHandleLadderRun_ExistingCoverageConvertsAtLowerRate(t *testing.T) {
 func TestHandleLadderRun_HoldsWhenEitherRateMissingForHeldLayer(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name           string
 		planRI, global *float64
+		name           string
 	}{
 		{name: "global absent", planRI: rp(0.75), global: nil},
 		{name: "plan absent", planRI: nil, global: rp(0.5)},

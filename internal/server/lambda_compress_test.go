@@ -48,9 +48,9 @@ func TestCompressLambdaResponse_CompressesLargeJSON(t *testing.T) {
 
 func TestCompressLambdaResponse_LeavesResponseAloneWhen(t *testing.T) {
 	tests := []struct {
-		name   string
 		req    *events.LambdaFunctionURLRequest
 		mutate func(*events.LambdaFunctionURLResponse)
+		name   string
 	}{
 		{name: "client does not accept gzip", req: &events.LambdaFunctionURLRequest{Headers: map[string]string{"accept-encoding": "br"}}, mutate: nil},
 		{name: "no accept-encoding header", req: &events.LambdaFunctionURLRequest{}, mutate: nil},

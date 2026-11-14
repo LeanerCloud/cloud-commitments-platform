@@ -18,9 +18,9 @@ func TestLadderComputeCapRefusal(t *testing.T) {
 	computeSP := []pkgladder.LayerSpec{{Type: pkgladder.LayerComputeSP, Roles: []pkgladder.LayerRole{pkgladder.RoleFlex}}}
 	noCompute := []pkgladder.LayerSpec{{Type: pkgladder.LayerEC2InstanceSP, Roles: []pkgladder.LayerRole{pkgladder.RoleBase}}}
 	for _, tc := range []struct {
+		cap     *float64
 		name    string
 		layers  []pkgladder.LayerSpec
-		cap     *float64
 		wantErr bool
 	}{
 		{name: "compute sp without a cap", layers: computeSP, cap: nil, wantErr: true},

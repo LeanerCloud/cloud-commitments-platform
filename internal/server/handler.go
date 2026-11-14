@@ -430,17 +430,17 @@ func (app *Application) handleRefreshAnalytics(ctx context.Context) (map[string]
 // (lambda.go routes on source separately), only Action and OwnerToken drive the
 // task.
 type ScheduledEvent struct {
-	Source     string          `json:"source"`
-	DetailType string          `json:"detail-type"`
-	Action     string          `json:"action"`
-	Detail     json.RawMessage `json:"detail"`
+	Source     string `json:"source"`
+	DetailType string `json:"detail-type"`
+	Action     string `json:"action"`
 	// OwnerToken carries the collection-marker owner token (issue #261
 	// compare-and-clear guard) for TaskCollectRecommendations events fired
 	// by the async self-invoke in handler_recommendations_refresh.go.
 	// EventBridge cron deliveries and the --task CLI never set this field,
 	// so it decodes to "" and the scheduler treats the run as owning no
 	// marker (see ScheduledTaskParams / clearCollectionStartedBestEffort).
-	OwnerToken string `json:"owner_token"`
+	OwnerToken string          `json:"owner_token"`
+	Detail     json.RawMessage `json:"detail"`
 }
 
 // ScheduledTaskParams carries per-task-type data extracted from a

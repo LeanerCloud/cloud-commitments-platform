@@ -57,6 +57,7 @@ const GoogleJWKSURL = "https://www.googleapis.com/oauth2/v3/certs"
 // Config holds the parsed configuration for a Validator. NewValidator
 // applies defaults and rejects invalid combinations.
 type Config struct {
+	Now       func() time.Time // injectable clock; nil means time.Now
 	Mode      Mode
 	Issuer    string
 	JWKSURL   string
@@ -64,29 +65,27 @@ type Config struct {
 	Audiences []string
 	Subjects  []string
 	Skew      time.Duration
-	Now       func() time.Time // injectable clock; nil means time.Now
 }
 
 // Validator authenticates inbound requests against the configured mode.
 type Validator struct {
-	mode        Mode
-	verifier    *oidc.IDTokenVerifier // nil unless mode == ModeOIDC; backed by go-oidc's single-flight RemoteKeySet
-	verMu       sync.RWMutex          // guards verifier and lastRebuild during rotation-recovery rebuilds
-	lastRebuild time.Time             // last verifier rebuild; rate-limits attacker-driven JWKS refetches
-	kids        *kidGuard             // nil unless mode == ModeOIDC; negative kid cache shared across rebuilds (issue #75)
-	jwksURL     string                // remembered for Warmup and rotation rebuild; empty unless mode == ModeOIDC
-	issuer      string                // OIDC issuer URL; empty unless mode == ModeOIDC; needed to rebuild verifier
-	httpClient  *http.Client          // hardened client for all JWKS fetches; nil unless mode == ModeOIDC
-	audiences   map[string]struct{}
-	subjects    map[string]struct{}
-	skew        time.Duration
-	bearer      []byte
-	now         func() time.Time // pluggable for tests
-
-	jwksResult   atomic.Pointer[jwksProbeResult] // nil until the first probe finished
-	jwksMu       sync.Mutex                      // guards jwksInflight and the re-probe trigger decision
+	lastRebuild  time.Time // last verifier rebuild; rate-limits attacker-driven JWKS refetches
+	audiences    map[string]struct{}
+	now          func() time.Time                // pluggable for tests
+	verifier     *oidc.IDTokenVerifier           // nil unless mode == ModeOIDC; backed by go-oidc's single-flight RemoteKeySet
+	kids         *kidGuard                       // nil unless mode == ModeOIDC; negative kid cache shared across rebuilds (issue #75)
 	jwksInflight chan struct{}                   // non-nil while a probe goroutine runs; closed on completion
-	jwksWait     time.Duration                   // test override of jwksRefreshWait; 0 means the default
+	jwksResult   atomic.Pointer[jwksProbeResult] // nil until the first probe finished
+	subjects     map[string]struct{}
+	httpClient   *http.Client // hardened client for all JWKS fetches; nil unless mode == ModeOIDC
+	jwksURL      string       // remembered for Warmup and rotation rebuild; empty unless mode == ModeOIDC
+	issuer       string       // OIDC issuer URL; empty unless mode == ModeOIDC; needed to rebuild verifier
+	mode         Mode
+	bearer       []byte
+	skew         time.Duration
+	jwksWait     time.Duration // test override of jwksRefreshWait; 0 means the default
+	verMu        sync.RWMutex  // guards verifier and lastRebuild during rotation-recovery rebuilds
+	jwksMu       sync.Mutex    // guards jwksInflight and the re-probe trigger decision
 }
 
 // claims captures the timestamp claims we need beyond what go-oidc's

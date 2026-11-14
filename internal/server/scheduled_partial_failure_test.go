@@ -20,8 +20,8 @@ import (
 
 // syncBuffer is a log sink safe for the concurrent writes a handler may make.
 type syncBuffer struct {
-	mu  sync.Mutex
 	buf bytes.Buffer
+	mu  sync.Mutex
 }
 
 func (b *syncBuffer) Write(p []byte) (int, error) {

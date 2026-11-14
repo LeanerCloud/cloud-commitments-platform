@@ -48,8 +48,8 @@ import (
 // ladderMissingRate is one layer whose existing or expiring commitment needs a
 // rate the provider did not return. Amounts are commitment USD/hr.
 type ladderMissingRate struct {
-	layer              pkgladder.LayerType
 	existing, expiring *float64
+	layer              pkgladder.LayerType
 }
 
 // ladderConversionRates returns the rates used to convert existing coverage

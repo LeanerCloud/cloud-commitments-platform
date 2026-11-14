@@ -22,10 +22,10 @@ const (
 
 type jwksStub struct {
 	*httptest.Server
-	hits    atomic.Int64
-	mode    atomic.Int32
 	release chan struct{}
+	hits    atomic.Int64
 	once    sync.Once
+	mode    atomic.Int32
 }
 
 func newJWKSStub(t *testing.T, mode int32) *jwksStub {

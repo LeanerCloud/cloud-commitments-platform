@@ -19,10 +19,10 @@ import (
 // bufferFractionSpy records the order of WithBufferFraction relative to
 // GetUsageBaseline.
 type bufferFractionSpy struct {
+	setErr error
 	*fakeLadderCapability
 	calls       []string
 	fractions   []float64
-	setErr      error
 	baselineHit bool
 }
 

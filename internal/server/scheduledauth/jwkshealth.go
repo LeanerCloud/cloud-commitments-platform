@@ -25,17 +25,17 @@ var jwksRefreshWait = 2 * time.Second
 
 // jwksProbeResult is immutable and swapped atomically.
 type jwksProbeResult struct {
-	ok     bool
-	reason string
 	at     time.Time
+	reason string
+	ok     bool
 }
 
 // JWKSHealth is the outcome of the JWKS endpoint probe (platform#67).
 type JWKSHealth struct {
+	Reason  string // a JWKSReason* code when !OK
 	Enabled bool
 	Pending bool // Warmup has not finished a probe yet
 	OK      bool
-	Reason  string // a JWKSReason* code when !OK
 }
 
 // probeJWKS fetches and validates the JWKS document. It returns "" on

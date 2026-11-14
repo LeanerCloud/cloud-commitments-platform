@@ -18,18 +18,18 @@ import (
 )
 
 type fakeMigrate struct {
-	versions    []uint // returned by successive readVersion calls
-	dirty       bool
 	runErr      error
-	runCalls    int
-	closed      bool
-	envAtRun    string
-	envWasSet   bool
-	readCalls   int
 	connectErr  error
 	lockErr     error
+	envAtRun    string
+	versions    []uint // returned by successive readVersion calls
+	runCalls    int
+	readCalls   int
 	lockCalls   int
 	unlockCalls int
+	dirty       bool
+	closed      bool
+	envWasSet   bool
 }
 
 func (f *fakeMigrate) deps() migrateDeps {
@@ -198,10 +198,10 @@ func TestRunDeployMigrations_NoAdminEmailSkipsAdminPassword(t *testing.T) {
 func TestValidateForceVersion_NumberingGaps(t *testing.T) {
 	cfg := migDirCfg(t, 1, 2, 58, 59, 60, 63, 64, 67, 70, 81, 83, 86, 134, 136)
 	cases := []struct {
-		dirty    int
+		lowerMsg string
 		allowed  []int
 		refused  []int
-		lowerMsg string
+		dirty    int
 	}{
 		{dirty: 63, allowed: []int{63, 60}, refused: []int{62, 61, 59}, lowerMsg: "60"},
 		{dirty: 70, allowed: []int{70, 67}, refused: []int{69}, lowerMsg: "67"},

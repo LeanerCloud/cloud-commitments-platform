@@ -27,14 +27,14 @@ import (
 // PurchaseLayer and ReshapeBuffer call t.Fatal so that any test which exercises them
 // fails immediately, asserting the ABSENCE of those calls in the plan-only phase.
 type fakeLadderCapability struct {
-	baseline        pkgladder.UsageBaseline
 	baselineErr     error
-	layerStates     map[pkgladder.LayerType]pkgladder.LayerState
 	layerStatesErr  error
-	supportedLayers []pkgladder.LayerSpec
-	rates           map[pkgladder.LayerType]float64 // nil means 1.0 for both default layers
 	ratesErr        error
+	layerStates     map[pkgladder.LayerType]pkgladder.LayerState
+	rates           map[pkgladder.LayerType]float64 // nil means 1.0 for both default layers
 	t               *testing.T
+	supportedLayers []pkgladder.LayerSpec
+	baseline        pkgladder.UsageBaseline
 }
 
 func (f *fakeLadderCapability) GetCommitmentRates(_ context.Context, _ pkgladder.Scope, _ pkgladder.Term, _ pkgladder.PaymentOption) (map[pkgladder.LayerType]float64, error) {
@@ -120,36 +120,33 @@ func (f *fakeLadderCapability) ReshapeBuffer(_ context.Context, _ pkgladder.Scop
 // assert on what was persisted without importing a testify mock.
 type ladderTestStore struct {
 	mockConfigStoreForHealth
-	globalCfg        *config.GlobalConfig
-	globalCfgErr     error
-	ladderConfigs    []config.LadderConfigDB
-	ladderConfigsErr error
-	cloudAcct        *config.CloudAccount
-	cloudAcctErr     error
-	latestRunAt      *time.Time
-	latestRunAtErr   error
-
+	latestRunAtErr        error
+	globalCfgErr          error
+	saveLadderTranchesErr error
+	ladderConfigsErr      error
+	saveLadderRunErr      error
+	cloudAcctErr          error
+	inFlightErr           error
+	// L5: configurable in-flight hourly commitment handed to the plan builder
+	// by PlanAndSaveLadderRun. Defaults to zero.
+	inFlightUSDHr *float64
+	globalCfg     *config.GlobalConfig
 	// Per-cloud-account-id overrides, keyed by LadderConfigDB.CloudAccountID.
 	// When a config's CloudAccountID is present here, the mapped account/error
 	// takes precedence over the single cloudAcct/cloudAcctErr fields. This lets
 	// a multi-config test give each config a distinct account outcome.
 	cloudAcctByID    map[string]*config.CloudAccount
 	cloudAcctErrByID map[string]error
-
-	// L5: configurable in-flight hourly commitment handed to the plan builder
-	// by PlanAndSaveLadderRun. Defaults to zero.
-	inFlightUSDHr *float64
-	inFlightRows  []config.LadderInFlightRow // overrides inFlightUSDHr
-	inFlightErr   error
-
+	latestRunAt      *time.Time
 	// Capture fields: non-nil if the call was made. savedRuns accumulates every
 	// SaveLadderRun call so multi-config tests can assert on each persisted run;
 	// savedRun mirrors the most recent one for single-config convenience.
-	savedRun              *config.LadderRunDB
-	savedRuns             []*config.LadderRunDB
-	savedTranches         []config.LadderTrancheDB
-	saveLadderRunErr      error
-	saveLadderTranchesErr error
+	savedRun      *config.LadderRunDB
+	cloudAcct     *config.CloudAccount
+	inFlightRows  []config.LadderInFlightRow // overrides inFlightUSDHr
+	savedRuns     []*config.LadderRunDB
+	savedTranches []config.LadderTrancheDB
+	ladderConfigs []config.LadderConfigDB
 }
 
 func (s *ladderTestStore) GetGlobalConfig(_ context.Context) (*config.GlobalConfig, error) {
@@ -1043,8 +1040,8 @@ func TestLadderConfigToEngine_ValidConfig(t *testing.T) {
 
 func TestLadderTermFromYears(t *testing.T) {
 	tests := []struct {
-		years   int
 		want    pkgladder.Term
+		years   int
 		wantErr bool
 	}{
 		{years: 1, want: pkgladder.Term1Year, wantErr: false},

@@ -70,8 +70,8 @@ type jwksSnapshot struct {
 // used only for the JWKS URL (go-oidc fetches and Warmup).
 type jwksObserver struct {
 	base    http.RoundTripper
-	started atomic.Uint64
 	latest  atomic.Pointer[jwksSnapshot]
+	started atomic.Uint64
 }
 
 // RoundTrip forwards to the hardened base transport, then buffers and
@@ -114,9 +114,9 @@ func (o *jwksObserver) record(seq uint64, body []byte) {
 
 // negativeKidCache is a size-bounded set of kids with per-entry expiry.
 type negativeKidCache struct {
-	mu      sync.Mutex
 	entries map[[sha256.Size]byte]time.Time // kid hash -> expiry
 	max     int
+	mu      sync.Mutex
 }
 
 func newNegativeKidCache(maxEntries int) *negativeKidCache {

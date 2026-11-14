@@ -23,9 +23,9 @@ import (
 type fourEyesExchangeFixture struct {
 	store    *mockConfigStoreForExchange
 	clients  riExchangeClients
+	saved    []*config.RIExchangeRecord
 	executed int
 	listed   int
-	saved    []*config.RIExchangeRecord
 }
 
 func newFourEyesExchangeFixture(globalCfg *config.GlobalConfig, globalCfgErr error) *fourEyesExchangeFixture {
