@@ -47,6 +47,7 @@ func riExchangeCarveoutHandler(t *testing.T, perms []auth.Permission) *Handler {
 // gate. This is the assertion that fails if the verb is dropped from
 // adminCarvedOuts.
 func TestRIExchangeCarveOut_PlainAdminIsRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h := riExchangeCarveoutHandler(t, []auth.Permission{
 		{Action: auth.ActionAdmin, Resource: auth.ResourceAll},
@@ -68,6 +69,7 @@ func TestRIExchangeCarveOut_PlainAdminIsRefused(t *testing.T) {
 // seeded RI Exchanger group (migration 000096) confers -- passes. Without
 // this, a handler that refused everyone would satisfy the test above.
 func TestRIExchangeCarveOut_ExchangerIsAllowed(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h := riExchangeCarveoutHandler(t, []auth.Permission{
 		{Action: auth.ActionAdmin, Resource: auth.ResourceAll},
@@ -85,6 +87,7 @@ func TestRIExchangeCarveOut_ExchangerIsAllowed(t *testing.T) {
 // includes view:purchases, which the RI-exchange handlers themselves gate on,
 // so a carve-out that over-reached would strand the read paths too.
 func TestRIExchangeCarveOut_AdminKeepsNonCarvedVerbs(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	for _, verb := range [][2]string{
 		{auth.ActionView, auth.ResourcePurchases},
@@ -151,6 +154,7 @@ func TestRIExchangeCarveOut_AdminKeepsNonCarvedVerbs(t *testing.T) {
 //     resolver errors, and stays as a backstop in case a future change moves
 //     scope resolution after the AWS call.
 func TestExecuteExchange_PlainAdminIsRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)

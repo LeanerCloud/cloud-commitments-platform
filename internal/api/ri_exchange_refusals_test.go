@@ -47,6 +47,7 @@ func (f *quoteOnlyEC2) AcceptReservedInstancesExchangeQuote(context.Context, *ec
 // answered that refusal with a generic 500 "exchange execution failed" and
 // recorded the audit outcome as unknown, although nothing was submitted.
 func TestExecuteExchange_NonUSDQuoteRefusedAs422(t *testing.T) {
+	t.Parallel()
 	for _, currency := range []string{"EUR", ""} {
 		t.Run("currency="+currency, func(t *testing.T) {
 			fake := &quoteOnlyEC2{currency: currency}
@@ -77,6 +78,7 @@ func TestExecuteExchange_NonUSDQuoteRefusedAs422(t *testing.T) {
 // apply: a wrapped cloud-commitments-go refusal is a 422 with its message,
 // provider client faults keep their 400, and anything else stays a 500.
 func TestMapExchangeErrors_Refusals(t *testing.T) {
+	t.Parallel()
 	notUSD := fmt.Errorf("aborting exchange at accept time: %w", fmt.Errorf("%w: quote is in %q", exchange.ErrQuoteNotUSD, "EUR"))
 	scope := fmt.Errorf("azure: CalculateExchange: sources[0]: %w", azurecompute.ErrUnsupportedAppliedScope)
 	currency := fmt.Errorf("azure: CalculateExchange: calculateExchange bills in EUR but the expected currency is USD; refusing to exchange: %w", common.ErrCurrencyNotAccepted)

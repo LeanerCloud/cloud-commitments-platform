@@ -29,6 +29,7 @@ func boundResponsePlan(ids int) *config.PurchasePlan {
 }
 
 func TestPlanForResponse_ReportsCountsAndKeepsTheStoredPlan(t *testing.T) {
+	t.Parallel()
 	stored := boundResponsePlan(5000)
 	out := planForResponse(stored)
 	raw, err := json.Marshal(out)
@@ -49,6 +50,7 @@ func TestPlanForResponse_ReportsCountsAndKeepsTheStoredPlan(t *testing.T) {
 
 // (guard) A plan without bound identities is returned as it is.
 func TestPlanForResponse_UnboundPlanIsUnchanged(t *testing.T) {
+	t.Parallel()
 	legacy := &config.PurchasePlan{ID: "plan-l", Services: map[string]config.ServiceConfig{"aws/ec2": {Provider: "aws", Service: "ec2", Enabled: true}}}
 	assert.Same(t, legacy, planForResponse(legacy))
 	before, err := json.Marshal(legacy)
@@ -60,6 +62,7 @@ func TestPlanForResponse_UnboundPlanIsUnchanged(t *testing.T) {
 }
 
 func TestPlanResponses_UseTheCountedCopy(t *testing.T) {
+	t.Parallel()
 	stored := boundResponsePlan(3)
 	// The health lookup fails, so attachPlanHealth returns the response copies as they are.
 	store := new(MockConfigStore)

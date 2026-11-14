@@ -42,6 +42,7 @@ func freshnessJSON(t *testing.T, schedule string, now time.Time) string {
 // Issue #756: the first-run empty state needs the next collection time, so
 // the freshness payload computes it from the deployment's schedule.
 func TestFreshnessNextCollectionAt(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 10, 27, 15, 4, 5, 0, time.UTC)
 
 	t.Run("EventBridge cron schedule", func(t *testing.T) {
@@ -65,6 +66,7 @@ func TestFreshnessNextCollectionAt(t *testing.T) {
 }
 
 func TestNewHandlerParsesRecommendationSchedule(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 10, 27, 15, 4, 5, 0, time.UTC)
 
 	h := NewHandler(HandlerConfig{RecommendationSchedule: "0 2 * * *"})

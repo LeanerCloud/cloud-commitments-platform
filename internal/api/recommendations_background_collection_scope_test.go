@@ -84,6 +84,7 @@ func scopedAuth(accounts []string) *MockAuthService {
 }
 
 func TestRecommendationsRead_BackgroundCollectionOnlyForUnrestrictedReaders(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name    string
 		auth    func() *MockAuthService
@@ -116,6 +117,7 @@ func TestRecommendationsRead_BackgroundCollectionOnlyForUnrestrictedReaders(t *t
 // A scope that cannot be established fails closed: the handler returns the
 // lookup error before reading, so nothing can kick a collection.
 func TestRecommendationsRead_ScopeLookupErrorNeverAllowsBackgroundCollection(t *testing.T) {
+	t.Parallel()
 	for _, ep := range recsReadEndpoints {
 		t.Run(ep.name, func(t *testing.T) {
 			mockAuth := new(MockAuthService)
@@ -145,6 +147,7 @@ func TestRecommendationsRead_ScopeLookupErrorNeverAllowsBackgroundCollection(t *
 // unrestricted reader's call still attempts it. The marker attempt is made to
 // lose, so no collection runs in either case.
 func TestGetRecommendations_ColdStartMarkerOnlyForUnrestrictedReaders(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name      string
 		accounts  []string
@@ -173,6 +176,7 @@ func TestGetRecommendations_ColdStartMarkerOnlyForUnrestrictedReaders(t *testing
 // GET /api/recommendations resolves the account scope once and uses it for both
 // the background-collection decision and the post-filter.
 func TestGetRecommendations_ResolvesAccountScopeOnce(t *testing.T) {
+	t.Parallel()
 	for _, accounts := range [][]string{nil, {scopedInAccount}} {
 		var allowed []bool
 		mockAuth := scopedAuth(accounts)

@@ -66,6 +66,7 @@ func jsonKeys(t *testing.T, v any) map[string]bool {
 // always carries the region the quote was priced in, which execute must send
 // back.
 func TestOpenAPIRIExchangeRegionRequired(t *testing.T) {
+	t.Parallel()
 	// The handler side of the contract: a body that is otherwise valid but
 	// names no region is a 400.
 	err := validateExecuteExchangeBody(ExchangeExecuteRequestBody{

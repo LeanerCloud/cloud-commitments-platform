@@ -39,6 +39,7 @@ func requireCurrencyRefusal(t *testing.T, err error, currency string) {
 // 900 EUR (or 900 of an unknown currency) purchase cleared a 1,000 USD cap
 // because 900 <= 1000.
 func TestEnforcePurchaseConstraints_NonUSDUnderCapRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	session := &Session{UserID: "dddddddd-dddd-dddd-dddd-dddddddddddd"}
 	for _, action := range []string{auth.ActionExecute, auth.ActionExecuteAny, auth.ActionApproveAny, auth.ActionApproveOwn} {
@@ -55,6 +56,7 @@ func TestEnforcePurchaseConstraints_NonUSDUnderCapRefused(t *testing.T) {
 }
 
 func TestEnforcePurchaseConstraints_MixedBatchRefused(t *testing.T) {
+	t.Parallel()
 	h := handlerWithCap(auth.ActionExecute, 1000)
 	session := &Session{UserID: "dddddddd-dddd-dddd-dddd-dddddddddddd"}
 	err := h.enforcePurchaseConstraints(context.Background(), session, auth.ActionExecute,
@@ -63,6 +65,7 @@ func TestEnforcePurchaseConstraints_MixedBatchRefused(t *testing.T) {
 }
 
 func TestEnforcePurchaseConstraints_USDStillComparedAgainstCap(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	session := &Session{UserID: "dddddddd-dddd-dddd-dddd-dddddddddddd"}
 	h := handlerWithCap(auth.ActionExecute, 1000)
@@ -80,6 +83,7 @@ func TestEnforcePurchaseConstraints_USDStillComparedAgainstCap(t *testing.T) {
 // A grant with no amount cap has nothing to compare, so a non-USD purchase
 // is not penalized.
 func TestEnforcePurchaseConstraints_NonUSDWithoutCapAllowed(t *testing.T) {
+	t.Parallel()
 	h := handlerWithCap(auth.ActionExecute, 0)
 	session := &Session{UserID: "dddddddd-dddd-dddd-dddd-dddddddddddd"}
 	for _, currency := range []string{"EUR", ""} {
@@ -91,6 +95,7 @@ func TestEnforcePurchaseConstraints_NonUSDWithoutCapAllowed(t *testing.T) {
 // When another dimension refuses the request too, that dimension's error is
 // returned, not the currency one.
 func TestEnforcePurchaseConstraints_NonUSDOtherDimensionKeepsItsError(t *testing.T) {
+	t.Parallel()
 	mockAuth := new(MockAuthService)
 	mockAuth.grantPermissions([]auth.Permission{{
 		Action: auth.ActionExecute, Resource: auth.ResourcePurchases,
@@ -112,6 +117,7 @@ func TestEnforcePurchaseConstraints_NonUSDOtherDimensionKeepsItsError(t *testing
 // execute path: the currency comes from the stored row, never from the
 // request, so a client stating "USD" cannot lift the refusal.
 func TestHandler_executePurchase_NonUSDStoredPriceUnderCapRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := new(MockConfigStore)
 	t.Cleanup(func() { store.AssertExpectations(t) })
@@ -137,6 +143,7 @@ func TestHandler_executePurchase_NonUSDStoredPriceUnderCapRefused(t *testing.T) 
 // An auth backend failure is returned as is: it is not a denial, so it is
 // neither retried nor reported as a currency refusal.
 func TestEnforcePurchaseConstraints_NonUSDBackendErrorPropagates(t *testing.T) {
+	t.Parallel()
 	boom := errors.New("auth store unavailable")
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -156,6 +163,7 @@ func TestEnforcePurchaseConstraints_NonUSDBackendErrorPropagates(t *testing.T) {
 // to its total commitment (upfront plus monthly over the term), while an
 // unpriced Savings Plan row with no currency is still refused under a cap.
 func TestEnforcePurchaseConstraints_AzureAdvisorPricedUSDCapAppliesUnpricedSPRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	session := &Session{UserID: "dddddddd-dddd-dddd-dddd-dddddddddddd"}
 	monthly := 50.0

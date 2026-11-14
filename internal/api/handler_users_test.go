@@ -14,6 +14,7 @@ import (
 )
 
 func TestHandler_listUsers_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -48,6 +49,7 @@ func TestHandler_listUsers_Success(t *testing.T) {
 }
 
 func TestHandler_listUsers_NoPermission(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -75,6 +77,7 @@ func TestHandler_listUsers_NoPermission(t *testing.T) {
 }
 
 func TestHandler_createUser_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -110,6 +113,7 @@ func TestHandler_createUser_Success(t *testing.T) {
 }
 
 func TestHandler_getUser_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -145,6 +149,7 @@ func TestHandler_getUser_Success(t *testing.T) {
 }
 
 func TestHandler_updateUser_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -187,6 +192,7 @@ func TestHandler_updateUser_Success(t *testing.T) {
 // mock.Anything, so this test would fail against the pre-fix struct (the
 // unmarshal would succeed but req.Active would not exist / always be nil).
 func TestHandler_updateUser_Deactivate(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -225,6 +231,7 @@ func TestHandler_updateUser_Deactivate(t *testing.T) {
 }
 
 func TestHandler_deleteUser_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -254,6 +261,7 @@ func TestHandler_deleteUser_Success(t *testing.T) {
 }
 
 func TestHandler_deleteUser_SelfDeletion(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -282,6 +290,7 @@ func TestHandler_deleteUser_SelfDeletion(t *testing.T) {
 
 // Group management endpoint tests.
 func TestHandler_createUser_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -304,6 +313,7 @@ func TestHandler_createUser_InvalidJSON(t *testing.T) {
 }
 
 func TestHandler_updateUser_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -329,6 +339,7 @@ func TestHandler_updateUser_InvalidJSON(t *testing.T) {
 // the auth service must reach a non-UI API consumer as a 400 carrying the
 // explanation, on both the create and the update path, not as a generic 500.
 func TestHandler_users_ContradictoryGroupsMapTo400(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	adminSession := &Session{UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", Email: "admin@example.com"}
 	refusal := fmt.Errorf(`%w: "Viewers" is view-only but "Plan Authors" grants write permissions; assign a view-only group or write-capable groups, not both`,
@@ -371,6 +382,7 @@ func TestHandler_users_ContradictoryGroupsMapTo400(t *testing.T) {
 // A refused group combination names the groups and their view/write split only
 // for a caller who may view groups; any other caller gets the plain refusal.
 func TestHandler_users_ContradictoryGroupsMessageDependsOnViewGroups(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	session := &Session{UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", Email: "ops@example.com"}
 	refusal := fmt.Errorf(`%w: "Viewers" is view-only but "Plan Authors" grants write permissions; assign a view-only group or write-capable groups, not both`,
@@ -439,6 +451,7 @@ func TestHandler_users_ContradictoryGroupsMessageDependsOnViewGroups(t *testing.
 // A permission check that itself errors must not be read as "may view groups":
 // the caller gets the plain refusal.
 func TestHandler_users_ContradictoryGroupsGenericWhenViewGroupsCheckErrors(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	session := &Session{UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", Email: "ops@example.com"}
 	refusal := fmt.Errorf(`%w: "Viewers" is view-only but "Plan Authors" grants write permissions`, auth.ErrContradictoryGroups)
@@ -466,6 +479,7 @@ func TestHandler_users_ContradictoryGroupsGenericWhenViewGroupsCheckErrors(t *te
 // A user API key is judged by its own effective permissions: a key without
 // view:groups gets the plain refusal even if its owner could view groups.
 func TestHandler_users_ContradictoryGroupsMessageForUserAPIKey(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	refusal := fmt.Errorf(`%w: "Viewers" is view-only but "Plan Authors" grants write permissions`, auth.ErrContradictoryGroups)
 	const userID = "11111111-1111-1111-1111-111111111111"
@@ -502,6 +516,7 @@ func TestHandler_users_ContradictoryGroupsMessageForUserAPIKey(t *testing.T) {
 // A refused group grant keeps the 403 status; it names the group and the
 // permission only for a caller who may view groups.
 func TestHandler_users_GroupGrantRefusalMessageDependsOnViewGroups(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	session := &Session{UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", Email: "ops@example.com"}
 	groups := `["00000000-0000-5000-8000-000000000004"]`
@@ -570,6 +585,7 @@ func TestHandler_users_GroupGrantRefusalMessageDependsOnViewGroups(t *testing.T)
 // A refused change to the caller's own group membership keeps the 403 status;
 // it names the group, permission or account only for a caller who may view groups.
 func TestHandler_users_SelfEditRefusalMessageDependsOnViewGroups(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	const selfID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 	session := &Session{UserID: selfID, Email: "ops@example.com"}

@@ -22,6 +22,7 @@ import (
 // TestRouterAuthUser_NoCredentials_Rejects verifies that an AuthUser
 // route returns a 401 ClientError when no credential is presented.
 func TestRouterAuthUser_NoCredentials_Rejects(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	h := &Handler{auth: mockAuth}
@@ -42,6 +43,7 @@ func TestRouterAuthUser_NoCredentials_Rejects(t *testing.T) {
 // route returns 401 when the bearer token is not recognized by the auth
 // service.
 func TestRouterAuthUser_InvalidBearerToken_Rejects(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -69,6 +71,7 @@ func TestRouterAuthUser_InvalidBearerToken_Rejects(t *testing.T) {
 // test ensures the new check doesn't accidentally reject legitimate
 // users.
 func TestRouterAuthUser_ValidUserSession_Accepts(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -88,6 +91,7 @@ func TestRouterAuthUser_ValidUserSession_Accepts(t *testing.T) {
 }
 
 func TestRouterAuthUser_SessionPrincipalAvoidsSecondValidation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	session := &Session{UserID: "session-user"}
@@ -107,6 +111,7 @@ func TestRouterAuthUser_SessionPrincipalAvoidsSecondValidation(t *testing.T) {
 }
 
 func TestRouterAuthUser_UserAPIKeyPrincipalAvoidsSecondValidation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	user := &auth.User{ID: "api-key-user", Email: "user@example.com"}
@@ -126,6 +131,7 @@ func TestRouterAuthUser_UserAPIKeyPrincipalAvoidsSecondValidation(t *testing.T) 
 }
 
 func TestRouterAuthUser_AdminAPIKeyPrincipalReachesHandler(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	h := &Handler{auth: mockAuth, apiKey: "admin-key"}
@@ -143,6 +149,7 @@ func TestRouterAuthUser_AdminAPIKeyPrincipalReachesHandler(t *testing.T) {
 }
 
 func TestHandleRequest_SessionPrincipalValidatedOnce(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	session := &Session{UserID: "session-user"}
@@ -167,6 +174,7 @@ func TestHandleRequest_SessionPrincipalValidatedOnce(t *testing.T) {
 }
 
 func TestHandleRequest_UserAPIKeyPrincipalValidatedOnce(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	user := &auth.User{ID: "api-key-user", Email: "user@example.com"}
@@ -191,6 +199,7 @@ func TestHandleRequest_UserAPIKeyPrincipalValidatedOnce(t *testing.T) {
 }
 
 func TestHandleRequest_MixedCredentialsSessionOnlyHandlerUsesSession(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	apiUser := &auth.User{ID: "api-key-user", Email: "key@example.com"}
@@ -216,6 +225,7 @@ func TestHandleRequest_MixedCredentialsSessionOnlyHandlerUsesSession(t *testing.
 }
 
 func TestHandleRequest_MixedCredentialsAuthAdminRetainsAPIKeyRestrictions(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	apiUser := &auth.User{ID: "api-key-user", Email: "key@example.com"}
@@ -247,6 +257,7 @@ func TestHandleRequest_MixedCredentialsAuthAdminRetainsAPIKeyRestrictions(t *tes
 // routes still dispatch with no credentials — the new switch in
 // Router.Route must not regress public-endpoint behavior.
 func TestRouterAuthPublic_NoCredentials_Accepts(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h := &Handler{}
 	r := NewRouter(h)
@@ -263,6 +274,7 @@ func TestRouterAuthPublic_NoCredentials_Accepts(t *testing.T) {
 // TestRequireAuth_AdminAPIKey verifies that requireAuth accepts the admin
 // API key and returns a Principal of kind PrincipalAdminAPIKey.
 func TestRequireAuth_AdminAPIKey(t *testing.T) {
+	t.Parallel()
 	h := &Handler{apiKey: "admin-secret"}
 	req := &events.LambdaFunctionURLRequest{
 		Headers: map[string]string{"X-API-Key": "admin-secret"},
@@ -276,6 +288,7 @@ func TestRequireAuth_AdminAPIKey(t *testing.T) {
 // TestRequireAuth_UserSession verifies requireAuth accepts a valid
 // non-admin user session and returns a populated Principal.
 func TestRequireAuth_UserSession(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -296,6 +309,7 @@ func TestRequireAuth_UserSession(t *testing.T) {
 // TestRequireAuth_NoCredential_Rejects verifies requireAuth returns a 401
 // ClientError when no credential is presented.
 func TestRequireAuth_NoCredential_Rejects(t *testing.T) {
+	t.Parallel()
 	mockAuth := new(MockAuthService)
 	h := &Handler{auth: mockAuth}
 	req := &events.LambdaFunctionURLRequest{Headers: map[string]string{}}
@@ -312,6 +326,7 @@ func TestRequireAuth_NoCredential_Rejects(t *testing.T) {
 // auth.Service.ValidateUserAPIKeyAPI returns in production — so this test
 // exercises the same type assertion that principalFromUserAPIKey performs.
 func TestRequireAuth_UserAPIKey(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -337,6 +352,7 @@ func TestRequireAuth_UserAPIKey(t *testing.T) {
 // value that is not *auth.User (unexpected concrete type). Post-fix it
 // must return nil and the overall requireAuth must return a 401 ClientError.
 func TestRequireAuth_UserAPIKey_BadRecord(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -364,6 +380,7 @@ func TestRequireAuth_UserAPIKey_BadRecord(t *testing.T) {
 // auth == nil returns a 401 ClientError for a non-admin credential, confirming
 // the h.auth == nil branch fails closed.
 func TestRequireAuth_NilAuth_Rejects(t *testing.T) {
+	t.Parallel()
 	// No admin key configured, auth is nil.
 	h := &Handler{auth: nil}
 	req := &events.LambdaFunctionURLRequest{

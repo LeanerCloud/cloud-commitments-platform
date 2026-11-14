@@ -11,6 +11,7 @@ import (
 
 // TestSetSecurityHeaders verifies that all required security headers are set.
 func TestSetSecurityHeaders(t *testing.T) {
+	t.Parallel()
 	headers := make(map[string]string)
 	headers = setSecurityHeaders(headers)
 
@@ -28,6 +29,7 @@ func TestSetSecurityHeaders(t *testing.T) {
 
 // TestSetSecurityHeaders_DoesNotOverwrite verifies headers are set correctly.
 func TestSetSecurityHeaders_DoesNotOverwrite(t *testing.T) {
+	t.Parallel()
 	headers := map[string]string{
 		"Content-Type": "application/json",
 	}
@@ -42,6 +44,7 @@ func TestSetSecurityHeaders_DoesNotOverwrite(t *testing.T) {
 
 // TestHandleRequest_SecurityHeaders verifies all responses include security headers.
 func TestHandleRequest_SecurityHeaders(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler := &Handler{corsAllowedOrigin: "https://example.com"}
 
@@ -71,6 +74,7 @@ func TestHandleRequest_SecurityHeaders(t *testing.T) {
 
 // TestHandleRequest_SecurityHeaders_OPTIONS verifies OPTIONS requests include security headers.
 func TestHandleRequest_SecurityHeaders_OPTIONS(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler := &Handler{corsAllowedOrigin: "https://example.com"}
 
@@ -95,6 +99,7 @@ func TestHandleRequest_SecurityHeaders_OPTIONS(t *testing.T) {
 
 // TestHandleRequest_SecurityHeaders_ErrorResponse verifies error responses include security headers.
 func TestHandleRequest_SecurityHeaders_ErrorResponse(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler := &Handler{apiKey: "test-key"}
 
@@ -131,6 +136,7 @@ func TestHandleRequest_SecurityHeaders_ErrorResponse(t *testing.T) {
 // policy (extra source, extra directive, accidental wildcard) triggers a
 // test failure rather than silently passing through a Contains-style check.
 func TestServeDocsUI_RelaxedCSP(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler := &Handler{}
 
@@ -158,6 +164,7 @@ func TestServeDocsUI_RelaxedCSP(t *testing.T) {
 }
 
 func TestDocsHandler_HEAD_ReturnsHeaders(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler := &Handler{}
 
@@ -204,6 +211,7 @@ func TestDocsHandler_HEAD_ReturnsHeaders(t *testing.T) {
 }
 
 func TestDocsRoutes_RegisterHEAD(t *testing.T) {
+	t.Parallel()
 	router := NewRouter(&Handler{})
 	expected := map[string]bool{
 		"/api/docs": false,
@@ -230,6 +238,7 @@ func TestDocsRoutes_RegisterHEAD(t *testing.T) {
 // must get the override; otherwise the legacy header link in the
 // frontend would render blank.
 func TestServeDocsUI_RelaxedCSP_RootDocs(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler := &Handler{}
 
@@ -259,6 +268,7 @@ func TestServeDocsUI_RelaxedCSP_RootDocs(t *testing.T) {
 // (which serves raw YAML, no scripts) keeps the default restrictive CSP.
 // Only the HTML docs page needs the relaxed policy.
 func TestServeOpenAPISpec_KeepsStrictCSP(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler := &Handler{}
 
@@ -284,6 +294,7 @@ func TestServeOpenAPISpec_KeepsStrictCSP(t *testing.T) {
 // TestNonDocsPath_KeepsStrictCSP verifies that a non-docs path (e.g. /api/health)
 // is unaffected by the docs-path CSP override and still emits the strict CSP.
 func TestNonDocsPath_KeepsStrictCSP(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler := &Handler{corsAllowedOrigin: "https://example.com"}
 
@@ -306,6 +317,7 @@ func TestNonDocsPath_KeepsStrictCSP(t *testing.T) {
 
 // TestHandleRequest_SecurityHeaders_RequestTooLarge verifies 413 responses include security headers.
 func TestHandleRequest_SecurityHeaders_RequestTooLarge(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handler := &Handler{}
 

@@ -12,6 +12,7 @@ import (
 const ec2Head = "failed to purchase EC2 RI: "
 
 func TestHistoryRow_DuplicateGuardHint(t *testing.T) {
+	t.Parallel()
 	ec2 := []config.RecommendationRecord{{Provider: "aws", Service: "ec2"}}
 	denied := executionToHistoryRow(config.PurchaseExecution{Status: "failed", Error: ec2Head + fakeAWSDenied, Recommendations: ec2}, "", "")
 	assert.False(t, strings.Contains(denied.OpsHint, "duplicate guard"), "definite refusal hides the warning")
@@ -27,6 +28,7 @@ func TestHistoryRow_DuplicateGuardHint(t *testing.T) {
 }
 
 func TestHistoryRow_DuplicateHintKeptOutsideDefiniteAWSRefusals(t *testing.T) {
+	t.Parallel()
 	const gcpRate = "commitment creation failed: googleapi: Error 403: Rate Limit Exceeded, rateLimitExceeded"
 	const gcpNotFound = "commitment creation failed: googleapi: Error 404: operations/op-1 was not found, notFound"
 	azure500 := azureHTTPError(t, 500, "/providers/Microsoft.Capacity/reservationOrders/x").Error()
@@ -56,6 +58,7 @@ func TestHistoryRow_DuplicateHintKeptOutsideDefiniteAWSRefusals(t *testing.T) {
 }
 
 func TestHistoryRow_ExecutorStoredAWSRefusalDropsDuplicateHint(t *testing.T) {
+	t.Parallel()
 	const ec2Stored = "m5.large: purchase failed: failed to purchase EC2 RI: operation error EC2: PurchaseReservedInstancesOffering, https response error StatusCode: 403, RequestID: 11111111-2222-3333-4444-555555555555, api error UnauthorizedOperation: You are not authorized (account 123456789012)"
 	const redshiftStored = "ra3.xlplus: purchase failed: failed to purchase Redshift Reserved Node: operation error Redshift: PurchaseReservedNodeOffering, https response error StatusCode: 403, RequestID: 11111111-2222-3333-4444-555555555555, api error AccessDenied: denied"
 	// RDS calls carry an idempotency token and keep the SDK retries, so its 4xx proves nothing.

@@ -80,6 +80,7 @@ func TestPurchaseIdempotencyKey_NoDetailsIsEmptyAZ(t *testing.T) {
 }
 
 func TestCheckPurchaseDetailIdentity_AvailabilityZoneMismatchRefused(t *testing.T) {
+	t.Parallel()
 	for name, matchAZ := range map[string]string{"different az": "us-east-1b", "unknown az": ""} {
 		t.Run(name, func(t *testing.T) {
 			origin := zonalEC2Rec("us-east-1a", 100)
@@ -100,6 +101,7 @@ func TestCheckPurchaseDetailIdentity_AvailabilityZoneMismatchRefused(t *testing.
 }
 
 func TestCheckPurchaseDetailIdentity_LegacyOriginWithoutAZAllowed(t *testing.T) {
+	t.Parallel()
 	origin := zonalEC2Rec("us-east-1a", 100)
 	origin.Details = json.RawMessage(`{"instance_type":"m5.large","platform":"Linux/UNIX","tenancy":"default","scope":"Availability Zone"}`)
 	match := zonalEC2Rec("us-east-1b", 100)
@@ -109,6 +111,7 @@ func TestCheckPurchaseDetailIdentity_LegacyOriginWithoutAZAllowed(t *testing.T) 
 }
 
 func TestRecIdentityKey_DiffersByAvailabilityZone(t *testing.T) {
+	t.Parallel()
 	a, b := zonalEC2Rec("us-east-1a", 1), zonalEC2Rec("us-east-1b", 1)
 	assert.NotEqual(t, mustRecIdentityKey(t, &a), mustRecIdentityKey(t, &b))
 }
@@ -116,6 +119,7 @@ func TestRecIdentityKey_DiffersByAvailabilityZone(t *testing.T) {
 // Two zonal rows that differ only by AZ must both load (no "more than one row"
 // refusal) and each request must be priced from its own AZ's row.
 func TestPriceRecommendationsFromStore_PricesFromRequestedAZ(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := new(MockConfigStore)
 	t.Cleanup(func() { store.AssertExpectations(t) })
@@ -133,6 +137,7 @@ func TestPriceRecommendationsFromStore_PricesFromRequestedAZ(t *testing.T) {
 }
 
 func TestPriceRecommendationsFromStore_ZonalRequestWithoutAZRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := new(MockConfigStore)
 	t.Cleanup(func() { store.AssertExpectations(t) })
@@ -153,6 +158,7 @@ func TestPriceRecommendationsFromStore_ZonalRequestWithoutAZRefused(t *testing.T
 // No-ID path: the request's stated Details AZ must agree with the matched row,
 // whether the top-level AZ is empty (no match) or names another AZ.
 func TestPriceRecommendationsFromStore_NoIDDetailsAZMismatchRefused(t *testing.T) {
+	t.Parallel()
 	for name, topLevel := range map[string]string{"empty top-level": "", "other top-level": "us-east-1b"} {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
@@ -175,6 +181,7 @@ func TestPriceRecommendationsFromStore_NoIDDetailsAZMismatchRefused(t *testing.T
 }
 
 func TestDescribeRec_IncludesAvailabilityZone(t *testing.T) {
+	t.Parallel()
 	r := zonalEC2Rec("us-east-1a", 1)
 	assert.Contains(t, describeRec(&r), "az=us-east-1a")
 	r.AvailabilityZone = ""

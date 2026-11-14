@@ -56,6 +56,7 @@ func lgCallFor(t *testing.T, provider string, caller apgCaller, stored *config.L
 }
 
 func TestLadderArmingGate_ConfigWrites(t *testing.T) {
+	t.Parallel()
 	admin := apgCaller{perms: apgAdminOnly}
 	granted := apgCaller{perms: apgAdminPlus}
 	key := apgCaller{key: true}
@@ -105,6 +106,7 @@ func TestLadderArmingGate_ConfigWrites(t *testing.T) {
 }
 
 func TestLadderArmingGate_ConfigLookupErrorFailsClosed(t *testing.T) {
+	t.Parallel()
 	store := new(MockConfigStore)
 	t.Cleanup(func() { store.AssertExpectations(t) })
 	store.On("GetLadderConfig", mock.Anything, lgAcct, "aws").Return((*config.LadderConfigDB)(nil), fmt.Errorf("db down"))
@@ -121,6 +123,7 @@ func TestLadderArmingGate_ConfigLookupErrorFailsClosed(t *testing.T) {
 // gate's clear-cap rules stay pinned here with gcp (the gate is
 // provider-agnostic). AWS can no longer reach them (#1815).
 func TestLadderArmingGate_ClearCapNonAWS(t *testing.T) {
+	t.Parallel()
 	admin := apgCaller{perms: apgAdminOnly}
 	key := apgCaller{key: true}
 	cap1 := apgCap(1)
@@ -159,6 +162,7 @@ func TestLadderArmingGate_ClearCapNonAWS(t *testing.T) {
 // Clearing the cap on an AWS config is now a 400 at validation (#1815), before
 // the arming gate is consulted, so it can no longer be a 403 case above.
 func TestLadderArmingGate_ClearingAWSCapIsValidationError(t *testing.T) {
+	t.Parallel()
 	store, err := lgCall(t, apgCaller{perms: apgAdminPlus}, lgStored(true, "auto_approve", apgCap(1)), lgBody(true, "auto_approve", ""))
 	require.Error(t, err)
 	ce, ok := IsClientError(err)
@@ -169,6 +173,7 @@ func TestLadderArmingGate_ClearingAWSCapIsValidationError(t *testing.T) {
 }
 
 func TestLadderArmingGate_CapValidation(t *testing.T) {
+	t.Parallel()
 	for _, capJSON := range []string{"0", "-1", "0.0000004", "1.1234567", "1e13", "1e308", `"5"`} {
 		t.Run(capJSON, func(t *testing.T) {
 			store, err := lgCall(t, apgCaller{perms: apgAdminPlus}, nil, lgBody(false, "auto_approve", capJSON))
@@ -187,6 +192,7 @@ func TestLadderArmingGate_CapValidation(t *testing.T) {
 }
 
 func TestLadderArmingGate_ExecutionSwitch(t *testing.T) {
+	t.Parallel()
 	off, on := baseValidConfig(), baseValidConfig()
 	on.LadderExecutionEnabled = true
 	const flip = `{"ladder_execution_enabled":true}`
@@ -244,6 +250,7 @@ func TestLadderArmingGate_ExecutionSwitch(t *testing.T) {
 }
 
 func TestLadderArmingGate_StampsCannotBeForgedViaConfigBody(t *testing.T) {
+	t.Parallel()
 	stored := baseValidConfig()
 	by, via := "real-actor", "user"
 	at := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)

@@ -36,6 +36,7 @@ func fiveGroupsOf1000() []string {
 }
 
 func TestDecodePlanRequest_GroupsRefused(t *testing.T) {
+	t.Parallel()
 	six := append(fiveGroupsOf1000(), groupJSON(`["x"]`))
 	cases := []struct {
 		name, body, msg, code string
@@ -72,6 +73,7 @@ func TestDecodePlanRequest_GroupsRefused(t *testing.T) {
 }
 
 func TestValidateGroups_GroupCountCap(t *testing.T) {
+	t.Parallel()
 	groups := make([]string, maxPlanGroups+1)
 	for i := range groups {
 		groups[i] = `{"provider":"aws","service":"s` + fmt.Sprint(i) + `","recommendation_ids":["r` + fmt.Sprint(i) + `"]}`
@@ -85,6 +87,7 @@ func TestValidateGroups_GroupCountCap(t *testing.T) {
 }
 
 func TestValidateGroups_Boundaries(t *testing.T) {
+	t.Parallel()
 	var req PlanRequest
 	require.NoError(t, json.Unmarshal([]byte(groupsBody(groupJSON(idList(0, 1000)))), &req))
 	assert.NoError(t, req.validateGroups(), "exactly 1000 ids in one group")
@@ -99,6 +102,7 @@ func TestValidateGroups_Boundaries(t *testing.T) {
 }
 
 func TestDecodePlanRequest_ValidGroupsAccepted(t *testing.T) {
+	t.Parallel()
 	req, err := decodePlanRequest(groupsBody(groupJSON(`["a","b"]`)))
 	require.NoError(t, err)
 	require.Len(t, req.Groups, 1)
@@ -110,6 +114,7 @@ func TestDecodePlanRequest_ValidGroupsAccepted(t *testing.T) {
 }
 
 func TestDecodePlanRequest_NoGroupsUnchanged(t *testing.T) {
+	t.Parallel()
 	req, err := decodePlanRequest(`{"name":"p","provider":"aws","service":"ec2","term":3,"payment":"all-upfront","target_coverage":70}`)
 	require.NoError(t, err)
 	assert.Empty(t, req.Groups)

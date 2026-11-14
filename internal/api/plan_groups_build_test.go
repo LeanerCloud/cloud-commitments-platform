@@ -24,6 +24,7 @@ func identityOf(t *testing.T, rec config.RecommendationRecord) string {
 }
 
 func TestBuildBoundServices_TwoGroups(t *testing.T) {
+	t.Parallel()
 	ec2a := groupRec("a", "aws", "ec2", "us-east-1", "m5.large", 3, "all-upfront", "acct-1")
 	ec2b := groupRec("b", "aws", "ec2", "us-west-2", "m5.large", 3, "all-upfront", "acct-1")
 	az := groupRec("c", "azure", "compute", "westeurope", "Standard_D2s_v3", 1, "monthly", "acct-2")
@@ -61,6 +62,7 @@ func TestBuildBoundServices_TwoGroups(t *testing.T) {
 }
 
 func TestBuildBoundServices_DefaultsAndErrors(t *testing.T) {
+	t.Parallel()
 	rec := groupRec("a", "aws", "ec2", "us-east-1", "m5.large", 3, "no-upfront", "acct-1")
 	got, err := buildBoundServices([]PlanGroupRequest{{Provider: "aws", Service: "ec2", RecommendationIDs: []string{"a"}}},
 		[][]config.RecommendationRecord{{rec}})
@@ -81,6 +83,7 @@ func TestBuildBoundServices_DefaultsAndErrors(t *testing.T) {
 }
 
 func TestBuildBoundServices_DuplicateIdentityAcrossGroupsFailsValidate(t *testing.T) {
+	t.Parallel()
 	rec := groupRec("a", "aws", "ec2", "us-east-1", "m5.large", 3, "all-upfront", "acct-1")
 	groups := []PlanGroupRequest{
 		{Provider: "aws", Service: "ec2", Term: ptr(3), Payment: ptr("all-upfront"), RecommendationIDs: []string{"a"}},

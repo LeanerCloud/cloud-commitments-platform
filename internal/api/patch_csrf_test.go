@@ -126,6 +126,7 @@ func patchCSRFRequest(row patchCSRFRow, session, csrf string) *events.LambdaFunc
 // With the issued token the edit still goes through, so a fix that refuses
 // every PATCH also fails.
 func TestHandleRequest_SessionPATCHRequiresCSRF(t *testing.T) {
+	t.Parallel()
 	for _, row := range patchCSRFRows {
 		for _, tc := range []struct{ name, csrf string }{{"no CSRF header", ""}, {"wrong CSRF header", patchCSRFOther}} {
 			t.Run(row.name+"/"+tc.name, func(t *testing.T) {
@@ -150,6 +151,7 @@ func TestHandleRequest_SessionPATCHRequiresCSRF(t *testing.T) {
 // TestRequiresCSRFValidation_SafeMethodsOnly pins the predicate: only GET,
 // HEAD and OPTIONS skip CSRF. Unknown verbs are checked (fail closed).
 func TestRequiresCSRFValidation_SafeMethodsOnly(t *testing.T) {
+	t.Parallel()
 	h := &Handler{}
 	for method, want := range map[string]bool{
 		"GET": false, "HEAD": false, "OPTIONS": false,
@@ -186,6 +188,7 @@ func csrfSamplePath(r Route) string {
 // before the CSRF check for them, and authpublic_csrf_guard_test.go covers
 // them per route.
 func TestRouter_EveryStateChangingRouteRequiresCSRF(t *testing.T) {
+	t.Parallel()
 	h := &Handler{}
 	r := NewRouter(h)
 	checked := map[string]bool{}

@@ -42,6 +42,7 @@ func factorByCode(t *testing.T, factors []PlanHealthFactor, code PlanHealthFacto
 }
 
 func TestComputePlanHealth_HealthyPlanScoresPerfect(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
 	plan := config.PurchasePlan{
 		Enabled: true,
@@ -60,6 +61,7 @@ func TestComputePlanHealth_HealthyPlanScoresPerfect(t *testing.T) {
 }
 
 func TestComputePlanHealth_CompletedPlanShortCircuitsRegardlessOfOtherIssues(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
 	overdueDate := now.AddDate(0, 0, -5)
 	plan := config.PurchasePlan{
@@ -81,6 +83,7 @@ func TestComputePlanHealth_CompletedPlanShortCircuitsRegardlessOfOtherIssues(t *
 }
 
 func TestComputePlanHealth_Overdue(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
 	past := now.AddDate(0, 0, -1)
 	plan := config.PurchasePlan{
@@ -103,6 +106,7 @@ func TestComputePlanHealth_Overdue(t *testing.T) {
 }
 
 func TestComputePlanHealth_OverdueRequiresEnabled(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
 	past := now.AddDate(0, 0, -1)
 	plan := config.PurchasePlan{
@@ -122,6 +126,7 @@ func TestComputePlanHealth_OverdueRequiresEnabled(t *testing.T) {
 }
 
 func TestComputePlanHealth_FailedExecutionsPenaltyCapsAtFour(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
 	plan := config.PurchasePlan{
 		Enabled: true,
@@ -150,6 +155,7 @@ func TestComputePlanHealth_FailedExecutionsPenaltyCapsAtFour(t *testing.T) {
 }
 
 func TestComputePlanHealth_CanceledExecutionsPenaltyCapsAtFour(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
 	plan := config.PurchasePlan{
 		Enabled: true,
@@ -176,6 +182,7 @@ func TestComputePlanHealth_CanceledExecutionsPenaltyCapsAtFour(t *testing.T) {
 }
 
 func TestComputePlanHealth_Stalled(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
 	plan := config.PurchasePlan{
 		Enabled: true,
@@ -196,6 +203,7 @@ func TestComputePlanHealth_Stalled(t *testing.T) {
 }
 
 func TestComputePlanHealth_BehindSchedule(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
 	plan := config.PurchasePlan{
 		Enabled: true,
@@ -228,6 +236,7 @@ func TestComputePlanHealth_BehindSchedule(t *testing.T) {
 // covering this same arithmetic (ScoreClampsAtZeroWhenPenaltiesStack) checked
 // only codes and the clamped score, which is why nothing caught it.
 func TestComputePlanHealth_BehindScheduleNoteClampsExpectedStepToTotalSteps(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
 	plan := config.PurchasePlan{
 		Enabled: true,
@@ -250,6 +259,7 @@ func TestComputePlanHealth_BehindScheduleNoteClampsExpectedStepToTotalSteps(t *t
 }
 
 func TestComputePlanHealth_StalledAndBehindScheduleAreMutuallyExclusive(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
 	plan := config.PurchasePlan{
 		Enabled: true,
@@ -269,6 +279,7 @@ func TestComputePlanHealth_StalledAndBehindScheduleAreMutuallyExclusive(t *testi
 }
 
 func TestComputePlanHealth_ImmediatePlanSkipsScheduleFactors(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
 	plan := config.PurchasePlan{
 		Enabled: true,
@@ -296,6 +307,7 @@ func TestComputePlanHealth_ImmediatePlanSkipsScheduleFactors(t *testing.T) {
 // the plan as ~740000 days behind schedule, which pre-fix subtracted a real
 // -20 penalty derived entirely from a missing input.
 func TestComputePlanHealth_ZeroStartDateSkipsScheduleFactors(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
 	plan := config.PurchasePlan{
 		Enabled: true,
@@ -320,6 +332,7 @@ func TestComputePlanHealth_ZeroStartDateSkipsScheduleFactors(t *testing.T) {
 // StartDate guard is scoped to the schedule factors only: an unknown
 // schedule position must not suppress penalties that don't depend on it.
 func TestComputePlanHealth_ZeroStartDateStillCountsExecutionFactors(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
 	plan := config.PurchasePlan{
 		Enabled: true,
@@ -339,6 +352,7 @@ func TestComputePlanHealth_ZeroStartDateStillCountsExecutionFactors(t *testing.T
 }
 
 func TestComputePlanHealth_DisabledMidway(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
 	plan := config.PurchasePlan{
 		Enabled: false,
@@ -359,6 +373,7 @@ func TestComputePlanHealth_DisabledMidway(t *testing.T) {
 }
 
 func TestComputePlanHealth_DisabledButNeverStartedIsBehindScheduleNotDisabledMidway(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
 	plan := config.PurchasePlan{
 		Enabled: false,
@@ -379,6 +394,7 @@ func TestComputePlanHealth_DisabledButNeverStartedIsBehindScheduleNotDisabledMid
 }
 
 func TestComputePlanHealth_ScoreClampsAtZeroWhenPenaltiesStack(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
 	past := now.AddDate(0, 0, -1)
 	plan := config.PurchasePlan{
@@ -412,6 +428,7 @@ func TestComputePlanHealth_ScoreClampsAtZeroWhenPenaltiesStack(t *testing.T) {
 }
 
 func TestComputePlanHealth_UnrelatedExecutionStatusesAreNotCounted(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
 	plan := config.PurchasePlan{
 		Enabled: true,
@@ -451,6 +468,7 @@ func blockedRampPlan(now time.Time) config.PurchasePlan {
 }
 
 func TestComputePlanHealth_RampBlockedReplacesBehindSchedule(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
 	plan := blockedRampPlan(now)
 
@@ -473,6 +491,7 @@ func TestComputePlanHealth_RampBlockedReplacesBehindSchedule(t *testing.T) {
 }
 
 func TestComputePlanHealth_RampBlockedNeedsANonZeroCount(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
 	plan := blockedRampPlan(now)
 
@@ -486,6 +505,7 @@ func TestComputePlanHealth_RampBlockedNeedsANonZeroCount(t *testing.T) {
 }
 
 func TestComputePlanHealth_RampBlockedFiresBeforeTheFirstInterval(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
 	plan := blockedRampPlan(now)
 	// Nothing about the wall clock is wrong yet, so scheduleFactor declines.
@@ -499,6 +519,7 @@ func TestComputePlanHealth_RampBlockedFiresBeforeTheFirstInterval(t *testing.T) 
 }
 
 func TestComputePlanHealth_RampBlockedStacksWithExecutionFactors(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
 	past := now.AddDate(0, 0, -1)
 	plan := blockedRampPlan(now)

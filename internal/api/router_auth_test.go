@@ -13,6 +13,7 @@ import (
 // replayed the panic loop inline and would have kept passing even if
 // NewRouter stopped enforcing).
 func TestValidateRoutes_PanicsOnUnsetAuth(t *testing.T) {
+	t.Parallel()
 	assert.Panics(t, func() {
 		validateRoutes([]Route{
 			{ExactPath: "/x", Method: "GET" /* Auth deliberately omitted */},
@@ -24,6 +25,7 @@ func TestValidateRoutes_PanicsOnUnsetAuth(t *testing.T) {
 // for each of the three valid Auth values. A route table where every
 // entry declares a level must NOT panic.
 func TestValidateRoutes_AcceptsAllExplicitLevels(t *testing.T) {
+	t.Parallel()
 	assert.NotPanics(t, func() {
 		validateRoutes([]Route{
 			{ExactPath: "/a", Method: "GET", Auth: AuthAdmin},
@@ -39,6 +41,7 @@ func TestValidateRoutes_AcceptsAllExplicitLevels(t *testing.T) {
 // this test fails *and* NewRouter would panic at startup. Two independent
 // safety nets so a missed field can't reach a deployed Lambda.
 func TestRoute_AllRegisteredHaveExplicitAuth(t *testing.T) {
+	t.Parallel()
 	r := &Router{h: &Handler{}}
 	r.registerRoutes()
 	for i, route := range r.routes {

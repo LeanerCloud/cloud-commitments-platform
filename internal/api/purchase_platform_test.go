@@ -24,6 +24,7 @@ func ec2PlatformRec(platform, tenancy string, upfront float64) config.Recommenda
 }
 
 func TestRecIdentityKey_DiffersByPlatformAndTenancy(t *testing.T) {
+	t.Parallel()
 	linux := ec2PlatformRec("Linux/UNIX", "default", 1)
 	windows := ec2PlatformRec("Windows", "default", 1)
 	dedicated := ec2PlatformRec("Linux/UNIX", "dedicated", 1)
@@ -34,6 +35,7 @@ func TestRecIdentityKey_DiffersByPlatformAndTenancy(t *testing.T) {
 }
 
 func TestRecIdentityKey_MalformedDetailsErrors(t *testing.T) {
+	t.Parallel()
 	bad := ec2PlatformRec("Linux/UNIX", "default", 1)
 	bad.Details = json.RawMessage(`{"platform":5}`)
 	_, err := config.RecIdentityKey(&bad)
@@ -44,6 +46,7 @@ func TestRecIdentityKey_MalformedDetailsErrors(t *testing.T) {
 // "more than one row" refusal) and the request, which carries the values only
 // in Details, is priced from its own variant's row.
 func TestPriceRecommendationsFromStore_PricesFromRequestedPlatformAndTenancy(t *testing.T) {
+	t.Parallel()
 	for name, want := range map[string]struct {
 		platform, tenancy string
 		upfront           float64
@@ -73,6 +76,7 @@ func TestPriceRecommendationsFromStore_PricesFromRequestedPlatformAndTenancy(t *
 // An external client that sends no Details cannot name its platform: it is
 // refused with a 409 rather than priced off an arbitrary variant.
 func TestPriceRecommendationsFromStore_RequestWithoutDetailsRefusedForEC2(t *testing.T) {
+	t.Parallel()
 	store := new(MockConfigStore)
 	t.Cleanup(func() { store.AssertExpectations(t) })
 	expectStoredRecs(store, ec2PlatformRec("Linux/UNIX", "default", 100))
@@ -100,6 +104,7 @@ func TestPurchaseIdempotencyKey_DiffersByPlatformAndTenancy(t *testing.T) {
 }
 
 func TestDescribeRec_IncludesPlatformAndTenancy(t *testing.T) {
+	t.Parallel()
 	r := ec2PlatformRec("Windows", "dedicated", 1)
 	assert.Contains(t, describeRec(&r), `platform="Windows" tenancy="dedicated"`)
 	bare := config.RecommendationRecord{Provider: "aws", Service: "rds"}
@@ -111,6 +116,7 @@ func TestDescribeRec_IncludesPlatformAndTenancy(t *testing.T) {
 // The frontend sends encodeURIComponent(id); net/http hands the router the
 // decoded path.
 func TestRouter_RecommendationDetailRouteKeepsPlatformInID(t *testing.T) {
+	t.Parallel()
 	id := "aws|acct|ec2|us-east-1|m5.large||1|all-upfront|Red Hat Enterprise Linux|default"
 	idSlash := "aws|acct|ec2|us-east-1|m5.large||1|all-upfront|Linux/UNIX|default"
 	r := NewRouter(&Handler{})

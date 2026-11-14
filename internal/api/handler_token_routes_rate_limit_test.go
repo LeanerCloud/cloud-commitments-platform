@@ -14,6 +14,7 @@ import (
 // against token guessing, so a limiter error must refuse the request instead
 // of letting it through unthrottled (#100).
 func TestTokenGuardedRoutes_RateLimiterErrorFailsClosed(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	handlers := map[string]func(*Router) func(context.Context, *events.LambdaFunctionURLRequest, map[string]string) (any, error){
 		"approve purchase": func(r *Router) func(context.Context, *events.LambdaFunctionURLRequest, map[string]string) (any, error) {

@@ -152,6 +152,7 @@ func newRouteCoverageRouter() *Router {
 }
 
 func TestOpenAPIDocumentsEveryRoute(t *testing.T) {
+	t.Parallel()
 	r := newRouteCoverageRouter()
 	require.NotEmpty(t, r.routes)
 
@@ -177,6 +178,7 @@ func TestOpenAPIDocumentsEveryRoute(t *testing.T) {
 // The checker itself must notice drift in each direction; otherwise a bug in
 // it would let TestOpenAPIDocumentsEveryRoute pass vacuously.
 func TestRouteCoverageGapsDetectsDrift(t *testing.T) {
+	t.Parallel()
 	r := &Router{routes: []Route{
 		{ExactPath: "/api/a", Method: "GET"},
 		{PathPrefix: "/api/b/", PathSuffix: "/sub", Method: "POST"},
@@ -215,6 +217,7 @@ paths:
 }
 
 func TestPartitionExemptReportsStaleEntries(t *testing.T) {
+	t.Parallel()
 	gaps, stale := partitionExempt(
 		[]string{"GET /a", "GET /b"},
 		map[string]string{"GET /b": "reason", "GET /gone": "reason"},

@@ -23,6 +23,7 @@ import (
 // claim. A request that can never commit must not leave a claim behind, and
 // these also make the fingerprint's "no component is blank" property true.
 func TestValidateExecuteExchangeBody_RefusesUncommittableRequests(t *testing.T) {
+	t.Parallel()
 	const offeringID = "4b2293b4-5fbc-4017-9c75-d5a9d3aa8c91"
 	base := func() ExchangeExecuteRequestBody {
 		return ExchangeExecuteRequestBody{
@@ -80,6 +81,7 @@ func TestValidateExecuteExchangeBody_RefusesUncommittableRequests(t *testing.T) 
 // above has to happen before the ledger is touched, or a request that can
 // never commit would hold a claim for the whole window.
 func TestExecuteExchange_InvalidBodyNeverClaims(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ledger := newExchangeClaimLedger()
 	t.Cleanup(func() { ledger.AssertExpectations(t) })
@@ -123,6 +125,7 @@ func TestExecuteExchange_InvalidBodyNeverClaims(t *testing.T) {
 // same malformed targets execute does (#1521). Without it a legacy target
 // with no count passed the handler and surfaced as a 500 from the library.
 func TestGetExchangeQuote_ValidatesLikeExecute(t *testing.T) {
+	t.Parallel()
 	const offeringID = "4b2293b4-5fbc-4017-9c75-d5a9d3aa8c91"
 	cases := map[string]struct{ body, want string }{
 		"legacy form without a count": {

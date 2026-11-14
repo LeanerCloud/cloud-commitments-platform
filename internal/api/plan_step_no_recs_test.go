@@ -36,6 +36,7 @@ func bareStepAPIPlan() *config.PurchasePlan {
 }
 
 func TestAddPurchasesToPlanCreatesFutureRoots(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)
@@ -67,6 +68,7 @@ func TestAddPurchasesToPlanCreatesFutureRoots(t *testing.T) {
 }
 
 func TestAddPurchasesValidatesLockedPlan(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		change   func(*config.PurchasePlan)
@@ -125,6 +127,7 @@ func TestAddPurchasesValidatesLockedPlan(t *testing.T) {
 }
 
 func TestAddPurchasesAnchorsPartlyCompletedRamp(t *testing.T) {
+	t.Parallel()
 	for _, step := range []int{0, 2} {
 		t.Run(fmt.Sprint(step), func(t *testing.T) {
 			ctx := context.Background()
@@ -156,6 +159,7 @@ func TestAddPurchasesAnchorsPartlyCompletedRamp(t *testing.T) {
 }
 
 func TestRetryOfBarePlanStepIsRefusedAndCreatesNothing(t *testing.T) {
+	t.Parallel()
 	creator := retryCallerID
 	failed := &config.PurchaseExecution{
 		ExecutionID: bareStepAPIExecID,

@@ -24,6 +24,7 @@ func assertNoConnectText(t *testing.T, where, s string) {
 }
 
 func TestTailedNotesWithStoreErrors_NeverReachUserSurfaces(t *testing.T) {
+	t.Parallel()
 	notes := []string{
 		"ramp not advanced: " + fakeConnectErr,
 		"refusing to execute: ladder tranche lookup failed: " + fakeConnectErr,
@@ -59,6 +60,7 @@ func TestTailedNotesWithStoreErrors_NeverReachUserSurfaces(t *testing.T) {
 }
 
 func TestExecuteFailure_SentinelWrappingProviderErrorShowsOnlySentinelText(t *testing.T) {
+	t.Parallel()
 	for _, sentinel := range []error{purchase.ErrStaleAzurePricing, purchase.ErrClaimedRowRefused} {
 		err := fmt.Errorf("%w: %w", sentinel, errors.New(fakeConnectErr))
 		_, msg := summarizeExecuteFailure("e-1", err)
@@ -74,6 +76,7 @@ func TestExecuteFailure_SentinelWrappingProviderErrorShowsOnlySentinelText(t *te
 }
 
 func TestTokenActionError_StalePricingShowsOnlySentinelText(t *testing.T) {
+	t.Parallel()
 	err := tokenActionError(fmt.Errorf("%w: %w", purchase.ErrStaleAzurePricing, errors.New(fakeConnectErr)))
 	ce, ok := IsClientError(err)
 	require.True(t, ok)
@@ -83,6 +86,7 @@ func TestTokenActionError_StalePricingShowsOnlySentinelText(t *testing.T) {
 // A refused AWS purchase keeps ops_hint (the History UI hides Retry on it) but
 // carries no duplicate-purchase warning.
 func TestHistoryRow_DefiniteAWSRefusalKeepsOpsHintWithoutDuplicateWarning(t *testing.T) {
+	t.Parallel()
 	denied := "m5.large: purchase failed: failed to purchase EC2 RI: operation error EC2: X, https response error StatusCode: 403, RequestID: r, api error UnauthorizedOperation: msg"
 	row := executionToHistoryRow(config.PurchaseExecution{
 		ExecutionID: "e-1", Status: "failed", Error: denied,

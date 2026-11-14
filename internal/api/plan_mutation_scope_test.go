@@ -25,6 +25,7 @@ func planMutationRoutes() []struct{ method, path, body string } {
 }
 
 func TestRouterDispatch_PlanMutations_PartiallyScopedPlanRefused(t *testing.T) {
+	t.Parallel()
 	for _, rt := range planMutationRoutes() {
 		t.Run(rt.method+" "+rt.path, func(t *testing.T) {
 			ctx := context.Background()
@@ -43,6 +44,7 @@ func TestRouterDispatch_PlanMutations_PartiallyScopedPlanRefused(t *testing.T) {
 }
 
 func TestRouterDispatch_PlanMutations_FullyScopedPlanPassesGate(t *testing.T) {
+	t.Parallel()
 	for _, rt := range planMutationRoutes() {
 		t.Run(rt.method+" "+rt.path, func(t *testing.T) {
 			ctx := context.Background()
@@ -61,6 +63,7 @@ func TestRouterDispatch_PlanMutations_FullyScopedPlanPassesGate(t *testing.T) {
 }
 
 func TestRouterDispatch_DeletePlan_AllAccountsInScopeDeletes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h, store := scopedHandler(t, scopedInAccount, scopedOutAccount)
 	seedPlanAccountsStore(store, []config.CloudAccount{inScopeAccount(), outOfScopeAccount()})
@@ -73,6 +76,7 @@ func TestRouterDispatch_DeletePlan_AllAccountsInScopeDeletes(t *testing.T) {
 }
 
 func TestRouterDispatch_DeletePlan_UnrestrictedSkipsPlanLookup(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h, store := scopedHandler(t)
 	t.Cleanup(func() { store.AssertExpectations(t) })
@@ -85,6 +89,7 @@ func TestRouterDispatch_DeletePlan_UnrestrictedSkipsPlanLookup(t *testing.T) {
 }
 
 func TestRouterDispatch_DeletePlan_ZeroAccountPlanHiddenFromScoped(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h, store := scopedHandler(t, scopedInAccount)
 	seedPlanAccountsStore(store, nil)
@@ -97,6 +102,7 @@ func TestRouterDispatch_DeletePlan_ZeroAccountPlanHiddenFromScoped(t *testing.T)
 
 // Reads keep any-account visibility.
 func TestRouterDispatch_GetPlan_PartiallyScopedPlanStillReadable(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h, store := scopedHandler(t, scopedInAccount)
 	seedPlanAccountsStore(store, []config.CloudAccount{inScopeAccount(), outOfScopeAccount()})

@@ -14,6 +14,7 @@ import (
 // Issue #609: a plan step with no recommendations must be flagged, so the UI
 // does not present its Count 0 / $0 / "Various" placeholders as data.
 func TestPlannedPurchaseListFlagsStepWithoutRecommendations(t *testing.T) {
+	t.Parallel()
 	plan := &config.PurchasePlan{
 		ID:   "11111111-1111-1111-1111-111111111609",
 		Name: "Azure compute 80% weekly",
@@ -45,6 +46,7 @@ func TestPlannedPurchaseListFlagsStepWithoutRecommendations(t *testing.T) {
 }
 
 func TestBuildPlannedPurchaseProjectsAttachedQuantitiesAndTuple(t *testing.T) {
+	t.Parallel()
 	rec := func(count int, resourceType, region string) config.RecommendationRecord {
 		return config.RecommendationRecord{Provider: "azure", Service: "compute", Count: count, ResourceType: resourceType, Region: region, Term: 1, Payment: "monthly"}
 	}

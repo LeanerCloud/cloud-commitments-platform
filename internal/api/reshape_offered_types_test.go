@@ -100,6 +100,7 @@ func reshapeOnce(t *testing.T, h *Handler) *ReshapeRecommendationsResponse {
 }
 
 func TestGetReshapeRecommendations_CatalogLimitsTargetToOfferedSizes(t *testing.T) {
+	t.Parallel()
 	ec2 := &fakeReshapeEC2Stub{offered: []string{"m5.4xlarge", "m5.xlarge", "c5.large"}}
 	rec := reshapeOnce(t, newCatalogReshapeHandler(t, ec2)).Recommendations[0]
 
@@ -110,6 +111,7 @@ func TestGetReshapeRecommendations_CatalogLimitsTargetToOfferedSizes(t *testing.
 }
 
 func TestGetReshapeRecommendations_CatalogMissingFamilySurfacesReason(t *testing.T) {
+	t.Parallel()
 	ec2 := &fakeReshapeEC2Stub{offered: []string{"c5.large", "c5.xlarge"}}
 	rec := reshapeOnce(t, newCatalogReshapeHandler(t, ec2)).Recommendations[0]
 
@@ -122,6 +124,7 @@ func TestGetReshapeRecommendations_CatalogMissingFamilySurfacesReason(t *testing
 // warning naming the region, and the fallback is not cached: the next request
 // queries the catalog again.
 func TestGetReshapeRecommendations_CatalogUnavailableFallsBackWithWarning(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name    string
 		ec2     *fakeReshapeEC2Stub
@@ -158,6 +161,7 @@ func TestGetReshapeRecommendations_CatalogUnavailableFallsBackWithWarning(t *tes
 }
 
 func TestOfferedInstanceTypes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	t.Run("returns the catalog unchanged", func(t *testing.T) {
 		logs := captureWarnings(t)

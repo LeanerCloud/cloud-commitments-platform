@@ -11,6 +11,7 @@ import (
 // Issue #402: every request password the handlers run through
 // decodeBase64Password must be documented as base64-encoded in the spec.
 func TestOpenAPIPasswordFieldsDocumentBase64(t *testing.T) {
+	t.Parallel()
 	var spec struct {
 		Components struct {
 			Schemas map[string]struct {

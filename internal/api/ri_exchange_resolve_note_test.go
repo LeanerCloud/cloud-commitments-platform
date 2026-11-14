@@ -13,6 +13,7 @@ import (
 // The note an operator's resolve call stores is the admin's own text: exchange
 // history shows it as written, while provider text in the same column does not.
 func TestResolveNote_ShowsAsWrittenInHistory(t *testing.T) {
+	t.Parallel()
 	check := config.RIExchangeCloudCheck{AccountID: strings.Repeat("7", 12), Region: "us-east-1", CheckedAt: time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)}
 	for name, body := range map[string]riExchangeResolveRequest{
 		"completed":      {Outcome: config.StatusCompleted, ExchangeID: "ri-exch-0123", Reason: `checked in the console; it says "done"; ticket 42 é`},

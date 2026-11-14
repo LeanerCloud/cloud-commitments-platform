@@ -27,6 +27,7 @@ func rdsAZConfigRec(azConfig string, upfront float64) config.RecommendationRecor
 // "more than one row for identity key" refusal) and the request, which carries
 // az_config only in Details, is priced from its own variant's row.
 func TestPriceRecommendationsFromStore_PricesFromRequestedAZConfig(t *testing.T) {
+	t.Parallel()
 	for _, want := range []struct {
 		azConfig string
 		upfront  float64
@@ -55,6 +56,7 @@ func TestPriceRecommendationsFromStore_PricesFromRequestedAZConfig(t *testing.T)
 // A request that does not name its az_config cannot be priced off an arbitrary
 // RDS variant: it is refused with a 409.
 func TestPriceRecommendationsFromStore_RequestWithoutAZConfigRefusedForRDS(t *testing.T) {
+	t.Parallel()
 	store := new(MockConfigStore)
 	t.Cleanup(func() { store.AssertExpectations(t) })
 	expectStoredRecs(store, rdsAZConfigRec("multi-az", 300))
@@ -81,6 +83,7 @@ func TestPurchaseIdempotencyKey_DiffersByAZConfig(t *testing.T) {
 }
 
 func TestDescribeRec_IncludesAZConfig(t *testing.T) {
+	t.Parallel()
 	r := rdsAZConfigRec("multi-az", 1)
 	assert.Contains(t, describeRec(&r), `az_config="multi-az"`)
 	bare := config.RecommendationRecord{Provider: "aws", Service: "rds"}

@@ -110,6 +110,7 @@ func assertNotForbidden(t *testing.T, err error) {
 // (previously AuthAdmin; now AuthUser + requirePermission("delete","plans"))
 // correctly gates on the handler-level permission.
 func TestDeletePlan_PermissionGate(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	const userID = "11111111-1111-1111-1111-111111111111"
 	const planID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
@@ -158,6 +159,7 @@ func TestDeletePlan_PermissionGate(t *testing.T) {
 
 // TestUpdatePlan_PermissionGate covers PUT /api/plans/{id}.
 func TestUpdatePlan_PermissionGate(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	const userID = "22222222-2222-2222-2222-222222222222"
 	const planID = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
@@ -196,6 +198,7 @@ func TestUpdatePlan_PermissionGate(t *testing.T) {
 // changes the gate to update:purchases: Standard Users hold it; Plan Authors do
 // not. Regression test: user without update:purchases is rejected with 403.
 func TestCreatePlannedPurchases_PermissionGate(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	const userID = "44444444-4444-4444-4444-444444444444"
 	const planID = "dddddddd-dddd-dddd-dddd-dddddddddddd"
@@ -248,6 +251,7 @@ func TestCreatePlannedPurchases_PermissionGate(t *testing.T) {
 // The handler requires update:purchases. This is the "update:purchases" example
 // from the design comment.
 func TestPausePlannedPurchase_PermissionGate(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	const userID = "33333333-3333-3333-3333-333333333333"
 	const execID = "cccccccc-cccc-cccc-cccc-cccccccccccc"
@@ -342,6 +346,7 @@ func TestPausePlannedPurchase_PermissionGate(t *testing.T) {
 // TestDeletePlannedPurchase_PermissionGate covers DELETE /api/purchases/planned/{id}.
 // The handler requires delete:purchases.
 func TestDeletePlannedPurchase_PermissionGate(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	const userID = "44444444-4444-4444-4444-444444444444"
 	const execID = "dddddddd-dddd-dddd-dddd-dddddddddddd"
@@ -456,6 +461,7 @@ func TestDeletePlannedPurchase_PermissionGate(t *testing.T) {
 // RI exchanges are financially irreversible; the two permissions are
 // intentionally disjoint so granting one does not implicitly grant the other.
 func TestExecuteExchange_PermissionGate(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	const userID = "55555555-5555-5555-5555-555555555555"
 
@@ -506,6 +512,7 @@ func TestExecuteExchange_PermissionGate(t *testing.T) {
 // TestUpdateRIExchangeConfig_PermissionGate covers PUT /api/ri-exchange/config.
 // The handler requires update:config.
 func TestUpdateRIExchangeConfig_PermissionGate(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	const userID = "66666666-6666-6666-6666-666666666666"
 
@@ -542,6 +549,7 @@ func TestUpdateRIExchangeConfig_PermissionGate(t *testing.T) {
 // the router level (defense-in-depth) still rejects completely unauthenticated
 // callers before they reach the handler — even after the flip from AuthAdmin.
 func TestRouter_MutatingRoutes_RequireAuth(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	routes := []struct {

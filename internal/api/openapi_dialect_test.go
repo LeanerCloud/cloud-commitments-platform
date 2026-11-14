@@ -13,6 +13,7 @@ import (
 // explicit type, $ref siblings are ignored and exclusiveMinimum is a boolean
 // paired with minimum.
 func TestOpenAPIDialect303Schemas(t *testing.T) {
+	t.Parallel()
 	type schema struct {
 		Ref              string            `yaml:"$ref"`
 		Type             string            `yaml:"type"`

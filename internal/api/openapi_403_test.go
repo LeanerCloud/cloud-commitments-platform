@@ -315,6 +315,7 @@ func specPathsForRoute(entries []routeHandlerEntry, idx int, specOps map[string]
 }
 
 func TestOpenAPI403OnPermissionGatedRoutes(t *testing.T) {
+	t.Parallel()
 	// Locate the package directory using the file path of this test.
 	_, testFile, _, ok := runtime.Caller(0)
 	require.True(t, ok, "runtime.Caller failed")

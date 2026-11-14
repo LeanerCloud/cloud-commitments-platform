@@ -25,6 +25,7 @@ func displayEntry(provider, service string, term int, payment string) config.Ser
 }
 
 func TestPlanDisplayFor(t *testing.T) {
+	t.Parallel()
 	ec2 := displayEntry("aws", "ec2", 1, "no-upfront")
 	rds := displayEntry("aws", "rds", 1, "no-upfront")
 	vm := displayEntry("azure", "compute", 3, "monthly")
@@ -61,6 +62,7 @@ func TestPlanDisplayFor(t *testing.T) {
 }
 
 func TestPlanRows_CarryBoundProviders(t *testing.T) {
+	t.Parallel()
 	exec := &config.PurchaseExecution{ExecutionID: "e1", PlanID: "plan-d", ScheduledDate: time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC)}
 	bound := displayPlan(true, map[string]config.ServiceConfig{
 		"aws/ec2#g1":       displayEntry("aws", "ec2", 1, "no-upfront"),
@@ -83,6 +85,7 @@ func TestPlanRows_CarryBoundProviders(t *testing.T) {
 }
 
 func TestUpcomingFilter_MatchesAnyBoundProvider(t *testing.T) {
+	t.Parallel()
 	row := &UpcomingPurchase{Provider: "multiple", Providers: []string{"aws", "azure"}}
 	assert.True(t, rowHasProvider(row, "azure"))
 	assert.True(t, rowHasProvider(row, "AWS"))
@@ -93,6 +96,7 @@ func TestUpcomingFilter_MatchesAnyBoundProvider(t *testing.T) {
 }
 
 func TestPlanDisplayFor_AllGroupsDisabledFallsBackToFirstService(t *testing.T) {
+	t.Parallel()
 	off := displayEntry("aws", "ec2", 1, "no-upfront")
 	off.Enabled = false
 	plan := displayPlan(true, map[string]config.ServiceConfig{"aws/ec2#g1": off})
@@ -103,6 +107,7 @@ func TestPlanDisplayFor_AllGroupsDisabledFallsBackToFirstService(t *testing.T) {
 }
 
 func TestPlanDisplayFor_KeyPrefixIsTheProvider(t *testing.T) {
+	t.Parallel()
 	stale := displayEntry("gcp", "ec2", 1, "no-upfront")
 	d := planDisplayFor(displayPlan(true, map[string]config.ServiceConfig{"aws/ec2#g1": stale}))
 	assert.Equal(t, "aws", d.svc.Provider)

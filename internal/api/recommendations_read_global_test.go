@@ -28,6 +28,7 @@ func constrainedViewer(held *auth.PermissionConstraints) *MockAuthService {
 }
 
 func TestRecommendationsRead_ConstrainedGrantReadsWithoutKick(t *testing.T) {
+	t.Parallel()
 	for name, held := range map[string]*auth.PermissionConstraints{
 		"cap":      capOnly(),
 		"account":  {AccountIDs: []string{scopedInAccount}},
@@ -48,6 +49,7 @@ func TestRecommendationsRead_ConstrainedGrantReadsWithoutKick(t *testing.T) {
 }
 
 func TestRecommendationsRead_UnconstrainedGrantStillKicks(t *testing.T) {
+	t.Parallel()
 	for _, ep := range recsReadEndpoints {
 		t.Run(ep.name, func(t *testing.T) {
 			var allowed []bool
@@ -62,6 +64,7 @@ func TestRecommendationsRead_UnconstrainedGrantStillKicks(t *testing.T) {
 }
 
 func TestRecommendationsRead_ProbeErrorReadsWithoutKick(t *testing.T) {
+	t.Parallel()
 	mockAuth := new(MockAuthService)
 	mockAuth.On("ValidateSession", mock.Anything, scopedToken).Return(&Session{UserID: scopedUserID}, nil).Maybe()
 	mockAuth.On("HasPermissionAPI", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(true, nil).Maybe()
@@ -79,6 +82,7 @@ func TestRecommendationsRead_ProbeErrorReadsWithoutKick(t *testing.T) {
 }
 
 func TestRecommendationsRead_UserAPIKeyProbeUsesGlobalSetAndKeyID(t *testing.T) {
+	t.Parallel()
 	for _, keyAllowed := range []bool{false, true} {
 		mockAuth := new(MockAuthService)
 		mockAuth.On("HasAPIKeyPermissionAPI", mock.Anything, "user-key", "view", "recommendations").Return("u2", "key-1", true, nil)

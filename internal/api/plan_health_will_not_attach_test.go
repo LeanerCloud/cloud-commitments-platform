@@ -28,6 +28,7 @@ func healthyRampPlan(now time.Time, noticeDays int) config.PurchasePlan {
 }
 
 func TestComputePlanHealth_StepWillNotAttach(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
 
 	t.Run("window note names the step and the notice days", func(t *testing.T) {
@@ -54,6 +55,7 @@ func TestComputePlanHealth_StepWillNotAttach(t *testing.T) {
 // Every factor collectPlanHealthFactors can emit must be in planHealthFactorCodes,
 // the slice the openapi enum is compared with.
 func TestPlanHealthFactorCodes_CoverEveryEmittedFactor(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
 	past := now.AddDate(0, 0, -2)
 	emitted := map[PlanHealthFactorCode]bool{}
@@ -86,6 +88,7 @@ func TestPlanHealthFactorCodes_CoverEveryEmittedFactor(t *testing.T) {
 }
 
 func TestOpenAPIPlanHealthFactorEnumMatchesGoCodes(t *testing.T) {
+	t.Parallel()
 	_, thisFile, _, _ := runtime.Caller(0)
 	data, err := os.ReadFile(filepath.Join(filepath.Dir(thisFile), "openapi.yaml"))
 	require.NoError(t, err)
@@ -116,6 +119,7 @@ func TestOpenAPIPlanHealthFactorEnumMatchesGoCodes(t *testing.T) {
 // down and name the factor. The store is mocked at the read; the clock is the
 // handler's, so `now` is pinned.
 func TestHandler_listPlans_DoomedRootProducesWillNotAttachFactor(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
 	mockStore := new(MockConfigStore)
@@ -154,6 +158,7 @@ func TestHandler_listPlans_DoomedRootProducesWillNotAttachFactor(t *testing.T) {
 }
 
 func TestHandler_listPlans_DoomedRootFetchFailureLeavesHealthUnknown(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)

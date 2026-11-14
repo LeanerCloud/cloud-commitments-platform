@@ -93,6 +93,7 @@ func outOfScopeAccount() config.CloudAccount {
 // enumeration-safe not-found rather than a 403 that would confirm the account
 // exists.
 func TestSetPlanAccounts_ScopedCallerCannotAttachOutOfScopeAccount(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h, store := scopedHandler(t, scopedInAccount)
 	t.Cleanup(func() { store.AssertExpectations(t) })
@@ -111,6 +112,7 @@ func TestSetPlanAccounts_ScopedCallerCannotAttachOutOfScopeAccount(t *testing.T)
 // caller DOES hold. Without this, a handler that refused every write would
 // pass the refusal test.
 func TestSetPlanAccounts_ScopedCallerCanAttachInScopeAccount(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h, store := scopedHandler(t, scopedInAccount)
 	t.Cleanup(func() { store.AssertExpectations(t) })
@@ -128,6 +130,7 @@ func TestSetPlanAccounts_ScopedCallerCanAttachInScopeAccount(t *testing.T) {
 // must not write the in-scope half either, since SetPlanAccounts replaces the
 // association set rather than adding to it.
 func TestSetPlanAccounts_ScopedCallerMixedBatchRefusedWhole(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h, store := scopedHandler(t, scopedInAccount)
 	t.Cleanup(func() { store.AssertExpectations(t) })
@@ -147,6 +150,7 @@ func TestSetPlanAccounts_ScopedCallerMixedBatchRefusedWhole(t *testing.T) {
 // but the plan's current association set is entirely outside their scope. The
 // account-axis check passes here, so only the plan-axis check can refuse it.
 func TestSetPlanAccounts_ScopedCallerCannotRepointOutOfScopePlan(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h, store := scopedHandler(t, scopedInAccount)
 	t.Cleanup(func() { store.AssertExpectations(t) })
@@ -166,6 +170,7 @@ func TestSetPlanAccounts_ScopedCallerCannotRepointOutOfScopePlan(t *testing.T) {
 // store round-trip: the guard resolves the scope once and returns before
 // touching the store, which is what keeps admin-path fixtures unchanged.
 func TestSetPlanAccounts_UnrestrictedCallerUnaffected(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h, store := scopedHandler(t) // no accounts -> grantAdmin -> unrestricted
 	t.Cleanup(func() { store.AssertExpectations(t) })
@@ -186,6 +191,7 @@ func TestSetPlanAccounts_UnrestrictedCallerUnaffected(t *testing.T) {
 // may carry accounts they hold no entitlement to; those must not come back in
 // the response.
 func TestListPlanAccounts_ScopedCallerSeesOnlyItsOwnAccounts(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h, store := scopedHandler(t, scopedInAccount)
 	t.Cleanup(func() { store.AssertExpectations(t) })
@@ -203,6 +209,7 @@ func TestListPlanAccounts_ScopedCallerSeesOnlyItsOwnAccounts(t *testing.T) {
 // A plan with no in-scope account at all is not readable, and hides behind the
 // same not-found the write path returns.
 func TestListPlanAccounts_ScopedCallerCannotReadOutOfScopePlan(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h, store := scopedHandler(t, scopedInAccount)
 	t.Cleanup(func() { store.AssertExpectations(t) })
@@ -218,6 +225,7 @@ func TestListPlanAccounts_ScopedCallerCannotReadOutOfScopePlan(t *testing.T) {
 // The read-side control: an unrestricted caller still gets the full roster,
 // so the filter above is a scope decision rather than a blanket narrowing.
 func TestListPlanAccounts_UnrestrictedCallerSeesAllAccounts(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h, store := scopedHandler(t) // unrestricted
 	t.Cleanup(func() { store.AssertExpectations(t) })
@@ -238,6 +246,7 @@ func TestListPlanAccounts_UnrestrictedCallerSeesAllAccounts(t *testing.T) {
 // the real route table and auth gate rather than by calling the handler.
 
 func TestRouterDispatch_SetPlanAccounts_ScopedOutOfScopeAccountRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h, store := scopedHandler(t, scopedInAccount)
 	t.Cleanup(func() { store.AssertExpectations(t) })
@@ -252,6 +261,7 @@ func TestRouterDispatch_SetPlanAccounts_ScopedOutOfScopeAccountRefused(t *testin
 }
 
 func TestRouterDispatch_SetPlanAccounts_ScopedInScopeAccountAllowed(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h, store := scopedHandler(t, scopedInAccount)
 	t.Cleanup(func() { store.AssertExpectations(t) })
@@ -266,6 +276,7 @@ func TestRouterDispatch_SetPlanAccounts_ScopedInScopeAccountAllowed(t *testing.T
 }
 
 func TestRouterDispatch_ListPlanAccounts_ScopedCallerFiltered(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h, store := scopedHandler(t, scopedInAccount)
 	t.Cleanup(func() { store.AssertExpectations(t) })
@@ -305,6 +316,7 @@ func createPlanBody(accounts ...string) string {
 // account outside their allowed_accounts. The refusal lands before the plan
 // row is written, so there is no orphan to roll back.
 func TestCreatePlan_ScopedCallerCannotTargetOutOfScopeAccount(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h, store := scopedHandler(t, scopedInAccount)
 	t.Cleanup(func() { store.AssertExpectations(t) })
@@ -319,6 +331,7 @@ func TestCreatePlan_ScopedCallerCannotTargetOutOfScopeAccount(t *testing.T) {
 }
 
 func TestCreatePlan_ScopedCallerMixedTargetsRefusedWhole(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h, store := scopedHandler(t, scopedInAccount)
 	t.Cleanup(func() { store.AssertExpectations(t) })
@@ -334,6 +347,7 @@ func TestCreatePlan_ScopedCallerMixedTargetsRefusedWhole(t *testing.T) {
 
 // Control: the same scoped caller may still create a plan for an account it holds.
 func TestCreatePlan_ScopedCallerCanTargetInScopeAccount(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h, store := scopedHandler(t, scopedInAccount)
 	t.Cleanup(func() { store.AssertExpectations(t) })
@@ -349,6 +363,7 @@ func TestCreatePlan_ScopedCallerCanTargetInScopeAccount(t *testing.T) {
 
 // Control: an unrestricted caller may target any account.
 func TestCreatePlan_UnrestrictedCallerUnaffected(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h, store := scopedHandler(t)
 	t.Cleanup(func() { store.AssertExpectations(t) })

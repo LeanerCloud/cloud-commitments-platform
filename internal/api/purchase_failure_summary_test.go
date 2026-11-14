@@ -33,6 +33,7 @@ func assertNoProviderText(t *testing.T, where, s string) {
 
 // One realistic provider denial must stay out of every user-facing surface.
 func TestProviderDenial_NeverReachesUserSurfaces(t *testing.T) {
+	t.Parallel()
 	const execID = "11111111-1111-1111-1111-111111111111"
 	raw := errors.New(fakeAWSDenied)
 	rec := config.RecommendationRecord{Provider: "aws", Service: "rds", Error: fakeAWSDenied}
@@ -98,6 +99,7 @@ func TestProviderDenial_NeverReachesUserSurfaces(t *testing.T) {
 }
 
 func TestExecuteFailureError_PartialAndAuditLossHideProviderText(t *testing.T) {
+	t.Parallel()
 	for _, status := range []string{"partially_completed", "failed"} {
 		err := executeFailureError("e1", "executed", &config.PurchaseExecution{Status: status},
 			errors.New("some purchases failed (partial success): "+fakeAWSDenied))
@@ -137,6 +139,7 @@ func assertNoAzureText(t *testing.T, where, s string) {
 }
 
 func TestCodelessAzureError_NeverReachesUserSurfaces(t *testing.T) {
+	t.Parallel()
 	for _, status := range []int{400, 409, 412} {
 		raw := azureHTTPError(t, status, "/subscriptions/"+fakeSubID+"/providers/Microsoft.BillingBenefits/savingsPlanOrderAliases/x")
 		rec := config.RecommendationRecord{Provider: "azure", Service: "savingsplans", Error: raw.Error()}
@@ -153,6 +156,7 @@ func TestCodelessAzureError_NeverReachesUserSurfaces(t *testing.T) {
 }
 
 func TestAzureIdentityText_NeverReachesUserSurfaces(t *testing.T) {
+	t.Parallel()
 	raw := "ClientSecretCredential authentication failed. POST https://login.microsoftonline.com/" + fakeTenant + "/oauth2/v2.0/token\n" +
 		"RESPONSE 400: 400 Bad Request\n{\"error_description\":\"AADSTS700016: Application not found. Trace ID: 22222222 Correlation ID: 33333333\"}"
 	ce, ok := IsClientError(executeFailureError("e1", "executed", &config.PurchaseExecution{Status: "failed"}, errors.New(raw)))

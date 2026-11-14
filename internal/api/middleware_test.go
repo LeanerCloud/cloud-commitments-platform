@@ -14,6 +14,7 @@ import (
 )
 
 func TestHandler_isPublicEndpoint(t *testing.T) {
+	t.Parallel()
 	handler := &Handler{corsAllowedOrigin: "*"}
 
 	tests := []struct {
@@ -54,6 +55,7 @@ func TestHandler_isPublicEndpoint(t *testing.T) {
 // prefix overlap (issue #192) or an AuthPublic route missing from the list
 // fails here.
 func TestIsPublicEndpoint_MatchesRouteAuthLevels(t *testing.T) {
+	t.Parallel()
 	h := &Handler{}
 	for _, route := range NewRouter(h).routes {
 		path := route.ExactPath
@@ -66,6 +68,7 @@ func TestIsPublicEndpoint_MatchesRouteAuthLevels(t *testing.T) {
 }
 
 func TestValidateSecurity_UnauthenticatedDeploymentInfoRejectedByMiddleware(t *testing.T) {
+	t.Parallel()
 	handler := &Handler{apiKey: "secret-key"}
 	req := &events.LambdaFunctionURLRequest{Headers: map[string]string{}}
 
@@ -78,6 +81,7 @@ func TestValidateSecurity_UnauthenticatedDeploymentInfoRejectedByMiddleware(t *t
 }
 
 func TestHandler_authenticate(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		headers  map[string]string
 		params   map[string]string
@@ -144,6 +148,7 @@ func TestHandler_authenticate(t *testing.T) {
 }
 
 func TestHandler_extractBearerToken(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		headers  map[string]string
@@ -220,6 +225,7 @@ func TestHandler_extractBearerToken(t *testing.T) {
 }
 
 func TestHandler_authenticatePrincipal_BearerToken(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -256,6 +262,7 @@ func TestHandler_authenticatePrincipal_BearerToken(t *testing.T) {
 }
 
 func TestHandler_authenticatePrincipal_BearerTokenWithAPIKey(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockAuth := new(MockAuthService)
 	t.Cleanup(func() { mockAuth.AssertExpectations(t) })
@@ -297,6 +304,7 @@ func TestHandler_authenticatePrincipal_BearerTokenWithAPIKey(t *testing.T) {
 // /api/register-malicious is not silently exempted because it starts with
 // /api/register.
 func TestHandler_requiresCSRFValidation_ExactMatch(t *testing.T) {
+	t.Parallel()
 	handler := &Handler{}
 
 	tests := []struct {
@@ -343,6 +351,7 @@ func TestHandler_requiresCSRFValidation_ExactMatch(t *testing.T) {
 // token.  Pre-fix, the blanket "/api/purchases/approve/" middleware exemption
 // meant this call succeeded without a CSRF token.
 func TestApproveViaSession_RequiresCSRF(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	execID := "12345678-1234-1234-1234-123456789abc"
 	adminEmail := "admin@example.com"
@@ -395,6 +404,7 @@ func TestApproveViaSession_RequiresCSRF(t *testing.T) {
 // to approvePurchaseViaSession succeeds when a valid CSRF token is supplied.
 // This confirms the CSRF guard does not block the legitimate dashboard flow.
 func TestApproveViaSession_PassesCSRF(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	execID := "12345678-1234-1234-1234-123456789abc"
 	adminEmail := "admin@example.com"
@@ -449,6 +459,7 @@ func TestApproveViaSession_PassesCSRF(t *testing.T) {
 // to cancelPurchaseViaSession is rejected when the request carries no CSRF
 // token.  Mirror of TestApproveViaSession_RequiresCSRF for the cancel path.
 func TestCancelViaSession_RequiresCSRF(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	execID := "55555555-5555-5555-5555-555555555555"
 
@@ -499,6 +510,7 @@ func TestCancelViaSession_RequiresCSRF(t *testing.T) {
 // the returned error: an error alone doesn't prove the state transition was
 // prevented, only that something failed somewhere.
 func TestApproveRIExchangeViaSession_RequiresCSRF(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	id := "550e8400-e29b-41d4-a716-446655440020"
 	creatorID := "creator-uuid"
@@ -581,6 +593,7 @@ func TestApproveRIExchangeViaSession_RequiresCSRF(t *testing.T) {
 // NewClientError(403, ...) makes the TransitionRIExchangeStatus assertion below
 // fail, because control reaches approveRIExchangeViaToken.
 func TestApproveRIExchange_CSRFFailureDoesNotFallThroughToToken(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	id := "550e8400-e29b-41d4-a716-446655440021"
 	creatorID := "creator-uuid"
@@ -639,6 +652,7 @@ func TestApproveRIExchange_CSRFFailureDoesNotFallThroughToToken(t *testing.T) {
 // TransitionRIExchangeStatus. Without this, "add the CSRF check" could ship
 // a fix that also breaks the happy path.
 func TestApproveRIExchangeViaSession_PassesCSRF(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	id := "550e8400-e29b-41d4-a716-446655440022"
 	creatorID := "creator-uuid"
@@ -695,6 +709,7 @@ func TestApproveRIExchangeViaSession_PassesCSRF(t *testing.T) {
 // recipient (no approve-* RBAC, so the dispatch falls through to the token
 // branch) still approves.
 func TestTokenApprove_SessionRequiresCSRF(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	execID := "12345678-1234-1234-1234-123456789abc"
 	contactEmail := "contact@example.com"
@@ -761,6 +776,7 @@ func TestTokenApprove_SessionRequiresCSRF(t *testing.T) {
 // Those routes are AuthAdmin and state-changing: approving a registration creates
 // an enabled cloud account and stores attacker-supplied credentials.
 func TestRequiresCSRFValidation_RegistrationsAdminRoutesAreNotExempt(t *testing.T) {
+	t.Parallel()
 	h := &Handler{}
 
 	adminRoutes := []struct {
@@ -785,6 +801,7 @@ func TestRequiresCSRFValidation_RegistrationsAdminRoutesAreNotExempt(t *testing.
 // stay exempt. The predicate no longer looks at the request, so a session
 // cannot change this.
 func TestRequiresCSRFValidation_AlwaysExemptPaths(t *testing.T) {
+	t.Parallel()
 	h := &Handler{}
 
 	alwaysExempt := []string{
@@ -806,6 +823,7 @@ func TestRequiresCSRFValidation_AlwaysExemptPaths(t *testing.T) {
 // rate limiter encounters an error (fail-closed), whereas checkRateLimit must
 // return nil (fail-open) for the same error.
 func TestHandler_checkRateLimitStrict_FailsClosedOnError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	limiterErr := errors.New("db pool exhausted")
 
@@ -824,6 +842,7 @@ func TestHandler_checkRateLimitStrict_FailsClosedOnError(t *testing.T) {
 }
 
 func TestHandler_checkRateLimit_FailsOpenOnError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	limiterErr := errors.New("db pool exhausted")
 
@@ -839,6 +858,7 @@ func TestHandler_checkRateLimit_FailsOpenOnError(t *testing.T) {
 }
 
 func TestHandler_checkRateLimitStrict_Returns429WhenDenied(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	mockRL := new(MockRateLimiter)
@@ -869,6 +889,7 @@ func makeSourceIPReq(ip string) *events.LambdaFunctionURLRequest {
 // Both IP-keyed rate-limit helpers must hand the limiter the normalised key,
 // not the raw source address.
 func TestHandler_RateLimitHelpers_UseNormalisedClientKey(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	tests := []struct{ name, source, key string }{
 		{"ipv6 collapses to /64", "2001:db8:1:2:aaaa:bbbb:cccc:dddd", "2001:db8:1:2::/64"},
@@ -898,6 +919,7 @@ func TestHandler_RateLimitHelpers_UseNormalisedClientKey(t *testing.T) {
 
 // Two addresses in one IPv6 /64 spend a single strict budget.
 func TestHandler_checkRateLimitStrict_SharedBudgetAcrossOneV6Prefix(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h := &Handler{rateLimiter: NewInMemoryRateLimiter()}
 	var denied bool

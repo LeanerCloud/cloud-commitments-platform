@@ -166,6 +166,7 @@ func auditRequest(ctx context.Context, body string) (context.Context, *events.La
 // with the exchange ID and the amount AWS accepted. Before the fix the store
 // saw no write at all.
 func TestExecuteExchange_DirectExecuteWritesAuditTrail(t *testing.T) {
+	t.Parallel()
 	store := newDirectExchangeAuditStore()
 	h := awsAuditHandler(t, store, func(context.Context, exchange.ExchangeExecuteRequest) (string, *exchange.ExchangeQuoteSummary, error) {
 		return "riex-0f1e2d3c", &exchange.ExchangeQuoteSummary{PaymentDueUSDStr: "40.250000", PaymentDueRaw: "40.25", CurrencyCode: "USD"}, nil
@@ -206,6 +207,7 @@ func TestExecuteExchange_DirectExecuteWritesAuditTrail(t *testing.T) {
 // process that dies mid-exchange still leaves a "submitted" row) and before
 // the submit claim (so a refused insert leaves no claim blocking a retry).
 func TestExecuteExchange_AuditRowWrittenBeforeClaimAndCommit(t *testing.T) {
+	t.Parallel()
 	store := newDirectExchangeAuditStore()
 	h := awsAuditHandler(t, store, func(context.Context, exchange.ExchangeExecuteRequest) (string, *exchange.ExchangeQuoteSummary, error) {
 		return "riex-1", nil, nil
@@ -220,6 +222,7 @@ func TestExecuteExchange_AuditRowWrittenBeforeClaimAndCommit(t *testing.T) {
 // cannot be recorded is not executed, and the refusal takes no submit claim,
 // so the caller can retry as soon as the store recovers.
 func TestExecuteExchange_AuditInsertFailureRefusesExchange(t *testing.T) {
+	t.Parallel()
 	store := newDirectExchangeAuditStore()
 	store.saveErr = errors.New("connection refused")
 	h := awsAuditHandler(t, store, func(context.Context, exchange.ExchangeExecuteRequest) (string, *exchange.ExchangeQuoteSummary, error) {
@@ -239,6 +242,7 @@ func TestExecuteExchange_AuditInsertFailureRefusesExchange(t *testing.T) {
 // before the accept; only an error the library marks ErrOutcomeUnknown may
 // have committed (unknown).
 func TestExecuteExchange_FailureOutcomeClassification(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		err        error
@@ -307,6 +311,7 @@ func TestExecuteExchange_FailureOutcomeClassification(t *testing.T) {
 // claim turns away is still an execute attempt, recorded as failed without
 // ever reaching AWS.
 func TestExecuteExchange_DuplicateSubmitRecordedAsRefused(t *testing.T) {
+	t.Parallel()
 	store := newDirectExchangeAuditStore()
 	store.holdAll = true
 	h := awsAuditHandler(t, store, func(context.Context, exchange.ExchangeExecuteRequest) (string, *exchange.ExchangeQuoteSummary, error) {
@@ -331,6 +336,7 @@ func TestExecuteExchange_DuplicateSubmitRecordedAsRefused(t *testing.T) {
 // commits cannot leave the row "submitted". A finalize failure is logged and
 // does not turn the committed exchange into an error response.
 func TestExecuteExchange_OutcomeRecordedAfterRequestCancel(t *testing.T) {
+	t.Parallel()
 	reqCtx, cancelRequest := context.WithCancel(context.Background())
 	defer cancelRequest()
 
@@ -357,6 +363,7 @@ func TestExecuteExchange_OutcomeRecordedAfterRequestCancel(t *testing.T) {
 // TestExecuteExchange_GateRefusalWritesNoAuditRow: only requests that reach
 // the submit stage are recorded; a request refused by a gate executed nothing.
 func TestExecuteExchange_GateRefusalWritesNoAuditRow(t *testing.T) {
+	t.Parallel()
 	store := newDirectExchangeAuditStore()
 	t.Cleanup(func() { store.AssertExpectations(t) })
 	store.On("GetGlobalConfig", mock.Anything).Return(&config.GlobalConfig{RequireDifferentApprover: true}, nil)
@@ -406,6 +413,7 @@ func azureAuditHandler(t *testing.T, store *directExchangeAuditStore, opsClient 
 // term, the re-quote that cleared the guardrails (here a refund) and the
 // session, and is finalized with Azure's own status.
 func TestExecuteAzureExchange_DirectExecuteWritesAuditTrail(t *testing.T) {
+	t.Parallel()
 	store := newDirectExchangeAuditStore()
 	opsClient := new(mockAzureExchangeOpsClient)
 	opsClient.On("ExecuteExchange", mock.Anything, "sess-quoted").Return(&azurecompute.ExchangeResult{
@@ -449,6 +457,7 @@ func TestExecuteAzureExchange_DirectExecuteWritesAuditTrail(t *testing.T) {
 // classification, including the case the handler itself warns "may already
 // have been submitted to Azure".
 func TestExecuteAzureExchange_FailureOutcomeClassification(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		err        error
@@ -479,6 +488,7 @@ func TestExecuteAzureExchange_FailureOutcomeClassification(t *testing.T) {
 // TestExecuteAzureExchange_AuditInsertFailureRefusesExchange mirrors the AWS
 // fail-closed test.
 func TestExecuteAzureExchange_AuditInsertFailureRefusesExchange(t *testing.T) {
+	t.Parallel()
 	store := newDirectExchangeAuditStore()
 	store.saveErr = errors.New("connection refused")
 	opsClient := new(mockAzureExchangeOpsClient)
@@ -494,6 +504,7 @@ func TestExecuteAzureExchange_AuditInsertFailureRefusesExchange(t *testing.T) {
 // --- helpers ---
 
 func TestAuditDecimal(t *testing.T) {
+	t.Parallel()
 	tests := map[string]string{
 		"500.00":   "500",
 		"100.5":    "100.5",
@@ -511,6 +522,7 @@ func TestAuditDecimal(t *testing.T) {
 }
 
 func TestAuditFloatAndDecimalString(t *testing.T) {
+	t.Parallel()
 	assert.Nil(t, auditFloat(nil))
 	assert.Nil(t, auditFloat(toPtr(math.NaN())))
 	assert.Nil(t, auditFloat(toPtr(math.Inf(1))))
@@ -525,6 +537,7 @@ func TestAuditFloatAndDecimalString(t *testing.T) {
 // identity is kept; a user API key session records the key alongside the
 // user.
 func TestDirectExchangeActor_AdminAndAPIKeySessions(t *testing.T) {
+	t.Parallel()
 	var admin config.RIExchangeDirectExecution
 	directExchangeActor(&admin, &Session{UserID: apiKeyAdminUserID})
 	assert.Nil(t, admin.ExecutedByUserID)
@@ -545,6 +558,7 @@ func TestDirectExchangeActor_AdminAndAPIKeySessions(t *testing.T) {
 // target_offering_id/target_count request is recorded as the one-element
 // target list it executes as, and an unattributed deployment as no account.
 func TestAWSDirectExchangeAudit_LegacySingletonTarget(t *testing.T) {
+	t.Parallel()
 	audit := awsDirectExchangeAudit(&Session{UserID: auditUserID, Email: auditUserEmail}, unattributedAccountConstraint,
 		ExchangeExecuteRequestBody{RIIDs: []string{"ri-1"}, TargetOfferingID: auditOfferingA, TargetCount: 3, Region: "us-east-1"},
 		big.NewRat(250, 1))
@@ -561,6 +575,7 @@ func TestAWSDirectExchangeAudit_LegacySingletonTarget(t *testing.T) {
 // is unknown; a plain error is failed. If the library stops wrapping, the
 // in-flight guard silently stops protecting, and this is where it shows.
 func TestAWSDirectFailureStatus(t *testing.T) {
+	t.Parallel()
 	wrapped := fmt.Errorf("%w: the accept may have been processed: %w", common.ErrOutcomeUnknown, errors.New("send request failed"))
 	assert.Equal(t, config.RIExchangeDirectStatusUnknown, awsDirectFailureStatus(wrapped))
 	assert.Equal(t, config.RIExchangeDirectStatusUnknown, awsDirectFailureStatus(fmt.Errorf("outer: %w", wrapped)))
@@ -625,6 +640,7 @@ func (s *slowClaimStore) ClaimRIExchangeIdempotencyKey(ctx context.Context, key 
 // the exec context ends at the deadline taken before the save, not at
 // claim-end + the budget.
 func TestExecuteExchange_DirectExecDeadlineAnchoredBeforeSave(t *testing.T) {
+	t.Parallel()
 	const budget = 400 * time.Millisecond
 	const claimDelay = 150 * time.Millisecond
 	store := &slowClaimStore{directExchangeAuditStore: newDirectExchangeAuditStore(), release: make(chan struct{})}
@@ -653,6 +669,7 @@ func TestExecuteExchange_DirectExecDeadlineAnchoredBeforeSave(t *testing.T) {
 // A claim that outlives the deadline never reaches the provider, fails as a
 // claim failure, and leaves the row finalized as failed.
 func TestExecuteExchange_DirectClaimOutlivingDeadlineNeverExecutes(t *testing.T) {
+	t.Parallel()
 	store := &slowClaimStore{directExchangeAuditStore: newDirectExchangeAuditStore(), release: make(chan struct{})}
 	executed := false
 	h := awsAuditHandler(t, store.directExchangeAuditStore, func(context.Context, exchange.ExchangeExecuteRequest) (string, *exchange.ExchangeQuoteSummary, error) {
@@ -676,6 +693,7 @@ func TestExecuteExchange_DirectClaimOutlivingDeadlineNeverExecutes(t *testing.T)
 // A claim that reports success only after the deadline leaves the provider
 // call none of its window: it must not execute, and the row is finalized failed.
 func TestExecuteExchange_DirectLateClaimSuccessNeverExecutes(t *testing.T) {
+	t.Parallel()
 	store := &slowClaimStore{directExchangeAuditStore: newDirectExchangeAuditStore(), lateSuccess: true}
 	executed := false
 	h := awsAuditHandler(t, store.directExchangeAuditStore, func(context.Context, exchange.ExchangeExecuteRequest) (string, *exchange.ExchangeQuoteSummary, error) {
@@ -704,6 +722,7 @@ func TestExecuteExchange_DirectLateClaimSuccessNeverExecutes(t *testing.T) {
 // The deadline is taken before the save: a slow save must not push the exec
 // deadline later by the save's duration.
 func TestExecuteExchange_DirectExecDeadlineNotMovedBySlowSave(t *testing.T) {
+	t.Parallel()
 	const budget = 600 * time.Millisecond
 	store := &slowClaimStore{directExchangeAuditStore: newDirectExchangeAuditStore(), release: make(chan struct{}), saveDelay: 250 * time.Millisecond}
 	close(store.release)
@@ -731,6 +750,7 @@ func azureSlowClaimHandler(t *testing.T, store *slowClaimStore, opsClient *mockA
 // Azure shares beginDirectExchange: its exec must end at the pre-save deadline
 // shared with the claim, not claim-end + the budget.
 func TestExecuteAzureExchange_DirectExecDeadlineAnchoredBeforeSave(t *testing.T) {
+	t.Parallel()
 	const budget = 400 * time.Millisecond
 	const claimDelay = 150 * time.Millisecond
 	store := &slowClaimStore{directExchangeAuditStore: newDirectExchangeAuditStore(), release: make(chan struct{})}
@@ -757,6 +777,7 @@ func TestExecuteAzureExchange_DirectExecDeadlineAnchoredBeforeSave(t *testing.T)
 
 // An Azure claim that outlives the deadline never reaches ExecuteExchange.
 func TestExecuteAzureExchange_DirectClaimOutlivingDeadlineNeverExecutes(t *testing.T) {
+	t.Parallel()
 	store := &slowClaimStore{directExchangeAuditStore: newDirectExchangeAuditStore(), release: make(chan struct{})}
 	opsClient := new(mockAzureExchangeOpsClient) // no ExecuteExchange expectation: a call panics
 	h := azureSlowClaimHandler(t, store, opsClient, 100*time.Millisecond)
@@ -774,6 +795,7 @@ func TestExecuteAzureExchange_DirectClaimOutlivingDeadlineNeverExecutes(t *testi
 // TestAzureDirectExchangeAudit_RecordsBillingScope pins that the spelled-out
 // billing_scope_id of each target reaches the audit row's targets JSON.
 func TestAzureDirectExchangeAudit_RecordsBillingScope(t *testing.T) {
+	t.Parallel()
 	body := AzureExecuteExchangeRequestBody{
 		SubscriptionID: "sub-1",
 		Sources:        []AzureExchangeSourceBody{{ReservationID: "res-1", Quantity: 1}},

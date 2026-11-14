@@ -51,6 +51,7 @@ func (p *ctxProbe) assertDetached(t *testing.T, start time.Time) {
 // terminal ledger write run back to back after the request, and Lambda ends
 // the invocation at its timeout whatever the context deadline says (#913).
 func TestLambdaTimeoutCoversRIExchangeBudget(t *testing.T) {
+	t.Parallel()
 	lambdatimeout.AssertCovers(t, "../..", riExchangeExecutionTimeout+riExchangeTerminalSaveTimeout)
 }
 
@@ -85,6 +86,7 @@ func approvedExchangeRecord(id string) *config.RIExchangeRecord {
 // accepted the exchange, the approver's request was canceled mid-call, and the
 // ledger write recording the money movement must still land.
 func TestExecuteApprovedExchange_RequestCancelDoesNotCancelExchangeOrLedger(t *testing.T) {
+	t.Parallel()
 	const id = "550e8400-e29b-41d4-a716-000000000790"
 	reqCtx, cancelRequest := context.WithCancel(context.Background())
 	defer cancelRequest()
@@ -109,6 +111,7 @@ func TestExecuteApprovedExchange_RequestCancelDoesNotCancelExchangeOrLedger(t *t
 // branch's terminal write must also survive the canceled request, or the
 // record stays "processing" with its ceiling reserved.
 func TestExecuteApprovedExchange_RequestCancelStillRecordsFailure(t *testing.T) {
+	t.Parallel()
 	const id = "550e8400-e29b-41d4-a716-000000000791"
 	reqCtx, cancelRequest := context.WithCancel(context.Background())
 	defer cancelRequest()
@@ -129,6 +132,7 @@ func TestExecuteApprovedExchange_RequestCancelStillRecordsFailure(t *testing.T) 
 // TestExecuteExchange_RequestCancelDoesNotCancelAWSExchange covers the direct
 // AWS execute endpoint the issue names.
 func TestExecuteExchange_RequestCancelDoesNotCancelAWSExchange(t *testing.T) {
+	t.Parallel()
 	reqCtx, cancelRequest := context.WithCancel(context.Background())
 	defer cancelRequest()
 
@@ -164,6 +168,7 @@ func TestExecuteExchange_RequestCancelDoesNotCancelAWSExchange(t *testing.T) {
 // execute endpoint, whose ExecuteExchange polls a long-running operation and is
 // the most exposed to the 30s request timeout.
 func TestExecuteAzureExchange_RequestCancelDoesNotCancelExchange(t *testing.T) {
+	t.Parallel()
 	reqCtx, cancelRequest := context.WithCancel(context.Background())
 	defer cancelRequest()
 
@@ -210,6 +215,7 @@ func TestExecuteAzureExchange_RequestCancelDoesNotCancelExchange(t *testing.T) {
 // the approval retry gets 409 from the transition guard and the row keeps
 // counting against the daily cap.
 func TestExecuteApprovedExchange_RequestCancelBeforeReserveRecordsFailure(t *testing.T) {
+	t.Parallel()
 	const id = "550e8400-e29b-41d4-a716-000000000792"
 	reqCtx, cancelRequest := context.WithCancel(context.Background())
 	defer cancelRequest()
@@ -240,6 +246,7 @@ func TestExecuteApprovedExchange_RequestCancelBeforeReserveRecordsFailure(t *tes
 // TestStampRIExchangeApprover_SurvivesRequestCancel pins the approved_by audit
 // write, which runs after money moved, to a detached context.
 func TestStampRIExchangeApprover_SurvivesRequestCancel(t *testing.T) {
+	t.Parallel()
 	const id = "550e8400-e29b-41d4-a716-000000000793"
 	reqCtx, cancelRequest := context.WithCancel(context.Background())
 	cancelRequest()

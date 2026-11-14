@@ -17,6 +17,7 @@ import (
 // telling it to check before retrying; the audit row stays unknown, and no
 // provider text reaches the response.
 func TestExecuteExchange_OutcomeUnknownIs502NamingSourceRIs(t *testing.T) {
+	t.Parallel()
 	store := newDirectExchangeAuditStore()
 	h := awsAuditHandler(t, store, func(context.Context, exchange.ExchangeExecuteRequest) (string, *exchange.ExchangeQuoteSummary, error) {
 		return "", nil, fmt.Errorf("%w: accept response lost: RequestError for %s", common.ErrOutcomeUnknown, outcomeUnknownLeak)

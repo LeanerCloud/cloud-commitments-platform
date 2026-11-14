@@ -11,6 +11,7 @@ import (
 )
 
 func TestNewInMemoryRateLimiter(t *testing.T) {
+	t.Parallel()
 	rl := NewInMemoryRateLimiter()
 	require.NotNil(t, rl)
 	assert.NotNil(t, rl.attempts)
@@ -18,6 +19,7 @@ func TestNewInMemoryRateLimiter(t *testing.T) {
 }
 
 func TestInMemoryRateLimiter_SetLimit(t *testing.T) {
+	t.Parallel()
 	rl := NewInMemoryRateLimiter()
 
 	config := RateLimitConfig{
@@ -30,6 +32,7 @@ func TestInMemoryRateLimiter_SetLimit(t *testing.T) {
 }
 
 func TestInMemoryRateLimiter_SetLimit_NilLimits(t *testing.T) {
+	t.Parallel()
 	rl := &InMemoryRateLimiter{
 		attempts: make(map[string]*inMemoryRateLimitEntry),
 		limits:   nil,
@@ -46,6 +49,7 @@ func TestInMemoryRateLimiter_SetLimit_NilLimits(t *testing.T) {
 }
 
 func TestInMemoryRateLimiter_Allow_NilReceiver(t *testing.T) {
+	t.Parallel()
 	var rl *InMemoryRateLimiter
 	ctx := context.Background()
 
@@ -55,6 +59,7 @@ func TestInMemoryRateLimiter_Allow_NilReceiver(t *testing.T) {
 }
 
 func TestInMemoryRateLimiter_Allow_Success(t *testing.T) {
+	t.Parallel()
 	rl := NewInMemoryRateLimiter()
 	ctx := context.Background()
 
@@ -65,6 +70,7 @@ func TestInMemoryRateLimiter_Allow_Success(t *testing.T) {
 }
 
 func TestInMemoryRateLimiter_Allow_RateLimited(t *testing.T) {
+	t.Parallel()
 	rl := NewInMemoryRateLimiter()
 	ctx := context.Background()
 
@@ -111,6 +117,7 @@ func newInMemoryRateLimiterWithClock(clock *fakeClock) *InMemoryRateLimiter {
 // The window is an hour, so only the injected clock can expire it: a limiter
 // that read time.Now would still block the third request.
 func TestInMemoryRateLimiter_Allow_WindowExpiry(t *testing.T) {
+	t.Parallel()
 	clock := newFakeClock()
 	rl := newInMemoryRateLimiterWithClock(clock)
 	ctx := context.Background()
@@ -150,6 +157,7 @@ func TestInMemoryRateLimiter_Allow_WindowExpiry(t *testing.T) {
 }
 
 func TestInMemoryRateLimiter_Allow_DifferentKeys(t *testing.T) {
+	t.Parallel()
 	rl := NewInMemoryRateLimiter()
 	ctx := context.Background()
 
@@ -175,6 +183,7 @@ func TestInMemoryRateLimiter_Allow_DifferentKeys(t *testing.T) {
 }
 
 func TestInMemoryRateLimiter_Allow_FallbackToGeneral(t *testing.T) {
+	t.Parallel()
 	rl := NewInMemoryRateLimiter()
 	ctx := context.Background()
 
@@ -185,6 +194,7 @@ func TestInMemoryRateLimiter_Allow_FallbackToGeneral(t *testing.T) {
 }
 
 func TestInMemoryRateLimiter_AllowWithIP(t *testing.T) {
+	t.Parallel()
 	rl := NewInMemoryRateLimiter()
 	ctx := context.Background()
 
@@ -194,6 +204,7 @@ func TestInMemoryRateLimiter_AllowWithIP(t *testing.T) {
 }
 
 func TestInMemoryRateLimiter_AllowWithEmail(t *testing.T) {
+	t.Parallel()
 	rl := NewInMemoryRateLimiter()
 	ctx := context.Background()
 
@@ -203,6 +214,7 @@ func TestInMemoryRateLimiter_AllowWithEmail(t *testing.T) {
 }
 
 func TestInMemoryRateLimiter_AllowWithUser(t *testing.T) {
+	t.Parallel()
 	rl := NewInMemoryRateLimiter()
 	ctx := context.Background()
 
@@ -217,6 +229,7 @@ func TestInMemoryRateLimiter_AllowWithUser(t *testing.T) {
 // (the 80% oldest-first eviction would leave hundreds of entries) and must
 // keep the live entry and its count.
 func TestInMemoryRateLimiter_GarbageCollection(t *testing.T) {
+	t.Parallel()
 	clock := newFakeClock()
 	rl := newInMemoryRateLimiterWithClock(clock)
 	ctx := context.Background()
@@ -252,6 +265,7 @@ func TestInMemoryRateLimiter_GarbageCollection(t *testing.T) {
 }
 
 func TestInMemoryRateLimiter_ConcurrentAccess(t *testing.T) {
+	t.Parallel()
 	rl := NewInMemoryRateLimiter()
 	ctx := context.Background()
 
@@ -284,6 +298,7 @@ func TestInMemoryRateLimiter_ConcurrentAccess(t *testing.T) {
 // bucket (5/min/IP) and must NOT fall through to the permissive api_general
 // config (300/min).
 func TestGetDefaultRateLimits_SetupAdminHasDedicatedBucket(t *testing.T) {
+	t.Parallel()
 	limits := getDefaultRateLimits()
 
 	cfg, ok := limits["setup_admin"]
@@ -313,6 +328,7 @@ func TestGetDefaultRateLimits_SetupAdminHasDedicatedBucket(t *testing.T) {
 // An attacker at 300/min can flood the DB with pending-registration rows and
 // trigger a synchronous admin-notification email per request (inbox spam + DoS).
 func TestGetDefaultRateLimits_RegisterHasDedicatedBucket(t *testing.T) {
+	t.Parallel()
 	limits := getDefaultRateLimits()
 
 	cfg, ok := limits["register"]
@@ -341,6 +357,7 @@ func TestGetDefaultRateLimits_RegisterHasDedicatedBucket(t *testing.T) {
 // unregistered key is supplied, so a future caller typo is caught at startup
 // rather than silently falling through to api_general.
 func TestAssertRateLimitKeysKnown_PanicsOnUnknownKey(t *testing.T) {
+	t.Parallel()
 	defer func() {
 		if r := recover(); r == nil {
 			t.Error("assertRateLimitKeysKnown did not panic for an unknown key")
@@ -352,6 +369,7 @@ func TestAssertRateLimitKeysKnown_PanicsOnUnknownKey(t *testing.T) {
 // Regression test for #1016: assertRateLimitKeysKnown must not panic when all
 // supplied keys are present in getDefaultRateLimits().
 func TestAssertRateLimitKeysKnown_NoopForKnownKeys(t *testing.T) {
+	t.Parallel()
 	// Should not panic.
 	assertRateLimitKeysKnown("login", "setup_admin", "register", "approve_cancel_public")
 }
@@ -359,6 +377,7 @@ func TestAssertRateLimitKeysKnown_NoopForKnownKeys(t *testing.T) {
 // Regression test for #420: NewInMemoryRateLimiter must be ready at construction
 // time (not after a slow lazy init) so Lambda cold-start first requests are protected.
 func TestNewInMemoryRateLimiter_ReadyImmediately(t *testing.T) {
+	t.Parallel()
 	rl := NewInMemoryRateLimiter()
 	ctx := context.Background()
 
@@ -397,6 +416,7 @@ func TestNewInMemoryRateLimiter_ReadyImmediately(t *testing.T) {
 // The (cap+2)-th call adds one more. Final count is ~(80%*cap)+2, which is
 // strictly less than cap. A pre-fix run would reach cap+2.
 func TestInMemoryRateLimiter_EntriesCapEnforced(t *testing.T) {
+	t.Parallel()
 	rl := NewInMemoryRateLimiter()
 	ctx := context.Background()
 

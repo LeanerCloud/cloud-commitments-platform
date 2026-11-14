@@ -14,6 +14,7 @@ import (
 // operation that can answer a managed-plan refusal documents a 409 whose
 // schema carries the machine-readable code.
 func TestOpenAPI409NamesGuardCode(t *testing.T) {
+	t.Parallel()
 	_, thisFile, _, _ := runtime.Caller(0)
 	data, err := os.ReadFile(filepath.Join(filepath.Dir(thisFile), "openapi.yaml"))
 	require.NoError(t, err)

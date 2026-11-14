@@ -59,6 +59,7 @@ func hasAnyPrefix(s string, prefixes []string) bool {
 // client interfaces; the concrete constructors and types live in
 // provider_wiring.go.
 func TestRIExchangeHandlerHasNoConcreteProviderImports(t *testing.T) {
+	t.Parallel()
 	files, err := filepath.Glob("handler_ri_exchange*.go")
 	require.NoError(t, err)
 	var imports, bad []string
@@ -81,6 +82,7 @@ func TestRIExchangeHandlerHasNoConcreteProviderImports(t *testing.T) {
 // No non-test file in this package other than provider_wiring.go imports a
 // concrete cloud-commitments-go provider package.
 func TestOnlyProviderWiringImportsConcreteProviders(t *testing.T) {
+	t.Parallel()
 	entries, err := os.ReadDir(".")
 	require.NoError(t, err)
 	var bad []string

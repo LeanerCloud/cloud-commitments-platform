@@ -25,6 +25,7 @@ func riAutoCaller(exchange *auth.PermissionConstraints) []auth.Permission {
 }
 
 func TestRIExchangeAutoMode_ConstrainedExecuteRefused(t *testing.T) {
+	t.Parallel()
 	for name, held := range map[string]*auth.PermissionConstraints{
 		"cap":      capOnly(),
 		"account":  {AccountIDs: []string{scopedInAccount}},
@@ -47,6 +48,7 @@ func TestRIExchangeAutoMode_ConstrainedExecuteRefused(t *testing.T) {
 }
 
 func TestRIExchangeAutoMode_UnconstrainedAndAdminKeyStillArm(t *testing.T) {
+	t.Parallel()
 	mockAuth := new(MockAuthService)
 	mockAuth.On("ValidateSession", mock.Anything, autoGateToken).Return(&Session{UserID: autoGateUserID}, nil).Maybe()
 	mockAuth.grantPermissions(riAutoCaller(nil))
@@ -65,6 +67,7 @@ func TestRIExchangeAutoMode_UnconstrainedAndAdminKeyStillArm(t *testing.T) {
 }
 
 func TestRIExchangeAutoMode_UserAPIKeyUsesGlobalSetAndKeyID(t *testing.T) {
+	t.Parallel()
 	mockAuth := new(MockAuthService)
 	mockAuth.On("HasAPIKeyPermissionAPI", mock.Anything, "user-key", "update", "config").Return("u2", "key-1", true, nil)
 	mockAuth.On("HasAPIKeyPermissionAPI", mock.Anything, "user-key", "execute", "ri-exchange").Return("u2", "key-1", true, nil)

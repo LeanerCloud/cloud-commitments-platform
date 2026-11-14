@@ -240,6 +240,7 @@ func assertGate(t *testing.T, err error, store *mocks.MockConfigStore, wantRefus
 // update:config and is denied execute:ri-exchange by the carve-out -- because
 // that is the #1765 threat model and because /api/config is AuthAdmin.
 func TestRIExchangeAutoModeGate(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		perms       []auth.Permission
@@ -333,6 +334,7 @@ func TestRIExchangeAutoModeGate(t *testing.T) {
 // API key cannot reach it, which is why this axis is not visible from the
 // generic route at all.
 func TestRIExchangeAutoModeGate_UserAPIKeyUsesKeyPermissions(t *testing.T) {
+	t.Parallel()
 	// The owning user is a full admin AND an RI Exchanger; the key is not.
 	ownerPerms := autoGateAdminPlusExchange
 
@@ -380,6 +382,7 @@ func TestRIExchangeAutoModeGate_UserAPIKeyUsesKeyPermissions(t *testing.T) {
 // The body therefore flips only ri_exchange_enabled and leaves the legacy mode
 // in place. That is exactly why the gate reads the field the scheduler reads.
 func TestRIExchangeAutoModeGate_NonManualModeIsArmed(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"Auto", "AUTO", "automatic", "", "enabled"} {
 		t.Run("mode="+mode, func(t *testing.T) {
 			stored := disarmedConfig()
@@ -403,6 +406,7 @@ func TestRIExchangeAutoModeGate_NonManualModeIsArmed(t *testing.T) {
 // control: the gate must touch exactly the arming transition, not the rest of
 // the settings surface.
 func TestRIExchangeAutoModeGate_UnrelatedConfigWriteUnaffected(t *testing.T) {
+	t.Parallel()
 	r, store := autoGateSessionRouter(t, autoGateAdminOnly, disarmedConfig())
 
 	_, err := r.Route(context.Background(), "PUT", genericPath,
@@ -417,6 +421,7 @@ func TestRIExchangeAutoModeGate_UnrelatedConfigWriteUnaffected(t *testing.T) {
 // this, the gate would lock an operator out of every subsequent settings save
 // the moment auto mode was legitimately enabled by someone else.
 func TestRIExchangeAutoModeGate_ArmedIdempotentRewriteAllowed(t *testing.T) {
+	t.Parallel()
 	r, store := autoGateSessionRouter(t, autoGateAdminOnly, armedConfig())
 
 	_, err := r.Route(context.Background(), "PUT", genericPath,

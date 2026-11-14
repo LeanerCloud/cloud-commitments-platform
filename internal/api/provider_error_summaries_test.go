@@ -40,6 +40,7 @@ func assertNoProviderDetail(t *testing.T, where, s string) {
 }
 
 func TestExchangeErrors_HideProviderDetail(t *testing.T) {
+	t.Parallel()
 	for _, code := range []string{"InvalidOfferingId", "InvalidParameter", "ValidationError"} {
 		ce, ok := IsClientError(mapAWSExchangeError("exchange quote failed", awsFault(code)))
 		require.True(t, ok)
@@ -55,6 +56,7 @@ func TestExchangeErrors_HideProviderDetail(t *testing.T) {
 }
 
 func TestExchangeApprovalFailure_HidesProviderDetail(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	id := "550e8400-e29b-41d4-a716-000000000001"
 	store := new(MockConfigStore)
@@ -78,6 +80,7 @@ func TestExchangeApprovalFailure_HidesProviderDetail(t *testing.T) {
 }
 
 func TestExchangeHistory_SanitizesStoredErrors(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := new(MockConfigStore)
 	t.Cleanup(func() { store.AssertExpectations(t) })

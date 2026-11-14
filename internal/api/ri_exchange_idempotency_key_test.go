@@ -38,6 +38,7 @@ func azureKeyBody() AzureExecuteExchangeRequestBody {
 // shapes. A scope-blind fingerprint would let one subscription's exchange
 // suppress another's.
 func TestAzureExchangeIdempotencyKey_SubscriptionScoped(t *testing.T) {
+	t.Parallel()
 	a := azureKeyBody()
 	b := azureKeyBody()
 	b.SubscriptionID = "sub-2"
@@ -49,6 +50,7 @@ func TestAzureExchangeIdempotencyKey_SubscriptionScoped(t *testing.T) {
 // direction: everything that does not change WHAT is bought must leave the
 // fingerprint alone, or a retry mints a fresh key and commits a second time.
 func TestAzureExchangeIdempotencyKey_StableAcrossNonPurchaseFields(t *testing.T) {
+	t.Parallel()
 	base := azureKeyBody()
 	base.Sources = append(base.Sources, AzureExchangeSourceBody{ReservationID: "res-2", Quantity: 1})
 	base.Targets = append(base.Targets, AzureExchangeTargetBody{SKU: "Standard_D2s_v3", Location: "eastus", Term: "P3Y", Quantity: 1})
@@ -100,6 +102,7 @@ func TestAzureExchangeIdempotencyKey_StableAcrossNonPurchaseFields(t *testing.T)
 // fingerprint. A field missing here would let a distinct exchange be swallowed
 // by an earlier one's claim.
 func TestAzureExchangeIdempotencyKey_DistinguishesEveryPurchaseField(t *testing.T) {
+	t.Parallel()
 	// Keyed by fingerprint so a collision with ANY earlier variant is caught,
 	// not just with the baseline.
 	seen := map[string]string{azureExchangeIdempotencyKey(azureKeyBody()): "the baseline exchange"}
@@ -156,6 +159,7 @@ func awsKeyBody() ExchangeExecuteRequestBody {
 // account the deployment resolves to, so both belong in the fingerprint: two
 // accounts, or two regions of one account, can hold same-named RI ids.
 func TestAwsExchangeIdempotencyKey_ScopedToAccountAndRegion(t *testing.T) {
+	t.Parallel()
 	body := awsKeyBody()
 	base := awsExchangeIdempotencyKey("acct-1", body)
 
@@ -175,6 +179,7 @@ func TestAwsExchangeIdempotencyKey_ScopedToAccountAndRegion(t *testing.T) {
 // spellings build the identical AWS request (pkg/exchange.buildTargetConfigs),
 // so a retry that switches spelling must not mint a fresh key.
 func TestAwsExchangeIdempotencyKey_StableAcrossNonPurchaseFields(t *testing.T) {
+	t.Parallel()
 	want := awsExchangeIdempotencyKey("acct-1", awsKeyBody())
 
 	variants := map[string]func(*ExchangeExecuteRequestBody){
@@ -209,6 +214,7 @@ func TestAwsExchangeIdempotencyKey_StableAcrossNonPurchaseFields(t *testing.T) {
 // TestAwsExchangeIdempotencyKey_DistinguishesEveryPurchaseField is the
 // no-swallowing direction for AWS.
 func TestAwsExchangeIdempotencyKey_DistinguishesEveryPurchaseField(t *testing.T) {
+	t.Parallel()
 	seen := map[string]string{awsExchangeIdempotencyKey("acct-1", awsKeyBody()): "the baseline exchange"}
 
 	variants := map[string]func(*ExchangeExecuteRequestBody){
@@ -248,6 +254,7 @@ func TestAwsExchangeIdempotencyKey_DistinguishesEveryPurchaseField(t *testing.T)
 // provider scope is what keeps them apart, and it must, because the two share
 // one claim table.
 func TestExchangeIdempotencyKey_ProviderScopesNeverCollide(t *testing.T) {
+	t.Parallel()
 	sources := []string{"same-source"}
 	targets := []string{"same-target"}
 	assert.NotEqual(t,
@@ -260,6 +267,7 @@ func TestExchangeIdempotencyKey_ProviderScopesNeverCollide(t *testing.T) {
 // crafted to shift a field boundary, making two genuinely different exchanges
 // fingerprint alike -- which suppresses the second one.
 func TestExchangeIdempotencyKey_FieldBoundariesAreUnambiguous(t *testing.T) {
+	t.Parallel()
 	cases := map[string][2]string{
 		"a character moved across the scope boundary": {
 			exchangeIdempotencyKey("ab", "c", nil, nil),

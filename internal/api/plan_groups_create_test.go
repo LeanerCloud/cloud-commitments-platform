@@ -80,6 +80,7 @@ func groupRecs() (aws, azure []config.RecommendationRecord) {
 }
 
 func TestCreatePlan_GroupsBindSelectedRecommendations(t *testing.T) {
+	t.Parallel()
 	aws, azure := groupRecs()
 	f := newGroupCreateFixture(t, aws, azure)
 	require.NoError(t, f.create(createBody(awsGroup, azureGroup)))
@@ -98,6 +99,7 @@ func TestCreatePlan_GroupsBindSelectedRecommendations(t *testing.T) {
 }
 
 func TestCreatePlan_GroupsRefusals(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name, group, msg string
 		mutate           func(aws, azure []config.RecommendationRecord) ([]config.RecommendationRecord, []config.RecommendationRecord)
@@ -138,6 +140,7 @@ func TestCreatePlan_GroupsRefusals(t *testing.T) {
 }
 
 func TestCreatePlan_GroupsArmedCreateReachesTheGate(t *testing.T) {
+	t.Parallel()
 	aws, azure := groupRecs()
 	f := newGroupCreateFixture(t, aws, azure)
 	noExecute := new(MockAuthService)
@@ -152,6 +155,7 @@ func TestCreatePlan_GroupsArmedCreateReachesTheGate(t *testing.T) {
 }
 
 func TestUpdatePlan_RefusesGroups(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store, mockAuth := new(MockConfigStore), new(MockAuthService)
 	mockAuth.On("ValidateSession", ctx, "admin-token").Return(&Session{UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", Email: "admin@example.com"}, nil)

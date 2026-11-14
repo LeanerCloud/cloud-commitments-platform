@@ -64,6 +64,7 @@ func requireForbidden(t *testing.T, err error) {
 }
 
 func TestApprovePurchase_SessionDenialWithoutTokenIsFinal(t *testing.T) {
+	t.Parallel()
 	store, mockPurchase := new(MockConfigStore), new(MockPurchaseManager)
 	t.Cleanup(func() { store.AssertExpectations(t) })
 	h, ctx := newDenialTestHandler(t, store, mockPurchase)
@@ -81,6 +82,7 @@ func TestApprovePurchase_SessionDenialWithoutTokenIsFinal(t *testing.T) {
 }
 
 func TestCancelPurchase_SessionDenialWithoutTokenIsFinal(t *testing.T) {
+	t.Parallel()
 	store := new(MockConfigStore)
 	t.Cleanup(func() { store.AssertExpectations(t) })
 	h, ctx := newDenialTestHandler(t, store, new(MockPurchaseManager))
@@ -96,6 +98,7 @@ func TestCancelPurchase_SessionDenialWithoutTokenIsFinal(t *testing.T) {
 }
 
 func TestRevokePurchase_SessionDenialWithoutTokenIsFinal(t *testing.T) {
+	t.Parallel()
 	store := new(MockConfigStore)
 	t.Cleanup(func() { store.AssertExpectations(t) })
 	h, ctx := newDenialTestHandler(t, store, new(MockPurchaseManager))
@@ -110,6 +113,7 @@ func TestRevokePurchase_SessionDenialWithoutTokenIsFinal(t *testing.T) {
 }
 
 func TestApproveRIExchange_SessionDenialWithoutTokenIsFinal(t *testing.T) {
+	t.Parallel()
 	store := new(MockConfigStore)
 	h, ctx := newDenialTestHandler(t, store, new(MockPurchaseManager))
 	store.On("GetRIExchangeRecord", mock.Anything, denialTestExecID).Return(&config.RIExchangeRecord{
@@ -128,6 +132,7 @@ func TestApproveRIExchange_SessionDenialWithoutTokenIsFinal(t *testing.T) {
 }
 
 func TestApproveRIExchange_SessionDenialWithTokenUsesToken(t *testing.T) {
+	t.Parallel()
 	store := new(MockConfigStore)
 	t.Cleanup(func() { store.AssertExpectations(t) })
 	h, ctx := newDenialTestHandler(t, store, new(MockPurchaseManager))

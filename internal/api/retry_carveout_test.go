@@ -75,6 +75,7 @@ func wireRetryCarveout(t *testing.T, failed *config.PurchaseExecution, mockConfi
 // answers retry-any true and the retry is authorized against another user's
 // failed row.
 func TestRetryCarveOut_PlainAdminIsRefused(t *testing.T) {
+	t.Parallel()
 	failed := retryCarveoutFailedExec()
 	mockConfig := new(MockConfigStore)
 	t.Cleanup(func() { mockConfig.AssertExpectations(t) })
@@ -117,6 +118,7 @@ func TestRetryCarveOut_PlainAdminIsRefused(t *testing.T) {
 // would satisfy the refusal test above, hiding a Purchaser group that failed
 // to grant the verb at all.
 func TestRetryCarveOut_AdminPurchaserIsAllowed(t *testing.T) {
+	t.Parallel()
 	failed := retryCarveoutFailedExec()
 	mockConfig := new(MockConfigStore)
 	t.Cleanup(func() { mockConfig.AssertExpectations(t) })

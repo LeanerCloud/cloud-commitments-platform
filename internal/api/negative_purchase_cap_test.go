@@ -35,6 +35,7 @@ func handlerWithCap(action string, maxAmount float64) *Handler {
 }
 
 func TestEnforcePurchaseConstraints_NegativeCapRefuses(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	session := &Session{UserID: "dddddddd-dddd-dddd-dddd-dddddddddddd"}
 	// The execute, direct-execute and approval verbs all share this check.
@@ -64,6 +65,7 @@ func TestEnforcePurchaseConstraints_NegativeCapRefuses(t *testing.T) {
 }
 
 func TestCheckAzureExecuteConstraints_NegativeCapRefuses(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	session := &Session{UserID: "dddddddd-dddd-dddd-dddd-dddddddddddd"}
 	grant := func(maxAmount float64) *Handler {
@@ -97,6 +99,7 @@ func TestCheckAzureExecuteConstraints_NegativeCapRefuses(t *testing.T) {
 }
 
 func TestMapCreateAPIKeyError_InvalidPermissionIs400(t *testing.T) {
+	t.Parallel()
 	err := mapCreateAPIKeyError(auth.ErrInvalidPermission)
 	ce, ok := IsClientError(err)
 	require.True(t, ok, "expected a clientError, got %v", err)

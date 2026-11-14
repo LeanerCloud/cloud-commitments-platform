@@ -12,6 +12,7 @@ import (
 )
 
 func TestPurchaseHistoryUnknownUpfront(t *testing.T) {
+	t.Parallel()
 	for _, costs := range [][]*float64{{nil}, {nil, new(float64(120))}, {new(float64(120)), nil}} {
 		rows := make([]config.PurchaseHistoryRecord, len(costs))
 		for i, cost := range costs {
@@ -30,6 +31,7 @@ func TestPurchaseHistoryUnknownUpfront(t *testing.T) {
 }
 
 func TestCoverageUnknownUpfront(t *testing.T) {
+	t.Parallel()
 	assert.Nil(t, commitmentCoveredMonthly(config.PurchaseHistoryRecord{Term: 1, MonthlyCost: new(float64(50))}))
 	known := commitmentCoveredMonthly(config.PurchaseHistoryRecord{Term: 1, UpfrontCost: new(float64), MonthlyCost: new(float64(50))})
 	require.NotNil(t, known)
@@ -60,6 +62,7 @@ func TestCoverageUnknownUpfront(t *testing.T) {
 }
 
 func TestCoverageHandlerUnknownUpfrontSameService(t *testing.T) {
+	t.Parallel()
 	for _, unknownFirst := range []bool{false, true} {
 		name := "known first"
 		if unknownFirst {
@@ -101,6 +104,7 @@ func TestCoverageHandlerUnknownUpfrontSameService(t *testing.T) {
 }
 
 func TestMarketplaceUnknownUpfront(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, body string
 		cost       *float64

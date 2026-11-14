@@ -85,6 +85,7 @@ func (f *estimateFixture) resolved(t *testing.T, plan *config.PurchasePlan, step
 }
 
 func TestPlannedPurchases_EstimatesNextUnattachedStep(t *testing.T) {
+	t.Parallel()
 	plan := estimatePlan(estPlanID, 0)
 	f := newEstimateFixture(t, true, []config.PurchasePlan{plan}, []config.PurchaseExecution{estimateRoot(estPlanID, 1)})
 	want := f.resolved(t, &plan, 1, nil, nil)
@@ -107,6 +108,7 @@ func TestPlannedPurchases_EstimatesNextUnattachedStep(t *testing.T) {
 }
 
 func TestPlannedPurchases_EstimateSizesCumulativeMinusCommittedAndOnlyNextStep(t *testing.T) {
+	t.Parallel()
 	plan := estimatePlan(estPlanID, 1)
 	f := newEstimateFixture(t, true, []config.PurchasePlan{plan}, []config.PurchaseExecution{estimateRoot(estPlanID, 2), estimateRoot(estPlanID, 3)})
 	key := f.resolved(t, &plan, 1, nil, nil).Baseline
@@ -127,6 +129,7 @@ func TestPlannedPurchases_EstimateSizesCumulativeMinusCommittedAndOnlyNextStep(t
 }
 
 func TestPlannedPurchases_EstimateNotesInsteadOfZeros(t *testing.T) {
+	t.Parallel()
 	boom := errors.New("db down")
 	cases := []struct {
 		name  string
@@ -178,6 +181,7 @@ func filterCalls(calls []*mock.Call, drop string) []*mock.Call {
 }
 
 func TestPlannedPurchases_NoEstimateWithoutViewRecommendations(t *testing.T) {
+	t.Parallel()
 	plan := estimatePlan(estPlanID, 0)
 	f := newEstimateFixture(t, false, []config.PurchasePlan{plan}, []config.PurchaseExecution{estimateRoot(estPlanID, 1), estimateRoot(estPlanID, 2)})
 
@@ -190,6 +194,7 @@ func TestPlannedPurchases_NoEstimateWithoutViewRecommendations(t *testing.T) {
 }
 
 func TestPlannedPurchases_EstimateFailureOnOnePlanKeepsOthers(t *testing.T) {
+	t.Parallel()
 	planA, planB := estimatePlan(estPlanID, 0), estimatePlan("71717171-7171-7171-7171-717171717171", 0)
 	f := newEstimateFixture(t, true, []config.PurchasePlan{planA, planB},
 		[]config.PurchaseExecution{estimateRoot(planA.ID, 1), estimateRoot(planB.ID, 1)})
@@ -205,6 +210,7 @@ func TestPlannedPurchases_EstimateFailureOnOnePlanKeepsOthers(t *testing.T) {
 }
 
 func TestPlannedPurchases_EstimateNeverWrites(t *testing.T) {
+	t.Parallel()
 	plan := estimatePlan(estPlanID, 0)
 	f := newEstimateFixture(t, true, []config.PurchasePlan{plan}, []config.PurchaseExecution{estimateRoot(estPlanID, 1)})
 

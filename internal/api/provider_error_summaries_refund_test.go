@@ -16,6 +16,7 @@ import (
 )
 
 func TestMarketplaceErrors_HideProviderDetail(t *testing.T) {
+	t.Parallel()
 	ce, ok := IsClientError(mapAWSMarketplaceError("create listing", awsFault("InvalidParameterValue")))
 	require.True(t, ok)
 	assert.Equal(t, 400, ce.code)
@@ -31,6 +32,7 @@ func TestMarketplaceErrors_HideProviderDetail(t *testing.T) {
 }
 
 func TestMarketplaceRollbackFailure_HidesProviderDetail(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	const purchaseID = "22222222-2222-2222-2222-222222222222"
 	store := new(MockConfigStore)
@@ -45,6 +47,7 @@ func TestMarketplaceRollbackFailure_HidesProviderDetail(t *testing.T) {
 }
 
 func TestAzureRefundErrors_HideProviderDetail(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	raw := azureHTTPError(t, 400, fakeSubPath)
 
@@ -95,6 +98,7 @@ func TestAzureRefundErrors_HideProviderDetail(t *testing.T) {
 }
 
 func TestSessionApproveScheduleFailure_HidesStoreError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	const execID = "00000000-0000-0000-0000-000000000000"
 	store := new(MockConfigStore)

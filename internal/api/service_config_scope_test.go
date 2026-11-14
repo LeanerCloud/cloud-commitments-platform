@@ -34,6 +34,7 @@ func putServiceConfig(h *Handler) (any, error) {
 }
 
 func TestRouterDispatch_UpdateServiceConfig_ScopedUserRefused(t *testing.T) {
+	t.Parallel()
 	h, store := scopedHandler(t, scopedInAccount)
 	store.On("GetServiceConfig", mock.Anything, "aws", "ec2").Return(nil, nil).Maybe()
 	store.On("SaveServiceConfig", mock.Anything, mock.Anything).Return(nil).Maybe()
@@ -47,6 +48,7 @@ func TestRouterDispatch_UpdateServiceConfig_ScopedUserRefused(t *testing.T) {
 }
 
 func TestRouterDispatch_UpdateServiceConfig_SameRefusalAsGlobalConfig(t *testing.T) {
+	t.Parallel()
 	h, _ := scopedHandler(t, scopedInAccount)
 
 	_, globalErr := NewRouter(h).Route(context.Background(), "PUT", "/api/config", scopedRequest(`{}`))
@@ -59,6 +61,7 @@ func TestRouterDispatch_UpdateServiceConfig_SameRefusalAsGlobalConfig(t *testing
 }
 
 func TestRouterDispatch_UpdateServiceConfig_UnrestrictedAdminSucceeds(t *testing.T) {
+	t.Parallel()
 	h, store := scopedHandler(t)
 	t.Cleanup(func() { store.AssertExpectations(t) })
 	store.On("GetServiceConfig", mock.Anything, "aws", "ec2").Return(nil, nil)
@@ -72,6 +75,7 @@ func TestRouterDispatch_UpdateServiceConfig_UnrestrictedAdminSucceeds(t *testing
 }
 
 func TestUpdateServiceConfig_PermissionCheckPrecedesScopeCheck(t *testing.T) {
+	t.Parallel()
 	mockAuth := new(MockAuthService)
 	mockAuth.On("ValidateSession", mock.Anything, scopedToken).
 		Return(&Session{UserID: scopedUserID}, nil).Maybe()
@@ -89,6 +93,7 @@ func TestUpdateServiceConfig_PermissionCheckPrecedesScopeCheck(t *testing.T) {
 }
 
 func TestRouterDispatch_UpdateServiceConfig_ScopeRefusedBeforeBodyAndPathValidation(t *testing.T) {
+	t.Parallel()
 	cases := map[string]struct{ path, body string }{
 		"invalid body": {serviceConfigPath, `{`},
 		"invalid path": {"/api/config/service/aws/..%2Fec2", serviceConfigBody},
@@ -109,6 +114,7 @@ func TestRouterDispatch_UpdateServiceConfig_ScopeRefusedBeforeBodyAndPathValidat
 // An unrestricted account scope is not enough when the permission itself
 // carries constraints: requireGlobalConfigScope's Global constraint refuses it.
 func TestUpdateServiceConfig_ConstrainedPermissionRefusedByGlobalConstraint(t *testing.T) {
+	t.Parallel()
 	mockAuth := new(MockAuthService)
 	mockAuth.On("ValidateSession", mock.Anything, scopedToken).
 		Return(&Session{UserID: scopedUserID}, nil).Maybe()
@@ -126,6 +132,7 @@ func TestUpdateServiceConfig_ConstrainedPermissionRefusedByGlobalConstraint(t *t
 }
 
 func TestUpdateServiceConfig_NoSessionRefused(t *testing.T) {
+	t.Parallel()
 	h, store := scopedHandler(t, scopedInAccount)
 	req := &events.LambdaFunctionURLRequest{Body: serviceConfigBody}
 

@@ -46,6 +46,7 @@ func loadReshapeSpecOp(t *testing.T, path, method string) reshapeSpecOp {
 // pinned by target_offerings_scope_test.go, target_offerings_zone_test.go,
 // tenant_scope_sweep_test.go and the scope tests in handler_ri_exchange_test.go.
 func TestOpenAPIReshapeOutOfScopeStatuses(t *testing.T) {
+	t.Parallel()
 	offerings := loadReshapeSpecOp(t, "/api/ri-exchange/target-offerings", "get")
 	for _, code := range []string{"400", "404", "422"} {
 		assert.Contains(t, offerings.Responses, code, "target-offerings must document %s", code)

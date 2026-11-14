@@ -36,6 +36,7 @@ func expectStoredRecs(store *MockConfigStore, recs ...config.RecommendationRecor
 // x 3yr all-upfront reservations whose real stored price is $1,000,000. The
 // cap must be enforced against the stored price, not the client's number.
 func TestHandler_executePurchase_CapUsesStoredPriceNotClientPrice(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)
@@ -87,6 +88,7 @@ func TestHandler_executePurchase_CapUsesStoredPriceNotClientPrice(t *testing.T) 
 // the cap, but the STORED price is well under it, so the purchase must
 // proceed and the response must reflect the stored numbers.
 func TestHandler_executePurchase_StoredPriceUnderCapProceeds(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)
@@ -129,6 +131,7 @@ func TestHandler_executePurchase_StoredPriceUnderCapProceeds(t *testing.T) {
 // second half of #1905: the execution row and the approval email must carry
 // the store-derived costs, not the client's.
 func TestHandler_executePurchase_PersistsStoredCostsNotClientCosts(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)
@@ -201,6 +204,7 @@ func TestHandler_executePurchase_PersistsStoredCostsNotClientCosts(t *testing.T)
 // matches no stored recommendation is refused with 409, before anything is
 // persisted.
 func TestHandler_executePurchase_UnknownRecommendationRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)
@@ -247,6 +251,7 @@ func TestHandler_executePurchase_UnknownRecommendationRefused(t *testing.T) {
 // account B. The mismatch must be refused with 409 before anything is
 // persisted or the provider is contacted.
 func TestHandler_executePurchase_CrossAccountMismatchRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)
@@ -289,6 +294,7 @@ func TestHandler_executePurchase_CrossAccountMismatchRefused(t *testing.T) {
 // TestHandler_executePurchase_StoredRecWithoutPriceRefused: a matched stored
 // row that carries no usable price is refused with 409.
 func TestHandler_executePurchase_StoredRecWithoutPriceRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)
@@ -327,6 +333,7 @@ func TestHandler_executePurchase_StoredRecWithoutPriceRefused(t *testing.T) {
 // must be refused with 409 rather than dividing by zero or by a negative
 // count (section 4 of the #1905 plan).
 func TestHandler_executePurchase_StoredRecWithZeroCountRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)
@@ -362,6 +369,7 @@ func TestHandler_executePurchase_StoredRecWithZeroCountRefused(t *testing.T) {
 // TestHandler_executePurchase_StoreErrorFailsClosed: a store read error is a
 // 500, never a client-value fallback.
 func TestHandler_executePurchase_StoreErrorFailsClosed(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)
@@ -396,6 +404,7 @@ func TestHandler_executePurchase_StoreErrorFailsClosed(t *testing.T) {
 // purchase modal's term/payment change (#111, #197, #1903) resolves to the
 // stored variant the user actually chose, not the id's original variant.
 func TestHandler_executePurchase_PaymentChangePricedFromStoredVariant(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)
@@ -451,6 +460,7 @@ func TestHandler_executePurchase_PaymentChangePricedFromStoredVariant(t *testing
 // rec is priced by hourly commitment, not by count; a count mismatch is
 // refused rather than scaled.
 func TestHandler_executePurchase_SavingsPlanCountMustMatchStored(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)
@@ -487,6 +497,7 @@ func TestHandler_executePurchase_SavingsPlanCountMustMatchStored(t *testing.T) {
 // TestPriceFromStored_ScalesByCountAndKeepsStoredIdentity is a pure unit
 // test of priceFromStored's scaling and field-provenance contract.
 func TestPriceFromStored_ScalesByCountAndKeepsStoredIdentity(t *testing.T) {
+	t.Parallel()
 	stored := config.RecommendationRecord{
 		ID: "stored-id", Provider: "aws", Service: "ec2", Count: 4,
 		UpfrontCost: 1000, Savings: 100, MonthlyCost: nil, OnDemandCost: float64Ptr(2000),
@@ -546,6 +557,7 @@ func TestPriceFromStored_ScalesByCountAndKeepsStoredIdentity(t *testing.T) {
 // the scheduler always writes lowercase, but this is a money path and must
 // fail loud rather than pick a row on a broken assumption).
 func TestLoadStoredRecommendationIndex_CaseFoldCollisionRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -569,6 +581,7 @@ func TestLoadStoredRecommendationIndex_CaseFoldCollisionRefused(t *testing.T) {
 // nil and "" CloudAccountID collapse to the same key, provider/payment case
 // is folded, and every other component change yields a different key.
 func TestRecIdentityKey_TupleSemantics(t *testing.T) {
+	t.Parallel()
 	base := config.RecommendationRecord{
 		Provider: "aws", Service: "ec2", Region: "us-east-1", ResourceType: "m5.large",
 		Engine: "mysql", Term: 3, Payment: "all-upfront",
@@ -628,6 +641,7 @@ func TestRecIdentityKey_TupleSemantics(t *testing.T) {
 // matched row's dedicated tenancy into the response even though the
 // caller's original (origin) row was default tenancy.
 func TestCheckPurchaseDetailIdentity_TenancyMismatchRefused(t *testing.T) {
+	t.Parallel()
 	origin := config.RecommendationRecord{
 		ID: "stored-default-3yr", Provider: "aws", Service: "ec2", Term: 3,
 		Details: json.RawMessage(`{"instance_type":"m5.large","platform":"Linux/UNIX","tenancy":"default","scope":"regional"}`),
@@ -652,6 +666,7 @@ func TestCheckPurchaseDetailIdentity_TenancyMismatchRefused(t *testing.T) {
 // half of the issue's reproduction: a term change whose config.RecIdentityKey match
 // carries a different Multi-AZ configuration than the request's origin row.
 func TestCheckPurchaseDetailIdentity_RDSAZConfigMismatchRefused(t *testing.T) {
+	t.Parallel()
 	origin := config.RecommendationRecord{
 		ID: "stored-single-az-3yr", Provider: "aws", Service: "rds", Term: 3, Engine: "postgres",
 		Details: json.RawMessage(`{"engine":"postgres","az_config":"single-az","instance_class":"db.m5.large"}`),
@@ -674,6 +689,7 @@ func TestCheckPurchaseDetailIdentity_RDSAZConfigMismatchRefused(t *testing.T) {
 // as the origin row must not be refused (the fix must not over-broaden into
 // blocking legitimate term/payment repricing).
 func TestCheckPurchaseDetailIdentity_MatchingTenancyAllowed(t *testing.T) {
+	t.Parallel()
 	origin := config.RecommendationRecord{
 		ID: "stored-default-3yr", Provider: "aws", Service: "ec2", Term: 3,
 		Details: json.RawMessage(`{"instance_type":"m5.large","platform":"Linux/UNIX","tenancy":"default","scope":"regional"}`),
@@ -692,6 +708,7 @@ func TestCheckPurchaseDetailIdentity_MatchingTenancyAllowed(t *testing.T) {
 // payment change occurred), there is nothing to compare -- a no-op,
 // regardless of what Details say.
 func TestCheckPurchaseDetailIdentity_SameOriginAndMatchSkipsCheck(t *testing.T) {
+	t.Parallel()
 	row := config.RecommendationRecord{
 		ID: "stored-row", Provider: "aws", Service: "ec2", Term: 1,
 		Details: json.RawMessage(`{"instance_type":"m5.large","platform":"Linux/UNIX","tenancy":"dedicated"}`),
@@ -714,6 +731,7 @@ func TestCheckPurchaseDetailIdentity_SameOriginAndMatchSkipsCheck(t *testing.T) 
 // the caller actually meant" in the first place -- i.e. proves the caller-side
 // `ok` gate, not the function itself, is what matters here.
 func TestCheckPurchaseDetailIdentity_LegacyEmptyOriginDetailsSkipsCheck(t *testing.T) {
+	t.Parallel()
 	// A pre-#453 legacy row has no recorded Details at all; its true tenancy
 	// was never captured, so it must never false-positive-refuse against a
 	// fully-detailed match.
@@ -735,6 +753,7 @@ func TestCheckPurchaseDetailIdentity_LegacyEmptyOriginDetailsSkipsCheck(t *testi
 // though origin explicitly recorded dedicated -- "unknown" must be refused
 // alongside "different", not treated as compatible with a known origin.
 func TestCheckPurchaseDetailIdentity_KnownOriginVsLegacyEmptyMatchRefused(t *testing.T) {
+	t.Parallel()
 	origin := config.RecommendationRecord{
 		ID: "stored-dedicated-3yr", Provider: "aws", Service: "ec2", Term: 3,
 		Details: json.RawMessage(`{"instance_type":"m5.large","platform":"Linux/UNIX","tenancy":"dedicated","scope":"regional"}`),
@@ -755,6 +774,7 @@ func TestCheckPurchaseDetailIdentity_KnownOriginVsLegacyEmptyMatchRefused(t *tes
 // purchase time to build the machine spec, so a memory mismatch is as
 // purchase-critical as tenancy.
 func TestCheckPurchaseDetailIdentity_MemoryGBMismatchRefused(t *testing.T) {
+	t.Parallel()
 	origin := config.RecommendationRecord{
 		ID: "stored-16gb-3yr", Provider: "gcp", Service: "compute", Term: 3,
 		Details: json.RawMessage(`{"instance_type":"custom-4-16384","platform":"linux","tenancy":"default","scope":"regional","memory_gb":16}`),
@@ -777,6 +797,7 @@ func TestCheckPurchaseDetailIdentity_MemoryGBMismatchRefused(t *testing.T) {
 // treated as purchase discriminators: they legitimately vary across priced
 // alternatives for the SAME purchase (issue #334's explicit carve-out).
 func TestCheckPurchaseDetailIdentity_SavingsPlanNeverCompared(t *testing.T) {
+	t.Parallel()
 	origin := config.RecommendationRecord{
 		ID: "stored-sp-3yr", Provider: "aws", Service: "savingsplans", Term: 3,
 		Details: json.RawMessage(`{"plan_type":"ComputeSavingsPlans","hourly_commitment":12.5,"instance_family":"m5","region":"us-east-1"}`),
@@ -800,6 +821,7 @@ func TestCheckPurchaseDetailIdentity_SavingsPlanNeverCompared(t *testing.T) {
 // sibling. The purchase must be refused rather than silently resolving to
 // the dedicated-tenancy row's configuration.
 func TestHandler_executePurchase_TenancyMismatchOnTermChangeRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)
@@ -856,6 +878,7 @@ func TestHandler_executePurchase_TenancyMismatchOnTermChangeRefused(t *testing.T
 // row carries the SAME tenancy as the originally-selected row must still
 // execute normally.
 func TestHandler_executePurchase_MatchingTenancyTermChangeSucceeds(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)
@@ -913,6 +936,7 @@ func TestHandler_executePurchase_MatchingTenancyTermChangeSucceeds(t *testing.T)
 // -- an honest client hits this exact path, not just a malicious one. The
 // fix refuses whenever a NON-EMPTY id fails to resolve.
 func TestHandler_executePurchase_StaleOriginIDRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)
@@ -999,6 +1023,7 @@ func emptyIDExecuteHarness(t *testing.T, details string) (*config.PurchaseExecut
 // no id, tenancy "default" stated, stored row is dedicated. Pre-fix the
 // purchase silently resolved to the dedicated row.
 func TestHandler_executePurchase_EmptyIDMismatchedTenancyRefused(t *testing.T) {
+	t.Parallel()
 	saved, err := emptyIDExecuteHarness(t, `,"details":{"tenancy":"default"}`)
 	require.Error(t, err)
 	assert.Nil(t, saved)
@@ -1009,6 +1034,7 @@ func TestHandler_executePurchase_EmptyIDMismatchedTenancyRefused(t *testing.T) {
 }
 
 func TestHandler_executePurchase_EmptyIDMatchingDiscriminatorsSucceed(t *testing.T) {
+	t.Parallel()
 	saved, err := emptyIDExecuteHarness(t, `,"details":{"tenancy":"dedicated","platform":"Linux/UNIX","scope":"regional"}`)
 	require.NoError(t, err)
 	require.NotNil(t, saved)
@@ -1019,6 +1045,7 @@ func TestHandler_executePurchase_EmptyIDMatchingDiscriminatorsSucceed(t *testing
 // the identity key (issue #806), so the purchase is refused rather than priced
 // from an arbitrary variant.
 func TestHandler_executePurchase_EmptyIDOmittedDetailsRefusedForEC2(t *testing.T) {
+	t.Parallel()
 	saved, err := emptyIDExecuteHarness(t, ``)
 	require.Error(t, err)
 	assert.Nil(t, saved)
@@ -1028,6 +1055,7 @@ func TestHandler_executePurchase_EmptyIDOmittedDetailsRefusedForEC2(t *testing.T
 }
 
 func TestHandler_executePurchase_EmptyIDMalformedDetailsRefused(t *testing.T) {
+	t.Parallel()
 	_, err := emptyIDExecuteHarness(t, `,"details":{"tenancy":5}`)
 	require.Error(t, err)
 	ce, isClient := IsClientError(err)
@@ -1070,6 +1098,7 @@ func emptyIDExecuteAgainst(t *testing.T, stored config.RecommendationRecord, rec
 }
 
 func TestHandler_executePurchase_EmptyIDDiscriminatorMismatchesRefused(t *testing.T) {
+	t.Parallel()
 	ec2 := func(details string) config.RecommendationRecord {
 		return config.RecommendationRecord{
 			ID: "ec2-row", Provider: "aws", Service: "ec2", Region: "us-east-1", ResourceType: "m5.large",
@@ -1116,6 +1145,7 @@ func TestHandler_executePurchase_EmptyIDDiscriminatorMismatchesRefused(t *testin
 // Non-discriminator details (instance_type, vcpu, unknown keys) are neither
 // compared nor persisted: the priced record carries the STORED details.
 func TestHandler_executePurchase_EmptyIDIgnoresNonDiscriminatorDetails(t *testing.T) {
+	t.Parallel()
 	const stored = `{"instance_type":"m5.large","platform":"Linux/UNIX","tenancy":"dedicated","scope":"regional"}`
 	row := config.RecommendationRecord{
 		ID: "ec2-row", Provider: "aws", Service: "ec2", Region: "us-east-1", ResourceType: "m5.large",
@@ -1132,6 +1162,7 @@ func TestHandler_executePurchase_EmptyIDIgnoresNonDiscriminatorDetails(t *testin
 
 // The same refusal through the router, so the route-to-handler wiring is covered.
 func TestRouter_PurchasesExecute_EmptyIDMismatchedTenancyRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	t.Cleanup(func() { mockStore.AssertExpectations(t) })
@@ -1163,6 +1194,7 @@ func TestRouter_PurchasesExecute_EmptyIDMismatchedTenancyRefused(t *testing.T) {
 }
 
 func TestAzureCommitmentUnitsRegression(t *testing.T) {
+	t.Parallel()
 	upfront := config.RecommendationRecord{Provider: "azure", Term: 3, Count: 1, UpfrontCost: 3600}
 	monthly := config.RecommendationRecord{Provider: "azure", Term: 3, Count: 1, MonthlyCost: float64Ptr(100)}
 	assert.Equal(t, recTotalCommitment(&upfront), recTotalCommitment(&monthly))
@@ -1183,6 +1215,7 @@ func TestAzureCommitmentUnitsRegression(t *testing.T) {
 }
 
 func TestAzureCorrectedPriceExceedsOldUnitsCap(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := new(MockConfigStore)
 	t.Cleanup(func() { store.AssertExpectations(t) })
@@ -1203,6 +1236,7 @@ func TestAzureCorrectedPriceExceedsOldUnitsCap(t *testing.T) {
 }
 
 func TestStaleAzurePricingErrorMapping(t *testing.T) {
+	t.Parallel()
 	stale := fmt.Errorf("%w: %w", purchase.ErrStaleAzurePricing, config.ErrAzurePricingNotReady)
 	audit := fmt.Errorf("%w: %w", config.ErrAuditLoss, stale)
 	for _, mapped := range []error{executeFailureError("id", "approved", &config.PurchaseExecution{Status: "failed"}, stale), tokenActionError(stale)} {
@@ -1219,6 +1253,7 @@ func TestStaleAzurePricingErrorMapping(t *testing.T) {
 // Fixture-based: the go EC2 client's AZ-less zonal refusal reaches the user as
 // a 502 whose message keeps the "re-fetch" instruction.
 func TestExecuteFailureError_ZonalRefusalIs502WithRefetchMessage(t *testing.T) {
+	t.Parallel()
 	refusal := fmt.Errorf("EC2 recommendation for m5.large has zonal scope but no AvailabilityZone: refusing to buy a zonal RI in an arbitrary AZ; re-fetch the recommendation")
 	ce, ok := IsClientError(executeFailureError("id", "approved", &config.PurchaseExecution{Status: "failed"}, refusal))
 	require.True(t, ok)
