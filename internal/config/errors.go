@@ -53,6 +53,12 @@ var ErrEditorReconciliationRequired = errors.New("plan is managed by the schedul
 // detach an execution that may still hold or buy capacity.
 var ErrManagedPlanLiveExecutions = errors.New("managed plan still has active or unsettled purchases")
 
+// ErrAccountExternalIDHasHistory means UpdateCloudAccount would change an
+// account's external_id while purchase_history or ri_exchange_history rows key
+// on the old value, which would orphan them (issue #120). Permanent for the
+// request: callers map it to 409.
+var ErrAccountExternalIDHasHistory = errors.New("account external id is referenced by purchase history")
+
 // ErrExecutionNotInExpectedStatus is returned by TransitionExecutionStatus
 // when the target execution exists but its current status is not in the
 // allowed `fromStatuses` set -- i.e. the atomic CAS rejected because some

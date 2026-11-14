@@ -1842,10 +1842,13 @@ func TestPGXMock_UpdateCloudAccount_NotFound(t *testing.T) {
 	acct := &CloudAccount{ID: "missing-id", Name: "X", Provider: "aws"}
 	mock.ExpectExec("UPDATE").WithArgs(anyArgsCfg(21)...).
 		WillReturnResult(pgxmock.NewResult("UPDATE", 0))
+	mock.ExpectQuery("SELECT EXISTS").WithArgs("missing-id").
+		WillReturnRows(pgxmock.NewRows([]string{"exists"}).AddRow(false))
 
 	err := store.UpdateCloudAccount(ctx, acct)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
+	assert.NotErrorIs(t, err, ErrAccountExternalIDHasHistory)
 }
 
 // ─── DeleteCloudAccount ───────────────────────────────────────────────────────
@@ -3685,5 +3688,21 @@ func TestPGXMock_GetExecutionsByStatuses_FuturePendingStepsSortLast(t *testing.T
 
 	_, err := store.GetExecutionsByStatuses(context.Background(), []string{"pending", "notified"}, MaxListLimit)
 	require.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPGXMock_UpdateCloudAccount_ExternalIDHasHistory(t *testing.T) {
+	mock := newMock(t)
+	store := storeWith(mock)
+	ctx := context.Background()
+
+	acct := &CloudAccount{ID: "acct-id", Name: "X", Provider: "aws", ExternalID: "210987654321"}
+	mock.ExpectExec("UPDATE").WithArgs(anyArgsCfg(21)...).
+		WillReturnResult(pgxmock.NewResult("UPDATE", 0))
+	mock.ExpectQuery("SELECT EXISTS").WithArgs("acct-id").
+		WillReturnRows(pgxmock.NewRows([]string{"exists"}).AddRow(true))
+
+	err := store.UpdateCloudAccount(ctx, acct)
+	require.ErrorIs(t, err, ErrAccountExternalIDHasHistory)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

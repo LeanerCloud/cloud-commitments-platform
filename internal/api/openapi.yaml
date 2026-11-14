@@ -4980,7 +4980,10 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
         '409':
-          description: Another account with this provider and external_id already exists.
+          description: >-
+            Another account with this provider and external_id already exists, or
+            external_id would change while purchase or RI-exchange history refers
+            to the stored value (details.reason is external_id_has_history).
           content:
             application/json:
               schema:

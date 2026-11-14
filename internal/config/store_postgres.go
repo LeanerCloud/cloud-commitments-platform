@@ -4191,7 +4191,10 @@ func (s *PostgresStore) GetCloudAccountByExternalID(ctx context.Context, provide
 	return &account, nil
 }
 
-// UpdateCloudAccount updates mutable fields of a cloud account.
+// UpdateCloudAccount updates mutable fields of a cloud account. An external_id
+// change is refused with ErrAccountExternalIDHasHistory while history rows key
+// on the stored value (purchase_history by provider, ri_exchange_history for
+// AWS); the check is part of the UPDATE so it cannot race a separate read.
 func (s *PostgresStore) UpdateCloudAccount(ctx context.Context, account *CloudAccount) error {
 	account.UpdatedAt = time.Now()
 	query := `
@@ -4217,6 +4220,12 @@ func (s *PostgresStore) UpdateCloudAccount(ctx context.Context, account *CloudAc
 			gcp_wif_audience = $20,
 			updated_at = $21
 		WHERE id = $1
+		  AND (external_id = $6 OR NOT (
+		    EXISTS (SELECT 1 FROM purchase_history ph
+		            WHERE lower(ph.provider) = lower(cloud_accounts.provider) AND ph.account_id = cloud_accounts.external_id)
+		    OR (cloud_accounts.provider = 'aws' AND EXISTS (
+		            SELECT 1 FROM ri_exchange_history rh WHERE rh.account_id = cloud_accounts.external_id))
+		  ))
 	`
 	tag, err := s.db.Exec(ctx, query,
 		account.ID,
@@ -4245,6 +4254,13 @@ func (s *PostgresStore) UpdateCloudAccount(ctx context.Context, account *CloudAc
 		return fmt.Errorf("failed to update cloud account: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
+		var exists bool
+		if err := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM cloud_accounts WHERE id = $1)`, account.ID).Scan(&exists); err != nil {
+			return fmt.Errorf("failed to check cloud account %s: %w", account.ID, err)
+		}
+		if exists {
+			return ErrAccountExternalIDHasHistory
+		}
 		return fmt.Errorf("cloud account not found: %s", account.ID)
 	}
 	return nil
