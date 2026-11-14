@@ -133,3 +133,9 @@ output "nat_autoscaling_group_name" {
   description = "Name of the fck-nat Auto Scaling group (null when enable_nat_gateway is false)"
   value       = var.enable_nat_gateway ? aws_autoscaling_group.fck_nat[0].name : null
 }
+
+# Lets the environment's NAT alarm assert it reads a metric the ASG publishes.
+output "nat_autoscaling_group_enabled_metrics" {
+  description = "Group metrics the fck-nat ASG publishes (null when enable_nat_gateway is false)"
+  value       = var.enable_nat_gateway ? aws_autoscaling_group.fck_nat[0].enabled_metrics : null
+}

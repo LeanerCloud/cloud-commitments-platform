@@ -105,6 +105,16 @@ variable "enable_nat_gateway" {
   default     = false
 }
 
+# Needs autoscaling:Enable/DisableMetricsCollection on the deploy role, so
+# re-apply the ci-cd-permissions bootstrap first (root CLAUDE.md "CI/CD IAM"
+# split), or the apply 403s. Group metrics are free. Has no effect unless
+# enable_nat_gateway is true.
+variable "enable_nat_group_metrics" {
+  description = "Publish the fck-nat ASG's GroupInServiceInstances group metric (for the NAT outage alarm in the environment); free, 1-minute granularity"
+  type        = bool
+  default     = false
+}
+
 variable "enable_ipv6" {
   description = "Enable IPv6 on the VPC (assign_generated_ipv6_cidr_block)"
   type        = bool

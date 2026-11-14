@@ -118,6 +118,17 @@ The `enable_nat_gateway` option deploys a cost-effective NAT alternative:
   boot, so egress survives the ASG replacing the instance. With an existing
   VPC, route private subnets to the `nat_network_interface_id` output.
 
+### NAT group metric (#1763)
+
+`enable_nat_group_metrics` (default `false`) turns on the ASG's
+`GroupInServiceInstances` group metric (free), which the NAT outage alarm in
+`environments/aws/monitoring.tf` reads. The alarm itself is in the environment
+because it notifies the monitoring SNS topic, and passing that topic into this
+module would be a module-graph cycle (monitoring depends on compute and
+database, which depend on networking). Enabling needs the
+`autoscaling:EnableMetricsCollection` and `DisableMetricsCollection` grants, so
+re-apply `ci-cd-permissions` first.
+
 ### Rollback runbook (persistent ENI, #716)
 
 If egress from the private subnets is down after the apply that introduced the

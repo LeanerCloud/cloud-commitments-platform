@@ -332,6 +332,15 @@ resource "aws_autoscaling_group" "fck_nat" {
   health_check_type         = "EC2"
   health_check_grace_period = 60
 
+  # Group metrics are free and published at the default 1Minute granularity.
+  # The NAT outage alarm (environments/aws monitoring.tf, #1763) reads
+  # GroupInServiceInstances; the list is empty (equal to the provider default:
+  # no diff) unless the environment asks for it. The alarm lives in the
+  # environment, not here, because it targets the monitoring SNS topic and the
+  # monitoring module depends on compute and database, which depend on this
+  # module: passing the topic in is a module-graph cycle.
+  enabled_metrics = var.enable_nat_group_metrics ? ["GroupInServiceInstances"] : []
+
   # Grant the attach permission before an instance can boot and ask for it.
   # fck-nat retries the attach, but its one-shot source/dest-check call on
   # the primary ENI does not, so make the order explicit.
