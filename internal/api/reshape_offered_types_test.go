@@ -124,7 +124,6 @@ func TestGetReshapeRecommendations_CatalogMissingFamilySurfacesReason(t *testing
 // warning naming the region, and the fallback is not cached: the next request
 // queries the catalog again.
 func TestGetReshapeRecommendations_CatalogUnavailableFallsBackWithWarning(t *testing.T) {
-	t.Parallel()
 	cases := []struct {
 		name    string
 		ec2     *fakeReshapeEC2Stub
@@ -161,7 +160,6 @@ func TestGetReshapeRecommendations_CatalogUnavailableFallsBackWithWarning(t *tes
 }
 
 func TestOfferedInstanceTypes(t *testing.T) {
-	t.Parallel()
 	ctx := context.Background()
 	t.Run("returns the catalog unchanged", func(t *testing.T) {
 		logs := captureWarnings(t)

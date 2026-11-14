@@ -104,7 +104,6 @@ func (c drCaller) call(store *directResolveStore, id, body string) (any, error) 
 }
 
 func TestResolveRIExchangeDirect_PassesOperatorDecisionToStore(t *testing.T) {
-	t.Parallel()
 	logs := captureLogs(t)
 	store := drStore()
 	out, err := drCaller{perms: riExecute, email: "ops@example.com"}.call(store, dlID1, drFailedBody)
@@ -151,7 +150,6 @@ func TestResolveRIExchangeDirect_SubSecondCheckedAtChangesNote(t *testing.T) {
 }
 
 func TestResolveRIExchangeDirect_ReplayIsReportedAndNotLogged(t *testing.T) {
-	t.Parallel()
 	logs := captureLogs(t)
 	store := drStore()
 	store.res = &config.RIExchangeDirectResolveResult{ID: dlID1, Status: "unknown", ResolvedStatus: "failed",

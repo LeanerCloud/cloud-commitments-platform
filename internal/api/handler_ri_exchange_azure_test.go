@@ -1179,7 +1179,6 @@ func TestExecuteAzureExchange_CapExceeded(t *testing.T) {
 }
 
 func TestExecuteAzureExchange_PolicyErrorsBlockExecution(t *testing.T) {
-	t.Parallel()
 	ctx := context.Background()
 	opsClient := new(mockAzureExchangeOpsClient)
 	ownsAzureSource(opsClient)

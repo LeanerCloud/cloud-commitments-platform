@@ -188,7 +188,6 @@ func TestValidatePurchaseRecommendation_ErrorMessage(t *testing.T) {
 // logger's output, which would race against other SetOutput-using tests if
 // parallelized (see TestValidatePlanAccountProviders_GetAccountDBError_NoPIILeak).
 func TestValidatePurchaseRecommendation_NormalizationWarning(t *testing.T) {
-	t.Parallel()
 	logBuf := captureDefaultLog(t)
 
 	// Azure partial-upfront has no direct Azure equivalent; NormalizePaymentOption
@@ -216,7 +215,6 @@ func TestValidatePurchaseRecommendation_NormalizationWarning(t *testing.T) {
 //
 // Not run with t.Parallel(); see TestValidatePurchaseRecommendation_NormalizationWarning.
 func TestValidatePurchaseRecommendation_NoWarningWhenAlreadyCanonical(t *testing.T) {
-	t.Parallel()
 	logBuf := captureDefaultLog(t)
 
 	rec := validRec()
@@ -281,7 +279,6 @@ func TestValidatePurchaseRecommendation_SurfacesPaymentAdjustment(t *testing.T) 
 // Not run with t.Parallel(): captureDefaultLog mutates the shared default
 // logger's output (see TestValidatePurchaseRecommendation_NormalizationWarning).
 func TestValidatePurchaseRecommendation_NoAdjustmentForScheduleEquivalentRename(t *testing.T) {
-	t.Parallel()
 	tests := []struct {
 		name        string
 		provider    string
