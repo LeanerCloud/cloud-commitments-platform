@@ -104,6 +104,8 @@ type Scheduler struct {
 	cacheTTL        time.Duration
 	collecting      atomic.Bool
 	isLambda        bool
+	alertRetryMu    sync.Mutex
+	alertRetry      map[string]bool
 }
 
 // defaultCacheTTL is the fallback when CUDLY_RECOMMENDATION_CACHE_TTL is
@@ -246,7 +248,10 @@ func (s *Scheduler) CollectRecommendations(ctx context.Context, ownerToken strin
 	logging.Infof("Collected %d recommendations with $%.2f/month potential savings",
 		len(allRecommendations), totalSavings)
 
-	heldBefore := s.expiredAzureHolds(ctx)
+	heldBefore, err := s.expiredAzureHolds(ctx)
+	if err != nil {
+		logging.Errorf("Could not read expired Azure pricing holds before persisting, alert skipped this cycle: %v", err)
+	}
 	s.persistCollection(ctx, allRecommendations, successfulCollects, failedProviders, partial)
 	s.alertNewlyExpiredHolds(ctx, heldBefore)
 
