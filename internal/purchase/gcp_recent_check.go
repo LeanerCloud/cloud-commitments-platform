@@ -69,11 +69,11 @@ type recentCommitmentFilter interface {
 // fall back to its generic map path, which does not understand CUDs.
 type gcpRecentDedupeClient struct {
 	provider.ServiceClient
-	own     map[string]bool
-	sawSelf *bool
+	own map[string]bool
 	// self is this rec's own commitment name; sawSelf records that the listing
 	// held it, so the purchase call can adopt it instead of being refused.
-	self string
+	sawSelf *bool
+	self    string
 }
 
 func (c gcpRecentDedupeClient) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {

@@ -1671,9 +1671,10 @@ type LadderConfigDB struct {
 // pointer-scan range: explicit pointer fields come before scalars.
 type LadderRunDB struct {
 	// Required timestamps.
-	StartedAt              time.Time  `json:"started_at"`
-	UpdatedAt              time.Time  `json:"updated_at"`
-	CreatedAt              time.Time  `json:"created_at"`
+	StartedAt time.Time `json:"started_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	CreatedAt time.Time `json:"created_at"`
+	// Nullable FK and optional text fields (all pointer types).
 	FireAt                 *time.Time `json:"fire_at,omitempty"`
 	Cadence                *string    `json:"cadence,omitempty"`
 	CompletedAt            *time.Time `json:"completed_at,omitempty"`
@@ -1685,8 +1686,7 @@ type LadderRunDB struct {
 	BaselineUSDHr *float64 `json:"baseline_usd_hr,omitempty"`
 	// Mode and Cadence are nullable in the DB (populated from LadderConfigDB
 	// at run creation time; nil only for legacy / partially-failed rows).
-	Mode *string `json:"mode,omitempty"`
-	// Nullable FK and optional text fields (all pointer types).
+	Mode          *string  `json:"mode,omitempty"`
 	ConfigID      *string  `json:"config_id,omitempty"`
 	TargetUSDHr   *float64 `json:"target_usd_hr,omitempty"`
 	ExistingUSDHr *float64 `json:"existing_usd_hr,omitempty"`
@@ -1695,11 +1695,11 @@ type LadderRunDB struct {
 	ID     string           `json:"id"`
 	Status ladder.RunStatus `json:"status"`
 	// Plan JSON blob (JSONB, NOT NULL DEFAULT '{}').
-	Plan             json.RawMessage `json:"plan"`
-	EstimatedSavings float64         `json:"estimated_savings"`
-	TotalUpfrontCost float64         `json:"total_upfront_cost"`
+	Plan json.RawMessage `json:"plan"`
 	// Non-nullable accumulator totals (initialised to 0, not measurements;
 	// zero is a meaningful value for these counters unlike the monetary snapshot).
+	EstimatedSavings  float64 `json:"estimated_savings"`
+	TotalUpfrontCost  float64 `json:"total_upfront_cost"`
 	TotalHourlyCommit float64 `json:"total_hourly_commit"`
 }
 

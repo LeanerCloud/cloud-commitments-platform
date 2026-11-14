@@ -96,7 +96,14 @@ type Handler struct {
 	// without AWS credentials. Tests set this to a fixed-result fake so
 	// the integration suite runs hermetically.
 	reshapeAccountResolver func(context.Context) (string, error)
-	riUtilizationCache     *riUtilizationCache
+	// Postgres-backed TTL cache for Cost Explorer
+	// GetReservationUtilization. Dashboard + RI Exchange page hits
+	// read from the shared cache table so Lambda containers don't each
+	// fan out to a paid CE API call on every page load. See
+	// ri_utilization_cache.go for the rationale; in-memory was ruled
+	// out because Lambda's short container lifetime means each cold
+	// start would bypass the cache entirely.
+	riUtilizationCache *riUtilizationCache
 	// Optional AWS-client injection points used by the reshape handler
 	// integration test. When nil (the production default), the
 	// handler falls back to the direct AWS SDK constructors
@@ -141,16 +148,9 @@ type Handler struct {
 	// for the direct executes. Tests only.
 	executionTimeoutOverride time.Duration
 	sourceIdentityOnce       sync.Once // guards one-time source identity resolution
-	// Postgres-backed TTL cache for Cost Explorer
-	// GetReservationUtilization. Dashboard + RI Exchange page hits
-	// read from the shared cache table so Lambda containers don't each
-	// fan out to a paid CE API call on every page load. See
-	// ri_utilization_cache.go for the rationale; in-memory was ruled
-	// out because Lambda's short container lifetime means each cold
-	// start would bypass the cache entirely.
-	riUtilizationCacheOnce sync.Once
-	awsCfgOnce             sync.Once // guards one-time loading of the base AWS config; load it through getBaseAWSConfig
-	isLambda               bool      // Lambda mode from HandlerConfig.IsLambda; gates background goroutines
+	riUtilizationCacheOnce   sync.Once
+	awsCfgOnce               sync.Once // guards one-time loading of the base AWS config; load it through getBaseAWSConfig
+	isLambda                 bool      // Lambda mode from HandlerConfig.IsLambda; gates background goroutines
 	// fireSweepOff is HandlerConfig.FireSweepOff.
 	fireSweepOff bool
 }
