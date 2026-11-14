@@ -15,6 +15,7 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/redact"
 )
 
 // SMTPConfig holds configuration for SMTP email sender.
@@ -150,9 +151,9 @@ func (s *SMTPSender) SendToEmailWithCCMultipart(ctx context.Context, toEmail str
 	}
 
 	if len(sanitizedCC) > 0 {
-		logging.Debugf("Sent multipart email via SMTP to %s (cc %d): %s", redactEmail(toEmail), len(sanitizedCC), subject)
+		logging.Debugf("Sent multipart email via SMTP to %s (cc %d): %s", redact.Email(toEmail), len(sanitizedCC), subject)
 	} else {
-		logging.Debugf("Sent multipart email via SMTP to %s: %s", redactEmail(toEmail), subject)
+		logging.Debugf("Sent multipart email via SMTP to %s: %s", redact.Email(toEmail), subject)
 	}
 	return nil
 }
@@ -181,9 +182,9 @@ func (s *SMTPSender) SendToEmailWithCC(ctx context.Context, toEmail string, ccEm
 	}
 
 	if len(sanitizedCC) > 0 {
-		logging.Debugf("Sent email via SMTP to %s (cc %d): %s", redactEmail(toEmail), len(sanitizedCC), subject)
+		logging.Debugf("Sent email via SMTP to %s (cc %d): %s", redact.Email(toEmail), len(sanitizedCC), subject)
 	} else {
-		logging.Debugf("Sent email via SMTP to %s: %s", redactEmail(toEmail), subject)
+		logging.Debugf("Sent email via SMTP to %s: %s", redact.Email(toEmail), subject)
 	}
 	return nil
 }
@@ -623,9 +624,9 @@ func (s *SMTPSender) sendMultipartWithUnsubscribe(ctx context.Context, toEmail s
 	}
 
 	if len(sanitizedCC) > 0 {
-		logging.Debugf("Sent approval email via SMTP to %s (cc %d): %s", redactEmail(toEmail), len(sanitizedCC), subject)
+		logging.Debugf("Sent approval email via SMTP to %s (cc %d): %s", redact.Email(toEmail), len(sanitizedCC), subject)
 	} else {
-		logging.Debugf("Sent approval email via SMTP to %s: %s", redactEmail(toEmail), subject)
+		logging.Debugf("Sent approval email via SMTP to %s: %s", redact.Email(toEmail), subject)
 	}
 	return nil
 }

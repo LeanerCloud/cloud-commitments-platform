@@ -9,6 +9,7 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/redact"
 	"github.com/aws/aws-lambda-go/events"
 )
 
@@ -141,7 +142,7 @@ func (h *Handler) unsubscribeHandler(ctx context.Context, req *events.LambdaFunc
 		return nil, fmt.Errorf("could not save unsubscribe preference: %w", err)
 	}
 
-	logging.Infof("notifications/unsubscribe: muted scope=%s for %s", scope, redactEmailLocal(email))
+	logging.Infof("notifications/unsubscribe: muted scope=%s for %s", scope, redact.Email(email))
 
 	var buf strings.Builder
 	if err := unsubscribeConfirmTmpl.Execute(&buf, struct{ ScopeLabel string }{
@@ -173,20 +174,4 @@ func renderUnsubscribeConfirmForm(token, email, scope string) (any, error) {
 		body:        buf.String(),
 		csp:         mutePageCSP,
 	}, nil
-}
-
-// redactEmailLocal returns just the domain part with the local masked, e.g.
-// "us***@example.com". Reuses the same masking logic as email/sender.go but
-// without importing that package into api (avoids a dependency cycle).
-func redactEmailLocal(email string) string {
-	at := strings.LastIndex(email, "@")
-	if at < 0 {
-		return "***"
-	}
-	local := email[:at]
-	domain := email[at:] // includes '@'
-	if len(local) <= 2 {
-		return "***" + domain
-	}
-	return local[:2] + "***" + domain
 }

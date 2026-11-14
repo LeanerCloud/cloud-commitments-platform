@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/redact"
 )
 
 // RateLimitConfig defines the rate limiting parameters for a specific endpoint/operation.
@@ -102,11 +103,11 @@ func (h *Handler) checkLoginMFARateLimit(ctx context.Context, email, mfaCode str
 	allowed, err := h.rateLimiter.AllowWithEmail(ctx, key, endpoint)
 	if err != nil {
 		logging.Errorf("ALERT: rate limiter error on credential endpoint %s for %s; request denied (02-M1): %v",
-			endpoint, redactEmail(key), err)
+			endpoint, redact.Email(key), err)
 		return NewClientError(503, "service temporarily unavailable, please try again later")
 	}
 	if !allowed {
-		logging.Warnf("Rate limit exceeded for %s for: %s", endpoint, redactEmail(key))
+		logging.Warnf("Rate limit exceeded for %s for: %s", endpoint, redact.Email(key))
 		return NewClientError(429, "too many requests, please try again later")
 	}
 	return nil

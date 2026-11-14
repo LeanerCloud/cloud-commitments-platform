@@ -10,6 +10,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/purchase"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/redact"
 	"github.com/aws/aws-lambda-go/events"
 )
 
@@ -341,7 +342,7 @@ func (h *Handler) revokeViaSession(ctx context.Context, execution *config.Purcha
 			return nil, fmt.Errorf("failed to record revocation requester for execution %s: %w", execution.ExecutionID, err)
 		}
 	}
-	logging.Infof("Revocation requested for execution %s by %s", execution.ExecutionID, redactEmail(revokedBy))
+	logging.Infof("Revocation requested for execution %s by %s", execution.ExecutionID, redact.Email(revokedBy))
 	return map[string]string{
 		"status":  "revocation_requested",
 		"message": "Revocation request recorded. Contact AWS Support to complete the cancellation within the allowed window.",

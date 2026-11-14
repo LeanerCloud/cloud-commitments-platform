@@ -581,28 +581,6 @@ func TestSender_SendPurchaseApprovalRequest_SendsViaSES(t *testing.T) {
 	require.Equal(t, "noreply@cudly.example.com", mockSES.lastFrom, "approval email must use configured FROM_EMAIL")
 }
 
-// Tests for redactEmail edge cases.
-func TestRedactEmail(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected string
-	}{
-		{"user@example.com", "us***@example.com"},
-		{"ab@example.com", "***@example.com"}, // local part <= 2 chars
-		{"a@example.com", "***@example.com"},  // local part <= 2 chars
-		{"noatsign", "***"},
-		{"x@y.com", "***@y.com"},            // single char local part
-		{"jo@domain.org", "***@domain.org"}, // local part exactly 2 chars → redacted
-		{"use@domain.org", "us***@domain.org"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			assert.Equal(t, tt.expected, redactEmail(tt.input))
-		})
-	}
-}
-
 // Tests for sanitizeHeader — it strips CR and LF entirely (does not replace with space).
 func TestSanitizeHeader(t *testing.T) {
 	assert.Equal(t, "helloworld", sanitizeHeader("hello\r\nworld"))

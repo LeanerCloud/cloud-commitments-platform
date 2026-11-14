@@ -1,7 +1,7 @@
 package api
 
 // coverage_gaps_test.go — additional tests to push internal/api coverage above 80%.
-// Targets: parseAccountIDs, redactEmail, mergeServiceConfig, checkRateLimit,
+// Targets: parseAccountIDs, mergeServiceConfig, checkRateLimit,
 //          ambientCredResult, credTypeForAccount,
 //          checkCredentialPresence, validateCSRF, requireAdmin,
 //          getRecommendations (more cases), sendPurchaseApprovalEmail.
@@ -99,31 +99,6 @@ func TestParseAccountIDs_Cap(t *testing.T) {
 		_, err := parseAccountIDs(build(10_000))
 		require.Error(t, err)
 	})
-}
-
-// ---------------------------------------------------------------------------
-// redactEmail
-// ---------------------------------------------------------------------------
-
-func TestRedactEmail(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected string
-	}{
-		{"user@example.com", "us***@example.com"},
-		{"ab@example.com", "***@example.com"}, // <=2 local chars → full redact
-		{"a@example.com", "***@example.com"},
-		{"noemail", "***"}, // no @ at all
-		{"", "***"},
-		{"alice@corp.io", "al***@corp.io"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			got := redactEmail(tt.input)
-			assert.Equal(t, tt.expected, got)
-		})
-	}
 }
 
 // ---------------------------------------------------------------------------
