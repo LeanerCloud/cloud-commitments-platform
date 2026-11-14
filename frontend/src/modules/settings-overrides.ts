@@ -1,4 +1,10 @@
+import * as api from '../api';
+import { showToast } from '../toast';
+import { getValidPaymentOptions, getPaymentLabel, getCommitmentConfig } from '../commitmentOptions';
 import { loadRecommendations } from '../recommendations';
+import { loadOverridesPanel } from '../settings';
+import { inheritCurrentlyLabel, paymentLabel } from './settings-fields';
+import type { AccountProvider } from './settings-state';
 
 /**
  * Issue #196 — after any mutation to an `account_service_overrides` row
@@ -84,4 +90,126 @@ export function getOverrideServicesForProvider(provider: string): ReadonlyArray<
   if (provider === 'azure') return AZURE_OVERRIDE_SERVICES;
   if (provider === 'gcp')   return GCP_OVERRIDE_SERVICES;
   return AWS_OVERRIDE_SERVICES;
+}
+
+/**
+ * Build the per-row Payment <select> for the overrides panel. Issue #23.
+ *
+ * - "Inherit (default)" keeps the override silent on payment so the global
+ *   default applies. We only emit it as the chosen value when the override
+ *   currently has no payment set; once a payment is set, switching back
+ *   would require deleting/recreating the override (out of scope for #23).
+ * - The change handler PUTs only `{ payment }` — the backend's
+ *   overlayOverrideScalars (handler_accounts_overrides.go) treats unset request fields
+ *   as "leave alone", so other override fields (term, coverage, etc.) are
+ *   preserved.
+ */
+export function buildPaymentOverrideSelect(
+  accountId: string,
+  override: api.AccountServiceOverride,
+  panel: HTMLElement,
+): HTMLSelectElement {
+  const select = document.createElement('select');
+  select.className = 'override-payment-select';
+  select.setAttribute(
+    'aria-label',
+    `Payment option for ${override.provider}/${override.service} override`,
+  );
+
+  const inheritOpt = document.createElement('option');
+  inheritOpt.value = '';
+  // Issue #112: show the current global payment so the user knows what
+  // "Inherit" means without switching to the Purchasing tab.
+  inheritOpt.textContent = inheritCurrentlyLabel(paymentLabel(cachedGlobalDefaults.payment));
+  select.appendChild(inheritOpt);
+
+  // Filter the payment dropdown to only the (term, payment) combinations
+  // the provider/service actually supports. e.g. RDS rejects 3yr no-upfront;
+  // Azure has upfront/monthly only; GCP has monthly only. Per #107.
+  // Falls back to the full provider payment list when term is missing (override
+  // row was saved without a term) — the global default's term will resolve at
+  // recommendation time, and we can't pre-validate without it.
+  const overrideTerm = override.term ?? 0;
+  const providerPayments = getCommitmentConfig(override.provider).payments;
+  const validPayments = overrideTerm > 0
+    ? getValidPaymentOptions(override.provider, override.service, overrideTerm)
+    : providerPayments.map(p => ({ value: p.value, label: p.label }));
+
+  for (const { value, label } of validPayments) {
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = label;
+    select.appendChild(opt);
+  }
+
+  const initial = override.payment ?? '';
+
+  // If the row's CURRENT payment isn't in the valid set (e.g., the row was
+  // saved via direct API curl before this filter shipped, or AWS tightened
+  // the rules), still render the current value so the row isn't silently
+  // mutated — but mark it as a problem so the user notices.
+  const currentIsValid = initial === '' || validPayments.some(p => p.value === initial);
+  if (!currentIsValid) {
+    const stale = document.createElement('option');
+    stale.value = initial;
+    stale.textContent = `${getPaymentLabel(initial)} (invalid for term ${overrideTerm}y — Delete the override and recreate)`;
+    stale.dataset['stale'] = 'true';
+    select.appendChild(stale);
+  }
+
+  select.value = initial;
+  select.dataset['previous'] = initial;
+
+  // If a payment is already set, "Inherit" is not a clean transition (the
+  // backend has no clear-field channel — it would require resetting the
+  // whole override). Disable the option so the user can still pick another
+  // payment value but can't accidentally pick a no-op state.
+  if (initial !== '') {
+    inheritOpt.disabled = true;
+    inheritOpt.title = 'Use Delete to remove the override entirely (clears all fields including payment)';
+  }
+
+  select.addEventListener('change', () => {
+    void handlePaymentOverrideChange(accountId, override, select, panel);
+  });
+
+  return select;
+}
+
+async function handlePaymentOverrideChange(
+  accountId: string,
+  override: api.AccountServiceOverride,
+  select: HTMLSelectElement,
+  panel: HTMLElement,
+): Promise<void> {
+  const previous = select.dataset['previous'] ?? '';
+  const next = select.value;
+  if (next === previous) return;
+  if (next === '') {
+    // Reverting to Inherit while a payment is set is blocked above; defensive
+    // no-op here keeps types narrow if the option becomes selectable later.
+    select.value = previous;
+    return;
+  }
+  select.disabled = true;
+  try {
+    await api.saveAccountServiceOverride(accountId, override.provider, override.service, {
+      payment: next,
+    });
+    select.dataset['previous'] = next;
+    showToast({
+      message: `Payment override updated for ${override.provider}/${override.service}.`,
+      kind: 'success',
+    });
+    await loadOverridesPanel(accountId, panel, override.provider as AccountProvider);
+    await refreshRecommendationsAfterOverrideChange();
+  } catch (err) {
+    select.value = previous;
+    showToast({
+      message: `Failed to update payment override: ${(err as Error).message}`,
+      kind: 'error',
+    });
+  } finally {
+    select.disabled = false;
+  }
 }
