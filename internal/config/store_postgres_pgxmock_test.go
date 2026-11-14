@@ -3620,7 +3620,32 @@ func TestPGXMock_ReserveApprovedRIExchange_RejectsRowThatIsNotProcessing(t *test
 
 	_, err := store.ReserveApprovedRIExchange(context.Background(), id, "1000", "1000")
 	require.ErrorContains(t, err, "is not processing")
+	require.ErrorIs(t, err, ErrRIExchangeReservationInvalid)
 	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Malformed caps and a malformed stored quote can never reserve, so they carry
+// the sentinel the approval handler uses to fail the row instead of retrying.
+func TestPGXMock_ReserveApprovedRIExchange_DeterministicInputsAreInvalidReservations(t *testing.T) {
+	const id = "550e8400-e29b-41d4-a716-000000000659"
+	t.Run("invalid daily cap", func(t *testing.T) {
+		_, err := storeWith(newMock(t)).ReserveApprovedRIExchange(context.Background(), id, "abc", "1000")
+		require.ErrorIs(t, err, ErrRIExchangeReservationInvalid)
+	})
+	t.Run("invalid per-exchange cap", func(t *testing.T) {
+		_, err := storeWith(newMock(t)).ReserveApprovedRIExchange(context.Background(), id, "1000", "abc")
+		require.ErrorIs(t, err, ErrRIExchangeReservationInvalid)
+	})
+	t.Run("invalid stored quote", func(t *testing.T) {
+		mock := newMock(t)
+		mock.ExpectBegin()
+		mock.ExpectQuery("SELECT payment_due::text, source_ri_ids FROM ri_exchange_history").WithArgs(id).
+			WillReturnRows(pgxmock.NewRows([]string{"payment_due", "source_ri_ids"}).AddRow("garbage", []string{"ri-1"}))
+		mock.ExpectRollback()
+		_, err := storeWith(mock).ReserveApprovedRIExchange(context.Background(), id, "1000", "1000")
+		require.ErrorIs(t, err, ErrRIExchangeReservationInvalid)
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
 }
 
 // TestPGXMock_UpdateGlobalConfigAtomic_PreservesAutoPurchaseStamps proves the

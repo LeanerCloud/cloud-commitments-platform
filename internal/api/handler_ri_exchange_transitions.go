@@ -58,24 +58,49 @@ func (h *Handler) failExchange(ctx context.Context, id, reason string) (any, err
 // and returns it as text and as a decimal. A non-empty refusal is the
 // caller-safe reason to fail the exchange with: the cap figures, or only the
 // shared source RI ids, never the blocking exchange (#1050, #1428).
-func (h *Handler) reserveApprovedExchange(ctx context.Context, id string, globalCfg *config.GlobalConfig) (ceiling string, effectiveCap *big.Rat, refusal string) {
+//
+// A malformed stored value (ErrRIExchangeReservationInvalid) is refused with
+// the old generic reason. Any other reservation error is a store failure: it is
+// returned as infraErr so the caller can release the row instead of failing it.
+func (h *Handler) reserveApprovedExchange(ctx context.Context, id string, globalCfg *config.GlobalConfig) (ceiling string, effectiveCap *big.Rat, refusal string, infraErr error) {
 	dailyCapUSD, perExchangeCapUSD, reason := exchangeCapStrings(globalCfg)
 	if reason != "" {
-		return "", nil, reason
+		return "", nil, reason, nil
 	}
 	ceiling, err := h.config.ReserveApprovedRIExchange(ctx, id, dailyCapUSD, perExchangeCapUSD)
 	if err != nil {
 		logging.Warnf("RI exchange %s reservation refused: %v", id, err)
 		if errors.Is(err, config.ErrRIExchangeDailyCapExceeded) || errors.Is(err, config.ErrRIExchangeSourceInFlight) {
-			return "", nil, err.Error()
+			return "", nil, err.Error(), nil
 		}
-		return "", nil, "daily spending cap check failed"
+		if errors.Is(err, config.ErrRIExchangeReservationInvalid) {
+			// Deterministic: a retry would hit the same data, so fail the row.
+			return "", nil, "daily spending cap check failed", nil
+		}
+		return "", nil, "", err
 	}
 	effectiveCap, ok := new(big.Rat).SetString(ceiling)
 	if !ok {
-		return "", nil, fmt.Sprintf("reserved ceiling %q is not a decimal", ceiling)
+		return "", nil, fmt.Sprintf("reserved ceiling %q is not a decimal", ceiling), nil
 	}
-	return ceiling, effectiveCap, ""
+	return ceiling, effectiveCap, "", nil
+}
+
+// releaseExchangeAfterStoreError handles a store failure on an approved
+// exchange before anything reached the provider. The failure says nothing
+// about the exchange, so it is not marked failed (there is no way back from
+// failed): the row goes back to pending so the approval can be retried, and
+// the caller gets an error (HTTP 500) instead of a 200 "failed" body. If the
+// release itself fails the row stays in processing, where the stale-processing
+// alarm and the resolve endpoint pick it up.
+func (h *Handler) releaseExchangeAfterStoreError(ctx context.Context, id, step string, cause error) error {
+	ctx, cancel := ctxutil.DetachedWithTimeout(ctx, riExchangeTerminalSaveTimeout)
+	defer cancel()
+	logging.Errorf("RI exchange %s: %s failed before execution: %v", id, step, cause)
+	if _, err := h.config.TransitionRIExchangeStatus(ctx, id, "processing", "pending", nil); err != nil {
+		logging.Errorf("RI exchange %s: could not release back to pending, left in processing: %v", id, err)
+	}
+	return fmt.Errorf("RI exchange %s: %s: %w", id, step, cause)
 }
 
 // leaveExchangeOutcomeUnknown keeps a row whose accept response was lost in
@@ -149,7 +174,7 @@ func exchangeCapStrings(cfg *config.GlobalConfig) (daily, perExchange, reason st
 func (h *Handler) executeApprovedExchange(ctx context.Context, id string, record *config.RIExchangeRecord) (any, error) {
 	globalCfg, err := h.config.GetGlobalConfig(ctx)
 	if err != nil {
-		return h.failExchange(ctx, id, "config load failed")
+		return nil, h.releaseExchangeAfterStoreError(ctx, id, "config load", err)
 	}
 
 	region := record.Region
@@ -160,7 +185,10 @@ func (h *Handler) executeApprovedExchange(ctx context.Context, id string, record
 		return h.failExchange(ctx, id, "exchange record has no region; cannot execute safely")
 	}
 
-	ceiling, effectiveCap, refusal := h.reserveApprovedExchange(ctx, id, globalCfg)
+	ceiling, effectiveCap, refusal, reserveErr := h.reserveApprovedExchange(ctx, id, globalCfg)
+	if reserveErr != nil {
+		return nil, h.releaseExchangeAfterStoreError(ctx, id, "spend reservation", reserveErr)
+	}
 	if refusal != "" {
 		return h.failExchange(ctx, id, refusal)
 	}

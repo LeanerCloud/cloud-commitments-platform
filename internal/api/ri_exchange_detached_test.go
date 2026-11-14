@@ -205,9 +205,10 @@ func TestExecuteAzureExchange_RequestCancelDoesNotCancelExchange(t *testing.T) {
 
 // TestExecuteApprovedExchange_RequestCancelBeforeReserveRecordsFailure covers
 // the window between the pending -> processing transition and the provider
-// call. A cancel there fails the reservation; the failure write must still land,
-// or the record is stranded in "processing": the approval retry gets 409 from
-// the transition guard and the row keeps counting against the daily cap.
+// call. A cancel there fails the reservation; the release back to pending must
+// still land on a detached context, or the record is stranded in "processing":
+// the approval retry gets 409 from the transition guard and the row keeps
+// counting against the daily cap.
 func TestExecuteApprovedExchange_RequestCancelBeforeReserveRecordsFailure(t *testing.T) {
 	const id = "550e8400-e29b-41d4-a716-000000000792"
 	reqCtx, cancelRequest := context.WithCancel(context.Background())
@@ -221,7 +222,8 @@ func TestExecuteApprovedExchange_RequestCancelBeforeReserveRecordsFailure(t *tes
 	store.On("ReserveApprovedRIExchange", mock.Anything, id, "1000.000000", "500.000000").
 		Run(func(mock.Arguments) { cancelRequest() }).
 		Return("", context.Canceled).Once()
-	store.On("FailRIExchange", liveCtx(), id, "daily spending cap check failed").Return(nil).Once()
+	store.On("TransitionRIExchangeStatus", liveCtx(), id, "processing", "pending", (*string)(nil)).
+		Return(&config.RIExchangeRecord{ID: id}, nil).Once()
 
 	called := false
 	h := &Handler{config: store, executeExchangeFn: func(context.Context, exchange.ExchangeExecuteRequest) (string, *exchange.ExchangeQuoteSummary, error) {
@@ -230,8 +232,8 @@ func TestExecuteApprovedExchange_RequestCancelBeforeReserveRecordsFailure(t *tes
 	}}
 
 	resp, err := h.executeApprovedExchange(reqCtx, id, approvedExchangeRecord(id))
-	require.NoError(t, err)
-	assert.Equal(t, "failed", resp.(map[string]any)["status"])
+	require.Error(t, err)
+	assert.Nil(t, resp)
 	assert.False(t, called, "a failed reservation must never reach the provider")
 }
 
