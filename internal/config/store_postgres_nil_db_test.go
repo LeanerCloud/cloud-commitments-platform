@@ -13,6 +13,7 @@ import (
 // TestPostgresStore_SaveRIExchangeRecord_GeneratesID verifies that SaveRIExchangeRecord
 // assigns a UUID to the record before hitting the DB.
 func TestPostgresStore_SaveRIExchangeRecord_GeneratesID(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -41,6 +42,7 @@ func TestPostgresStore_SaveRIExchangeRecord_GeneratesID(t *testing.T) {
 // TestPostgresStore_SaveRIExchangeRecord_PreservesExistingID verifies that an
 // existing ID is not overwritten.
 func TestPostgresStore_SaveRIExchangeRecord_PreservesExistingID(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -61,6 +63,7 @@ func TestPostgresStore_SaveRIExchangeRecord_PreservesExistingID(t *testing.T) {
 
 // TestPostgresStore_GetRIExchangeRecord_NilDB exercises GetRIExchangeRecord entry.
 func TestPostgresStore_GetRIExchangeRecord_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -73,6 +76,7 @@ func TestPostgresStore_GetRIExchangeRecord_NilDB(t *testing.T) {
 
 // TestPostgresStore_GetRIExchangeRecordByToken_NilDB exercises the method entry.
 func TestPostgresStore_GetRIExchangeRecordByToken_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -85,6 +89,7 @@ func TestPostgresStore_GetRIExchangeRecordByToken_NilDB(t *testing.T) {
 
 // TestPostgresStore_GetRIExchangeHistory_NilDB exercises the method entry.
 func TestPostgresStore_GetRIExchangeHistory_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -97,6 +102,7 @@ func TestPostgresStore_GetRIExchangeHistory_NilDB(t *testing.T) {
 
 // TestPostgresStore_TransitionRIExchangeStatus_NilDB exercises the method entry.
 func TestPostgresStore_TransitionRIExchangeStatus_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -109,6 +115,7 @@ func TestPostgresStore_TransitionRIExchangeStatus_NilDB(t *testing.T) {
 
 // TestPostgresStore_CompleteRIExchange_NilDB exercises the method entry.
 func TestPostgresStore_CompleteRIExchange_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -121,6 +128,7 @@ func TestPostgresStore_CompleteRIExchange_NilDB(t *testing.T) {
 
 // TestPostgresStore_CompleteRIExchangeWithPayment_NilDB exercises the method entry.
 func TestPostgresStore_CompleteRIExchangeWithPayment_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -133,6 +141,7 @@ func TestPostgresStore_CompleteRIExchangeWithPayment_NilDB(t *testing.T) {
 
 // TestPostgresStore_FailRIExchange_NilDB exercises the method entry.
 func TestPostgresStore_FailRIExchange_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -145,6 +154,7 @@ func TestPostgresStore_FailRIExchange_NilDB(t *testing.T) {
 
 // TestPostgresStore_StampRIExchangeApprovedBy_NilDB exercises the method entry.
 func TestPostgresStore_StampRIExchangeApprovedBy_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -157,6 +167,7 @@ func TestPostgresStore_StampRIExchangeApprovedBy_NilDB(t *testing.T) {
 
 // TestPostgresStore_GetRIExchangeDailySpend_NilDB exercises the method entry.
 func TestPostgresStore_GetRIExchangeDailySpend_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -169,6 +180,7 @@ func TestPostgresStore_GetRIExchangeDailySpend_NilDB(t *testing.T) {
 
 // TestPostgresStore_CancelAllPendingExchanges_NilDB exercises the method entry.
 func TestPostgresStore_CancelAllPendingExchanges_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -181,6 +193,7 @@ func TestPostgresStore_CancelAllPendingExchanges_NilDB(t *testing.T) {
 
 // TestPostgresStore_CancelPendingExchangesByOrigin_NilDB exercises the method entry.
 func TestPostgresStore_CancelPendingExchangesByOrigin_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -195,6 +208,7 @@ func TestPostgresStore_CancelPendingExchangesByOrigin_NilDB(t *testing.T) {
 
 // TestPostgresStore_GetStaleProcessingExchanges_NilDB exercises the method entry.
 func TestPostgresStore_GetStaleProcessingExchanges_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -207,6 +221,7 @@ func TestPostgresStore_GetStaleProcessingExchanges_NilDB(t *testing.T) {
 
 // TestPostgresStore_CleanupOldExecutions_NilDB exercises the method entry.
 func TestPostgresStore_CleanupOldExecutions_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -219,6 +234,7 @@ func TestPostgresStore_CleanupOldExecutions_NilDB(t *testing.T) {
 
 // TestPostgresStore_GetCloudAccount_NilDB exercises GetCloudAccount entry.
 func TestPostgresStore_GetCloudAccount_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -232,6 +248,7 @@ func TestPostgresStore_GetCloudAccount_NilDB(t *testing.T) {
 // TestPostgresStore_UpdateCloudAccount_AzureAccount verifies UpdatedAt is set
 // for an Azure account (exercises a different code path from the existing test).
 func TestPostgresStore_UpdateCloudAccount_AzureAccount(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -253,6 +270,7 @@ func TestPostgresStore_UpdateCloudAccount_AzureAccount(t *testing.T) {
 
 // TestPostgresStore_DeleteCloudAccount_NilDB exercises DeleteCloudAccount entry.
 func TestPostgresStore_DeleteCloudAccount_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -266,6 +284,7 @@ func TestPostgresStore_DeleteCloudAccount_NilDB(t *testing.T) {
 // TestPostgresStore_ListCloudAccounts_NoFilter exercises the filter-building code
 // path with an empty filter before the DB call.
 func TestPostgresStore_ListCloudAccounts_NoFilter(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -279,6 +298,7 @@ func TestPostgresStore_ListCloudAccounts_NoFilter(t *testing.T) {
 // TestPostgresStore_ListCloudAccounts_ProviderFilter exercises the Provider filter
 // path in query construction before the DB call.
 func TestPostgresStore_ListCloudAccounts_ProviderFilter(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 	provider := "aws"
@@ -292,6 +312,7 @@ func TestPostgresStore_ListCloudAccounts_ProviderFilter(t *testing.T) {
 
 // TestPostgresStore_ListCloudAccounts_EnabledFilter exercises the Enabled filter path.
 func TestPostgresStore_ListCloudAccounts_EnabledFilter(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 	enabled := true
@@ -305,6 +326,7 @@ func TestPostgresStore_ListCloudAccounts_EnabledFilter(t *testing.T) {
 
 // TestPostgresStore_ListCloudAccounts_SearchFilter exercises the Search filter path.
 func TestPostgresStore_ListCloudAccounts_SearchFilter(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -317,6 +339,7 @@ func TestPostgresStore_ListCloudAccounts_SearchFilter(t *testing.T) {
 
 // TestPostgresStore_ListCloudAccounts_BastionIDFilter exercises the BastionID filter path.
 func TestPostgresStore_ListCloudAccounts_BastionIDFilter(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 	bastionID := "bastion-acc-123"
@@ -330,6 +353,7 @@ func TestPostgresStore_ListCloudAccounts_BastionIDFilter(t *testing.T) {
 
 // TestPostgresStore_ListCloudAccounts_AllFilters exercises all filter paths together.
 func TestPostgresStore_ListCloudAccounts_AllFilters(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 	provider := "aws"
@@ -350,6 +374,7 @@ func TestPostgresStore_ListCloudAccounts_AllFilters(t *testing.T) {
 
 // TestPostgresStore_SaveAccountCredential_NilDB exercises the method entry.
 func TestPostgresStore_SaveAccountCredential_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -362,6 +387,7 @@ func TestPostgresStore_SaveAccountCredential_NilDB(t *testing.T) {
 
 // TestPostgresStore_GetAccountCredential_NilDB exercises the method entry.
 func TestPostgresStore_GetAccountCredential_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -374,6 +400,7 @@ func TestPostgresStore_GetAccountCredential_NilDB(t *testing.T) {
 
 // TestPostgresStore_DeleteAccountCredentials_NilDB exercises the method entry.
 func TestPostgresStore_DeleteAccountCredentials_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -386,6 +413,7 @@ func TestPostgresStore_DeleteAccountCredentials_NilDB(t *testing.T) {
 
 // TestPostgresStore_HasAccountCredentials_NilDB exercises the method entry.
 func TestPostgresStore_HasAccountCredentials_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -398,6 +426,7 @@ func TestPostgresStore_HasAccountCredentials_NilDB(t *testing.T) {
 
 // TestPostgresStore_GetAccountServiceOverride_NilDB exercises the method entry.
 func TestPostgresStore_GetAccountServiceOverride_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -411,6 +440,7 @@ func TestPostgresStore_GetAccountServiceOverride_NilDB(t *testing.T) {
 // TestPostgresStore_SaveAccountServiceOverride_WithGCPService verifies pre-DB
 // init for a GCP override (different provider path).
 func TestPostgresStore_SaveAccountServiceOverride_WithGCPService(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -435,6 +465,7 @@ func TestPostgresStore_SaveAccountServiceOverride_WithGCPService(t *testing.T) {
 // TestPostgresStore_SaveAccountServiceOverride_PreservesCreatedAt verifies that
 // an existing CreatedAt is not overwritten on update.
 func TestPostgresStore_SaveAccountServiceOverride_PreservesCreatedAt(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -458,6 +489,7 @@ func TestPostgresStore_SaveAccountServiceOverride_PreservesCreatedAt(t *testing.
 
 // TestPostgresStore_DeleteAccountServiceOverride_NilDB exercises the method entry.
 func TestPostgresStore_DeleteAccountServiceOverride_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -470,6 +502,7 @@ func TestPostgresStore_DeleteAccountServiceOverride_NilDB(t *testing.T) {
 
 // TestPostgresStore_ListAccountServiceOverrides_NilDB exercises the method entry.
 func TestPostgresStore_ListAccountServiceOverrides_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -482,6 +515,7 @@ func TestPostgresStore_ListAccountServiceOverrides_NilDB(t *testing.T) {
 
 // TestPostgresStore_SetPlanAccounts_NilDB exercises the Begin-transaction path.
 func TestPostgresStore_SetPlanAccounts_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -494,6 +528,7 @@ func TestPostgresStore_SetPlanAccounts_NilDB(t *testing.T) {
 
 // TestPostgresStore_GetPlanAccounts_NilDB exercises the method entry.
 func TestPostgresStore_GetPlanAccounts_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -507,6 +542,7 @@ func TestPostgresStore_GetPlanAccounts_NilDB(t *testing.T) {
 // TestPostgresStore_CreateCloudAccount_GCPAccount verifies GCP account creation
 // pre-DB behavior.
 func TestPostgresStore_CreateCloudAccount_GCPAccount(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -531,6 +567,7 @@ func TestPostgresStore_CreateCloudAccount_GCPAccount(t *testing.T) {
 
 // TestPostgresStore_CreateCloudAccount_AzureAccount exercises the Azure account path.
 func TestPostgresStore_CreateCloudAccount_AzureAccount(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -554,6 +591,7 @@ func TestPostgresStore_CreateCloudAccount_AzureAccount(t *testing.T) {
 // TestGlobalConfig_SaveWithRIExchangeDefaults exercises the RI exchange default
 // value substitution logic in SaveGlobalConfig (applied before DB call).
 func TestGlobalConfig_SaveWithRIExchangeDefaults(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -583,6 +621,7 @@ func TestGlobalConfig_SaveWithRIExchangeDefaults(t *testing.T) {
 // TestPostgresStore_SaveRIExchangeRecord_WithCompletedAt verifies that optional
 // fields like CompletedAt and ExpiresAt are passed through correctly.
 func TestPostgresStore_SaveRIExchangeRecord_WithCompletedAt(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 

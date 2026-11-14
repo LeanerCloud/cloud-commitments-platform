@@ -465,6 +465,7 @@ func (s *mockablePostgresStore) queryPurchaseHistory(ctx context.Context, query 
 // ==========================================
 
 func TestCreatePurchasePlan_Success(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -509,6 +510,7 @@ func TestCreatePurchasePlan_Success(t *testing.T) {
 }
 
 func TestCreatePurchasePlan_WithExistingID(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -549,6 +551,7 @@ func TestCreatePurchasePlan_WithExistingID(t *testing.T) {
 }
 
 func TestCreatePurchasePlan_Error(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -577,6 +580,7 @@ func TestCreatePurchasePlan_Error(t *testing.T) {
 }
 
 func TestCreatePurchasePlan_WithNullableTimestamps(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -626,6 +630,7 @@ func TestCreatePurchasePlan_WithNullableTimestamps(t *testing.T) {
 // ==========================================
 
 func TestUpdatePurchasePlan_Success(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -666,6 +671,7 @@ func TestUpdatePurchasePlan_Success(t *testing.T) {
 }
 
 func TestUpdatePurchasePlan_NotFound(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -695,6 +701,7 @@ func TestUpdatePurchasePlan_NotFound(t *testing.T) {
 }
 
 func TestUpdatePurchasePlan_Error(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -728,6 +735,7 @@ func TestUpdatePurchasePlan_Error(t *testing.T) {
 // ==========================================
 
 func TestListPurchasePlans_Success(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -779,6 +787,7 @@ func TestListPurchasePlans_Success(t *testing.T) {
 }
 
 func TestListPurchasePlans_Empty(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -804,6 +813,7 @@ func TestListPurchasePlans_Empty(t *testing.T) {
 }
 
 func TestListPurchasePlans_QueryError(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -822,6 +832,7 @@ func TestListPurchasePlans_QueryError(t *testing.T) {
 }
 
 func TestListPurchasePlans_InvalidServicesJSON(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -851,6 +862,7 @@ func TestListPurchasePlans_InvalidServicesJSON(t *testing.T) {
 }
 
 func TestListPurchasePlans_InvalidRampScheduleJSON(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -884,6 +896,7 @@ func TestListPurchasePlans_InvalidRampScheduleJSON(t *testing.T) {
 // ==========================================
 
 func TestSavePurchaseExecution_Success(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -928,6 +941,7 @@ func TestSavePurchaseExecution_Success(t *testing.T) {
 }
 
 func TestSavePurchaseExecution_WithExistingID(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -978,6 +992,7 @@ func TestSavePurchaseExecution_WithExistingID(t *testing.T) {
 }
 
 func TestSavePurchaseExecution_Error(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -1012,6 +1027,7 @@ func TestSavePurchaseExecution_Error(t *testing.T) {
 // ==========================================
 
 func TestGetPendingExecutions_Success(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -1055,6 +1071,7 @@ func TestGetPendingExecutions_Success(t *testing.T) {
 }
 
 func TestGetPendingExecutions_Empty(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -1079,6 +1096,7 @@ func TestGetPendingExecutions_Empty(t *testing.T) {
 }
 
 func TestGetPendingExecutions_Error(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -1097,6 +1115,7 @@ func TestGetPendingExecutions_Error(t *testing.T) {
 }
 
 func TestGetPendingExecutions_InvalidRecommendationsJSON(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -1128,6 +1147,7 @@ func TestGetPendingExecutions_InvalidRecommendationsJSON(t *testing.T) {
 // ==========================================
 
 func TestGetExecutionByID_Success(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -1165,6 +1185,7 @@ func TestGetExecutionByID_Success(t *testing.T) {
 }
 
 func TestGetExecutionByID_NotFound(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -1190,6 +1211,7 @@ func TestGetExecutionByID_NotFound(t *testing.T) {
 }
 
 func TestGetExecutionByID_Error(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -1212,6 +1234,7 @@ func TestGetExecutionByID_Error(t *testing.T) {
 // ==========================================
 
 func TestGetExecutionByPlanAndDate_Success(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -1243,6 +1266,7 @@ func TestGetExecutionByPlanAndDate_Success(t *testing.T) {
 }
 
 func TestGetExecutionByPlanAndDate_NotFound(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -1274,6 +1298,7 @@ func TestGetExecutionByPlanAndDate_NotFound(t *testing.T) {
 // ==========================================
 
 func TestSavePurchaseHistory_Success(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -1327,6 +1352,7 @@ func TestSavePurchaseHistory_Success(t *testing.T) {
 }
 
 func TestSavePurchaseHistory_WithEmptyOptionalFields(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -1375,6 +1401,7 @@ func TestSavePurchaseHistory_WithEmptyOptionalFields(t *testing.T) {
 }
 
 func TestSavePurchaseHistory_Error(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -1410,6 +1437,7 @@ func TestSavePurchaseHistory_Error(t *testing.T) {
 // ==========================================
 
 func TestGetPurchaseHistory_Success(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -1450,6 +1478,7 @@ func TestGetPurchaseHistory_Success(t *testing.T) {
 }
 
 func TestGetPurchaseHistory_Empty(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -1475,6 +1504,7 @@ func TestGetPurchaseHistory_Empty(t *testing.T) {
 }
 
 func TestGetPurchaseHistory_Error(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -1498,6 +1528,7 @@ func TestGetPurchaseHistory_Error(t *testing.T) {
 // ==========================================
 
 func TestGetAllPurchaseHistory_Success(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -1537,6 +1568,7 @@ func TestGetAllPurchaseHistory_Success(t *testing.T) {
 }
 
 func TestGetAllPurchaseHistory_Empty(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -1562,6 +1594,7 @@ func TestGetAllPurchaseHistory_Empty(t *testing.T) {
 }
 
 func TestGetAllPurchaseHistory_Error(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -1585,6 +1618,7 @@ func TestGetAllPurchaseHistory_Error(t *testing.T) {
 // ==========================================
 
 func TestListServiceConfigs_ScanError(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -1612,6 +1646,7 @@ func TestListServiceConfigs_ScanError(t *testing.T) {
 // ==========================================
 
 func TestGlobalConfig_ValidateWithEmptyEmail(t *testing.T) {
+	t.Parallel()
 	emptyEmail := ""
 	config := GlobalConfig{
 		EnabledProviders:  []string{"aws"},
@@ -1626,6 +1661,7 @@ func TestGlobalConfig_ValidateWithEmptyEmail(t *testing.T) {
 }
 
 func TestGlobalConfig_ValidateWithNilNotificationEmail(t *testing.T) {
+	t.Parallel()
 	config := GlobalConfig{
 		EnabledProviders:  []string{"aws", "gcp"},
 		NotificationEmail: nil,
@@ -1643,6 +1679,7 @@ func TestGlobalConfig_ValidateWithNilNotificationEmail(t *testing.T) {
 // ==========================================
 
 func TestConstants_DefaultValues(t *testing.T) {
+	t.Parallel()
 	// Test default list limit
 	assert.Equal(t, 100, DefaultListLimit)
 
@@ -1657,6 +1694,7 @@ func TestConstants_DefaultValues(t *testing.T) {
 }
 
 func TestConstants_ValidationBoundaries(t *testing.T) {
+	t.Parallel()
 	// Test coverage boundaries
 	assert.Equal(t, 100, MaxCoverage)
 	assert.Equal(t, 0, MinCoverage)
@@ -1673,11 +1711,13 @@ func TestConstants_ValidationBoundaries(t *testing.T) {
 }
 
 func TestConstants_DefaultCoverage(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, 80, DefaultCoveragePercent)
 	assert.Equal(t, 7, DefaultNotifyDaysBefore)
 }
 
 func TestConstants_RampSchedulePresets(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "immediate", RampImmediate)
 	assert.Equal(t, "weekly-25pct", RampWeekly25Pct)
 	assert.Equal(t, "monthly-10pct", RampMonthly10Pct)
@@ -1686,11 +1726,13 @@ func TestConstants_RampSchedulePresets(t *testing.T) {
 }
 
 func TestConstants_TimeConstants(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, 24, HoursPerDay)
 	assert.Equal(t, 24, MinHoursBetweenNotifications)
 }
 
 func TestConstants_TokenConstants(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, 32, TokenByteLength)
 	assert.Equal(t, 30, MFATimeStep)
 	assert.Equal(t, 6, MFADigits)
@@ -1701,6 +1743,7 @@ func TestConstants_TokenConstants(t *testing.T) {
 // ==========================================
 
 func TestConfigSetting_Fields(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	setting := ConfigSetting{
 		Key:         "test.key",
@@ -1720,6 +1763,7 @@ func TestConfigSetting_Fields(t *testing.T) {
 }
 
 func TestConfigSetting_DifferentValueTypes(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		value    interface{}
@@ -1750,6 +1794,7 @@ func TestConfigSetting_DifferentValueTypes(t *testing.T) {
 // ==========================================
 
 func TestStoreInterface_PostgresStoreImplements(t *testing.T) {
+	t.Parallel()
 	// This test verifies that PostgresStore implements StoreInterface
 	// by checking the var declaration in the source file
 	var _ StoreInterface = (*PostgresStore)(nil)
@@ -1760,6 +1805,7 @@ func TestStoreInterface_PostgresStoreImplements(t *testing.T) {
 // ==========================================
 
 func TestQueryExecutions_WithCompletedTimestamp(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -1795,6 +1841,7 @@ func TestQueryExecutions_WithCompletedTimestamp(t *testing.T) {
 }
 
 func TestQueryExecutions_WithErrorField(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -1829,6 +1876,7 @@ func TestQueryExecutions_WithErrorField(t *testing.T) {
 // ==========================================
 
 func TestGetGlobalConfig_NullNotificationEmail(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -1859,6 +1907,7 @@ func TestGetGlobalConfig_NullNotificationEmail(t *testing.T) {
 // ==========================================
 
 func TestValidateTerm_EdgeCases(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		term    int
 		wantErr bool
@@ -1886,6 +1935,7 @@ func TestValidateTerm_EdgeCases(t *testing.T) {
 }
 
 func TestValidateCoverage_EdgeCases(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		coverage float64
 		wantErr  bool
@@ -1918,6 +1968,7 @@ func TestValidateCoverage_EdgeCases(t *testing.T) {
 // ==========================================
 
 func TestListPurchasePlans_RowsError(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -1953,6 +2004,7 @@ func TestListPurchasePlans_RowsError(t *testing.T) {
 // ==========================================
 
 func TestQueryPurchaseHistory_AllFieldsPresent(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -2004,6 +2056,7 @@ func TestQueryPurchaseHistory_AllFieldsPresent(t *testing.T) {
 // ==========================================
 
 func TestGetGlobalConfig_WithEmptyProviders(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -2035,6 +2088,7 @@ func TestGetGlobalConfig_WithEmptyProviders(t *testing.T) {
 // ==========================================
 
 func TestGetPendingExecutions_AllTimestampsSet(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -2080,6 +2134,7 @@ func TestGetPendingExecutions_AllTimestampsSet(t *testing.T) {
 // ==========================================
 
 func TestGetGlobalConfig_NoRowsReturnsDefaults(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()

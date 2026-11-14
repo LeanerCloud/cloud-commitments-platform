@@ -176,6 +176,7 @@ func (s *additionalMockStore) queryPurchaseHistory(ctx context.Context, query st
 // ==========================================
 
 func TestQueryExecutions_ScanError(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -199,6 +200,7 @@ func TestQueryExecutions_ScanError(t *testing.T) {
 }
 
 func TestQueryExecutions_RowsError(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -228,6 +230,7 @@ func TestQueryExecutions_RowsError(t *testing.T) {
 }
 
 func TestQueryExecutions_InvalidRecommendationsJSON(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -255,6 +258,7 @@ func TestQueryExecutions_InvalidRecommendationsJSON(t *testing.T) {
 }
 
 func TestQueryExecutions_AllTimestampsValid(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -294,6 +298,7 @@ func TestQueryExecutions_AllTimestampsValid(t *testing.T) {
 }
 
 func TestGetExecutionByPlanAndDate_QueryError(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -314,6 +319,7 @@ func TestGetExecutionByPlanAndDate_QueryError(t *testing.T) {
 }
 
 func TestGetExecutionByPlanAndDate_MultipleExecutionsReturnsFirst(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -350,6 +356,7 @@ func TestGetExecutionByPlanAndDate_MultipleExecutionsReturnsFirst(t *testing.T) 
 // ==========================================
 
 func TestQueryPurchaseHistory_ScanError(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -381,6 +388,7 @@ func TestQueryPurchaseHistory_ScanError(t *testing.T) {
 }
 
 func TestQueryPurchaseHistory_RowsError(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -418,6 +426,7 @@ func TestQueryPurchaseHistory_RowsError(t *testing.T) {
 }
 
 func TestQueryPurchaseHistory_QueryError(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -445,6 +454,7 @@ func TestQueryPurchaseHistory_QueryError(t *testing.T) {
 }
 
 func TestQueryPurchaseHistory_NullPlanFields(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -488,6 +498,7 @@ func TestQueryPurchaseHistory_NullPlanFields(t *testing.T) {
 // ==========================================
 
 func TestListServiceConfigs_RowsError(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -518,6 +529,7 @@ func TestListServiceConfigs_RowsError(t *testing.T) {
 // ==========================================
 
 func TestListPurchasePlans_ScanError(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -544,18 +556,21 @@ func TestListPurchasePlans_ScanError(t *testing.T) {
 // ==========================================
 
 func TestValidatePaymentOption_EmptyIsValid(t *testing.T) {
+	t.Parallel()
 	// Empty payment option should be valid (not set)
 	err := validatePaymentOption("")
 	assert.NoError(t, err)
 }
 
 func TestValidateTerm_ZeroIsValid(t *testing.T) {
+	t.Parallel()
 	// Zero term means "not set" and should be valid
 	err := validateTerm(0)
 	assert.NoError(t, err)
 }
 
 func TestRampScheduleValidate_EmptyTypeIsValid(t *testing.T) {
+	t.Parallel()
 	// Empty type should be valid
 	rs := RampSchedule{
 		Type:           "",
@@ -571,6 +586,7 @@ func TestRampScheduleValidate_EmptyTypeIsValid(t *testing.T) {
 // ==========================================
 
 func TestGlobalConfig_ValidateWithValidEmail(t *testing.T) {
+	t.Parallel()
 	email := "admin@company.example.com"
 	cfg := GlobalConfig{
 		EnabledProviders:  []string{"aws"},
@@ -584,6 +600,7 @@ func TestGlobalConfig_ValidateWithValidEmail(t *testing.T) {
 }
 
 func TestGlobalConfig_ValidateWithComplexEmail(t *testing.T) {
+	t.Parallel()
 	email := "user+tag@subdomain.company.co.uk"
 	cfg := GlobalConfig{
 		EnabledProviders:  []string{"gcp"},
@@ -601,6 +618,7 @@ func TestGlobalConfig_ValidateWithComplexEmail(t *testing.T) {
 // ==========================================
 
 func TestServiceConfig_ValidateAllProviders(t *testing.T) {
+	t.Parallel()
 	providers := []string{"aws", "azure", "gcp"}
 	for _, provider := range providers {
 		cfg := ServiceConfig{
@@ -615,6 +633,7 @@ func TestServiceConfig_ValidateAllProviders(t *testing.T) {
 }
 
 func TestServiceConfig_ValidateCoverageBoundaries(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		coverage float64
 		valid    bool
@@ -648,6 +667,7 @@ func TestServiceConfig_ValidateCoverageBoundaries(t *testing.T) {
 // ==========================================
 
 func TestPurchasePlan_ValidateNameBoundary(t *testing.T) {
+	t.Parallel()
 	// Exactly MaxPlanNameLength characters should be valid
 	name := make([]byte, MaxPlanNameLength)
 	for i := range name {
@@ -669,6 +689,7 @@ func TestPurchasePlan_ValidateNameBoundary(t *testing.T) {
 }
 
 func TestPurchasePlan_ValidateNotificationDaysBoundaries(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		days  int
 		valid bool
@@ -701,6 +722,7 @@ func TestPurchasePlan_ValidateNotificationDaysBoundaries(t *testing.T) {
 // ==========================================
 
 func TestRampSchedule_ValidateStepIntervalBoundaries(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		interval int
 		valid    bool
@@ -730,6 +752,7 @@ func TestRampSchedule_ValidateStepIntervalBoundaries(t *testing.T) {
 }
 
 func TestRampSchedule_ValidateTotalStepsBoundaries(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		steps int
 		valid bool
@@ -761,6 +784,7 @@ func TestRampSchedule_ValidateTotalStepsBoundaries(t *testing.T) {
 // ==========================================
 
 func TestPresetRampSchedules_AllValid(t *testing.T) {
+	t.Parallel()
 	for name, schedule := range PresetRampSchedules {
 		err := schedule.Validate()
 		assert.NoError(t, err, "preset schedule %s should be valid", name)
@@ -768,6 +792,7 @@ func TestPresetRampSchedules_AllValid(t *testing.T) {
 }
 
 func TestPresetRampSchedules_ImmediateComplete(t *testing.T) {
+	t.Parallel()
 	schedule := PresetRampSchedules["immediate"]
 	// Set current step to total steps
 	schedule.CurrentStep = schedule.TotalSteps
@@ -775,6 +800,7 @@ func TestPresetRampSchedules_ImmediateComplete(t *testing.T) {
 }
 
 func TestPresetRampSchedules_Weekly25PctNotComplete(t *testing.T) {
+	t.Parallel()
 	schedule := PresetRampSchedules["weekly-25pct"]
 	// At step 2 of 4, should not be complete
 	schedule.CurrentStep = 2
@@ -782,6 +808,7 @@ func TestPresetRampSchedules_Weekly25PctNotComplete(t *testing.T) {
 }
 
 func TestPresetRampSchedules_Monthly10PctCoverage(t *testing.T) {
+	t.Parallel()
 	schedule := PresetRampSchedules["monthly-10pct"]
 	schedule.CurrentStep = 5 // 50% complete
 	coverage := schedule.GetCurrentCoverage(100)
@@ -793,6 +820,7 @@ func TestPresetRampSchedules_Monthly10PctCoverage(t *testing.T) {
 // ==========================================
 
 func TestConfigSetting_AllTypes(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 
 	tests := []struct {
@@ -878,6 +906,7 @@ func TestConfigSetting_AllTypes(t *testing.T) {
 // ==========================================
 
 func TestStoreInterface_Methods(t *testing.T) {
+	t.Parallel()
 	// Verify all interface methods are present
 	var iface StoreInterface
 	store := NewPostgresStore(nil)
@@ -892,6 +921,7 @@ func TestStoreInterface_Methods(t *testing.T) {
 // ==========================================
 
 func TestConstants_Complete(t *testing.T) {
+	t.Parallel()
 	// Verify all expected constants exist and have reasonable values
 	assert.Equal(t, 100, DefaultListLimit)
 	assert.Equal(t, 30, DefaultExecutionTTLDays)

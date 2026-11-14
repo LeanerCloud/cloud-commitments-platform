@@ -63,6 +63,7 @@ func f64Ptr(f float64) *float64 { return &f }
 // ─── GetGlobalConfig ──────────────────────────────────────────────────────────
 
 func TestPGXMock_GetGlobalConfig_Success(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -116,6 +117,7 @@ func TestPGXMock_GetGlobalConfig_Success(t *testing.T) {
 }
 
 func TestPGXMock_GetGlobalConfig_ScanError(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -133,6 +135,7 @@ func TestPGXMock_GetGlobalConfig_ScanError(t *testing.T) {
 // malformed JSON → error surfaced to caller (don't silently swallow
 // a corrupt DB cell).
 func TestPGXMock_GetGlobalConfig_GracePeriodDays(t *testing.T) {
+	t.Parallel()
 	baseCols := []string{
 		"enabled_providers", "notification_email", "approval_required",
 		"default_term", "default_payment", "default_coverage", "default_ramp_schedule",
@@ -243,6 +246,7 @@ var globalConfigCols = []string{
 // closure did not touch, i.e. a concurrent partial update cannot lose another's
 // change once the lock serializes them.
 func TestPGXMock_UpdateGlobalConfigAtomic_LockedReadModifyWrite(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -304,6 +308,7 @@ func TestPGXMock_UpdateGlobalConfigAtomic_LockedReadModifyWrite(t *testing.T) {
 // apply closure fails (e.g. validation), the transaction rolls back and no
 // UPSERT is issued, and the closure's error propagates unchanged.
 func TestPGXMock_UpdateGlobalConfigAtomic_ApplyErrorRollsBack(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -346,6 +351,7 @@ func TestPGXMock_UpdateGlobalConfigAtomic_ApplyErrorRollsBack(t *testing.T) {
 // issue #225: only the changed default reaches service_configs, in the same
 // tx, and a failed propagation rolls the global write back.
 func TestPGXMock_UpdateGlobalConfigAtomic_PropagatesOnlyChangedDefaults(t *testing.T) {
+	t.Parallel()
 	seeded := func() *pgxmock.Rows {
 		return pgxmock.NewRows(globalConfigCols).AddRow(
 			[]string{"aws"}, (*string)(nil), true,
@@ -412,6 +418,7 @@ func TestPGXMock_UpdateGlobalConfigAtomic_PropagatesOnlyChangedDefaults(t *testi
 // ─── GetServiceConfig ─────────────────────────────────────────────────────────
 
 func TestPGXMock_GetServiceConfig_Success(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -443,6 +450,7 @@ func TestPGXMock_GetServiceConfig_Success(t *testing.T) {
 // ─── ListServiceConfigs ───────────────────────────────────────────────────────
 
 func TestPGXMock_ListServiceConfigs_Success(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -473,6 +481,7 @@ func TestPGXMock_ListServiceConfigs_Success(t *testing.T) {
 }
 
 func TestPGXMock_ListServiceConfigs_Error(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -487,6 +496,7 @@ func TestPGXMock_ListServiceConfigs_Error(t *testing.T) {
 // ─── GetPurchasePlan ──────────────────────────────────────────────────────────
 
 func TestPGXMock_GetPurchasePlan_Success(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -515,6 +525,7 @@ func TestPGXMock_GetPurchasePlan_Success(t *testing.T) {
 }
 
 func TestPGXMock_GetPurchasePlan_WithAllTimestamps(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -549,6 +560,7 @@ func TestPGXMock_GetPurchasePlan_WithAllTimestamps(t *testing.T) {
 // ─── ListPurchasePlans ────────────────────────────────────────────────────────
 
 func TestPGXMock_ListPurchasePlans_Success(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -577,6 +589,7 @@ func TestPGXMock_ListPurchasePlans_Success(t *testing.T) {
 }
 
 func TestPGXMock_ListPurchasePlans_Error(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -595,6 +608,7 @@ func TestPGXMock_ListPurchasePlans_Error(t *testing.T) {
 // on plan_accounts silently excluded zero-account legacy plans from every
 // account-filtered response.
 func TestPGXMock_ListPurchasePlans_UnassignedIncluded(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -637,6 +651,7 @@ func TestPGXMock_ListPurchasePlans_UnassignedIncluded(t *testing.T) {
 // ─── UpdatePurchasePlan ───────────────────────────────────────────────────────
 
 func TestPGXMock_UpdatePurchasePlan_NotFound(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -671,6 +686,7 @@ func expectLockedUnmanagedPlan(mock pgxmock.PgxPoolIface) {
 }
 
 func TestPGXMock_DeletePurchasePlan_Success(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -692,6 +708,7 @@ func TestPGXMock_DeletePurchasePlan_Success(t *testing.T) {
 // ordering: the plan row is deleted only after its open step rows were
 // canceled in the same transaction, so a failed cancel leaves both in place.
 func TestPGXMock_DeletePurchasePlan_CancelFailureKeepsPlan(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -707,6 +724,7 @@ func TestPGXMock_DeletePurchasePlan_CancelFailureKeepsPlan(t *testing.T) {
 }
 
 func TestPGXMock_DeletePurchasePlan_NotFound(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -723,6 +741,7 @@ func TestPGXMock_DeletePurchasePlan_NotFound(t *testing.T) {
 // ─── queryExecutions (via GetExecutionByID, GetExecutionByPlanAndDate) ────────
 
 func TestPGXMock_GetExecutionByID_Success(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -774,6 +793,7 @@ func TestPGXMock_GetExecutionByID_Success(t *testing.T) {
 }
 
 func TestPGXMock_GetExecutionByID_WithTimestamps(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -844,6 +864,7 @@ func TestPGXMock_GetExecutionByID_WithTimestamps(t *testing.T) {
 // this test asserts against. It fails on the pre-fix projection and passes once
 // the four trailing columns are added.
 func TestPGXMock_GetPlannedExecutions_ProjectsAllScanColumns(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -917,6 +938,7 @@ func TestPGXMock_GetPlannedExecutions_ProjectsAllScanColumns(t *testing.T) {
 // not match, the mock returns no rows and GetExecutionByID surfaces
 // ErrNotFound; that is how this test fails against the pre-fix code.
 func TestPGXMock_GetExecutionByID_ProjectsCanceledBy(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -963,6 +985,7 @@ func TestPGXMock_GetExecutionByID_ProjectsCanceledBy(t *testing.T) {
 // ─── queryPurchaseHistory (via GetPurchaseHistory) ────────────────────────────
 
 func TestPGXMock_GetPurchaseHistory_Success(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1017,6 +1040,7 @@ func TestPGXMock_GetPurchaseHistory_Success(t *testing.T) {
 // -- would shift every marketplace column by one and silently mis-read
 // offering_class / listing_id / listing_state.
 func TestPGXMock_GetPurchaseHistoryByPurchaseID_Success(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1085,6 +1109,7 @@ func TestPGXMock_GetPurchaseHistoryByPurchaseID_Success(t *testing.T) {
 // no row matches, so the revoke / marketplace handlers can distinguish "absent"
 // from a scan/query error.
 func TestPGXMock_GetPurchaseHistoryByPurchaseID_NotFound(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1141,6 +1166,7 @@ func purchaseHistoryRow(now time.Time, provider, acct string) []interface{} {
 // so a row carrying only one identifier is still matched without leaking across
 // providers (issue #701/#498/#866 + provider-coupling).
 func TestPGXMock_GetPurchaseHistoryFiltered_AllFilters(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1177,6 +1203,7 @@ func TestPGXMock_GetPurchaseHistoryFiltered_AllFilters(t *testing.T) {
 // store filtered cloud_account_id only, so the row was silently dropped and the
 // user saw "No purchase history yet" for that account.
 func TestPGXMock_GetPurchaseHistoryFiltered_ExternalIDOnly(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1207,6 +1234,7 @@ func TestPGXMock_GetPurchaseHistoryFiltered_ExternalIDOnly(t *testing.T) {
 // external number (aws/123 vs azure/123) cannot leak across providers (issue
 // #956 CR finding #1). Providers are emitted in sorted order: aws before azure.
 func TestPGXMock_GetPurchaseHistoryFiltered_MultiProviderExternalIDs(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1230,6 +1258,7 @@ func TestPGXMock_GetPurchaseHistoryFiltered_MultiProviderExternalIDs(t *testing.
 // filter (no resolvable external id) emits just the cloud_account_id half of
 // the predicate, bound to the UUID set.
 func TestPGXMock_GetPurchaseHistoryFiltered_UUIDOnly(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1254,6 +1283,7 @@ func TestPGXMock_GetPurchaseHistoryFiltered_UUIDOnly(t *testing.T) {
 // to GetAllPurchaseHistory. This proves the filtered variant degrades
 // gracefully when no fields are set.
 func TestPGXMock_GetPurchaseHistoryFiltered_NoFilters(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1285,6 +1315,7 @@ func TestPGXMock_GetPurchaseHistoryFiltered_NoFilters(t *testing.T) {
 // The `revoked_at IS NULL` clause (defect #2 fix) ensures revoked commitments
 // are never returned by this path.
 func TestPGXMock_GetActivePurchaseHistory_Unscoped(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1309,6 +1340,7 @@ func TestPGXMock_GetActivePurchaseHistory_Unscoped(t *testing.T) {
 // (defect #2 fix) is also present so revoked commitments never appear even for
 // account-scoped queries.
 func TestPGXMock_GetActivePurchaseHistory_AccountScoped(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1332,6 +1364,7 @@ func TestPGXMock_GetActivePurchaseHistory_AccountScoped(t *testing.T) {
 // no end) emits exactly two AND clauses and binds the right positional
 // arguments. Guards against an off-by-one in the placeholder counter.
 func TestPGXMock_GetPurchaseHistoryFiltered_PartialFilters(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1358,6 +1391,7 @@ func TestPGXMock_GetPurchaseHistoryFiltered_PartialFilters(t *testing.T) {
 // normalised before the query runs so a malicious or buggy caller can't
 // exfiltrate the entire table by passing limit=2_000_000.
 func TestPGXMock_GetPurchaseHistoryFiltered_LimitClamp(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1410,6 +1444,7 @@ var riExchangeCols = []string{
 }
 
 func TestPGXMock_GetRIExchangeRecord_Success(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1426,6 +1461,7 @@ func TestPGXMock_GetRIExchangeRecord_Success(t *testing.T) {
 }
 
 func TestPGXMock_GetRIExchangeRecord_WithTimestamps(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1457,6 +1493,7 @@ func TestPGXMock_GetRIExchangeRecord_WithTimestamps(t *testing.T) {
 // RI exchange approve and reject routes rely on: a wrapped ErrNotFound, which
 // they answer as a 4xx, not a bare error they would answer with 500 (#601).
 func TestPGXMock_GetRIExchangeRecord_NotFound(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1473,6 +1510,7 @@ func TestPGXMock_GetRIExchangeRecord_NotFound(t *testing.T) {
 // TestPGXMock_GetRIExchangeRecord_QueryErrorIsNotErrNotFound keeps a failed
 // query a server error: only an empty result is ErrNotFound.
 func TestPGXMock_GetRIExchangeRecord_QueryErrorIsNotErrNotFound(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1487,6 +1525,7 @@ func TestPGXMock_GetRIExchangeRecord_QueryErrorIsNotErrNotFound(t *testing.T) {
 }
 
 func TestPGXMock_GetRIExchangeRecordByToken_Success(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1501,6 +1540,7 @@ func TestPGXMock_GetRIExchangeRecordByToken_Success(t *testing.T) {
 }
 
 func TestPGXMock_GetRIExchangeHistory_Success(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1519,6 +1559,7 @@ func TestPGXMock_GetRIExchangeHistory_Success(t *testing.T) {
 // The account predicate must be in the WHERE clause, ahead of the LIMIT, and
 // receive the caller's ids (issue #308).
 func TestPGXMock_GetRIExchangeHistoryForAccounts_PushesAccountPredicate(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1539,6 +1580,7 @@ func TestPGXMock_GetRIExchangeHistoryForAccounts_PushesAccountPredicate(t *testi
 // ─── TransitionRIExchangeStatus ───────────────────────────────────────────────
 
 func TestPGXMock_TransitionRIExchangeStatus_WrongStatus(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1559,6 +1601,7 @@ func TestPGXMock_TransitionRIExchangeStatus_WrongStatus(t *testing.T) {
 }
 
 func TestPGXMock_TransitionRIExchangeStatus_RecordNotFound(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1578,6 +1621,7 @@ func TestPGXMock_TransitionRIExchangeStatus_RecordNotFound(t *testing.T) {
 }
 
 func TestPGXMock_TransitionRIExchangeStatus_Expired(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1598,6 +1642,7 @@ func TestPGXMock_TransitionRIExchangeStatus_Expired(t *testing.T) {
 }
 
 func TestPGXMock_TransitionRIExchangeStatus_Success(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1617,6 +1662,7 @@ func TestPGXMock_TransitionRIExchangeStatus_Success(t *testing.T) {
 // ─── CompleteRIExchange / FailRIExchange ─────────────────────────────────────
 
 func TestPGXMock_CompleteRIExchange_Success(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1630,6 +1676,7 @@ func TestPGXMock_CompleteRIExchange_Success(t *testing.T) {
 }
 
 func TestPGXMock_CompleteRIExchange_NotFound(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1643,6 +1690,7 @@ func TestPGXMock_CompleteRIExchange_NotFound(t *testing.T) {
 }
 
 func TestPGXMock_FailRIExchange_Success(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1655,6 +1703,7 @@ func TestPGXMock_FailRIExchange_Success(t *testing.T) {
 }
 
 func TestPGXMock_FailRIExchange_NotFound(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1672,6 +1721,7 @@ func TestPGXMock_FailRIExchange_NotFound(t *testing.T) {
 // ─── CompleteRIExchangeWithPayment ───────────────────────────────────────────
 
 func TestPGXMock_CompleteRIExchangeWithPayment_Success(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1686,6 +1736,7 @@ func TestPGXMock_CompleteRIExchangeWithPayment_Success(t *testing.T) {
 }
 
 func TestPGXMock_CompleteRIExchangeWithPayment_NotFound(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1701,6 +1752,7 @@ func TestPGXMock_CompleteRIExchangeWithPayment_NotFound(t *testing.T) {
 // ─── GetRIExchangeDailySpend (M5: includes processing rows) ──────────────────
 
 func TestPGXMock_GetRIExchangeDailySpend_Success(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1719,6 +1771,7 @@ func TestPGXMock_GetRIExchangeDailySpend_Success(t *testing.T) {
 // Because pgxmock matches the full query string, we confirm the SQL sent to
 // the DB driver contains "processing".
 func TestPGXMock_GetRIExchangeDailySpend_IncludesProcessingStatus(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1759,6 +1812,7 @@ func cloudAccountRow(now time.Time) []interface{} {
 }
 
 func TestPGXMock_GetCloudAccount_Success(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1776,6 +1830,7 @@ func TestPGXMock_GetCloudAccount_Success(t *testing.T) {
 }
 
 func TestPGXMock_GetCloudAccount_NotFound(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1789,6 +1844,7 @@ func TestPGXMock_GetCloudAccount_NotFound(t *testing.T) {
 }
 
 func TestPGXMock_GetCloudAccount_Error(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1804,6 +1860,7 @@ func TestPGXMock_GetCloudAccount_Error(t *testing.T) {
 // ─── GetCloudAccountByExternalID (issue #604) ─────────────────────────────────
 
 func TestPGXMock_GetCloudAccountByExternalID_Success(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1821,6 +1878,7 @@ func TestPGXMock_GetCloudAccountByExternalID_Success(t *testing.T) {
 }
 
 func TestPGXMock_GetCloudAccountByExternalID_NotFound(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1836,6 +1894,7 @@ func TestPGXMock_GetCloudAccountByExternalID_NotFound(t *testing.T) {
 // ─── UpdateCloudAccount ───────────────────────────────────────────────────────
 
 func TestPGXMock_UpdateCloudAccount_Success(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1850,6 +1909,7 @@ func TestPGXMock_UpdateCloudAccount_Success(t *testing.T) {
 }
 
 func TestPGXMock_UpdateCloudAccount_NotFound(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1869,6 +1929,7 @@ func TestPGXMock_UpdateCloudAccount_NotFound(t *testing.T) {
 // ─── DeleteCloudAccount ───────────────────────────────────────────────────────
 
 func TestPGXMock_DeleteCloudAccount_Success(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1888,6 +1949,7 @@ func TestPGXMock_DeleteCloudAccount_Success(t *testing.T) {
 }
 
 func TestPGXMock_DeleteCloudAccount_WithLinkedRegistration(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1907,6 +1969,7 @@ func TestPGXMock_DeleteCloudAccount_WithLinkedRegistration(t *testing.T) {
 }
 
 func TestPGXMock_DeleteCloudAccount_NotFound(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1958,6 +2021,7 @@ func expectDisableSoleAccountPlans(mock pgxmock.PgxPoolIface) {
 }
 
 func TestPGXMock_DeleteCloudAccount_LockFailsRollsBack(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -1973,6 +2037,7 @@ func TestPGXMock_DeleteCloudAccount_LockFailsRollsBack(t *testing.T) {
 }
 
 func TestPGXMock_DeleteCloudAccount_PlanLockFailsRollsBack(t *testing.T) {
+	t.Parallel()
 	for _, second := range []bool{false, true} {
 		mock := newMock(t)
 		store := storeWith(mock)
@@ -1995,6 +2060,7 @@ func TestPGXMock_DeleteCloudAccount_PlanLockFailsRollsBack(t *testing.T) {
 }
 
 func TestPGXMock_DeleteCloudAccount_DisablePlansFailsRollsBack(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2013,6 +2079,7 @@ func TestPGXMock_DeleteCloudAccount_DisablePlansFailsRollsBack(t *testing.T) {
 }
 
 func TestPGXMock_DeleteCloudAccount_DetachFailsRollsBack(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2031,6 +2098,7 @@ func TestPGXMock_DeleteCloudAccount_DetachFailsRollsBack(t *testing.T) {
 }
 
 func TestPGXMock_CountLiveExecutionsForAccount(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2045,6 +2113,7 @@ func TestPGXMock_CountLiveExecutionsForAccount(t *testing.T) {
 }
 
 func TestPGXMock_CountLiveExecutionsForAccount_Error(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2060,6 +2129,7 @@ func TestPGXMock_CountLiveExecutionsForAccount_Error(t *testing.T) {
 // ─── ListCloudAccounts ────────────────────────────────────────────────────────
 
 func TestPGXMock_ListCloudAccounts_Success(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2076,6 +2146,7 @@ func TestPGXMock_ListCloudAccounts_Success(t *testing.T) {
 }
 
 func TestPGXMock_ListCloudAccounts_WithProviderFilter(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2091,6 +2162,7 @@ func TestPGXMock_ListCloudAccounts_WithProviderFilter(t *testing.T) {
 }
 
 func TestPGXMock_ListCloudAccounts_WithSearchFilter(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2106,6 +2178,7 @@ func TestPGXMock_ListCloudAccounts_WithSearchFilter(t *testing.T) {
 }
 
 func TestPGXMock_ListCloudAccounts_WithAllFilters(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2132,6 +2205,7 @@ func TestPGXMock_ListCloudAccounts_WithAllFilters(t *testing.T) {
 // ─── GetAccountCredential ─────────────────────────────────────────────────────
 
 func TestPGXMock_GetAccountCredential_Success(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2145,6 +2219,7 @@ func TestPGXMock_GetAccountCredential_Success(t *testing.T) {
 }
 
 func TestPGXMock_GetAccountCredential_NotFound(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2159,6 +2234,7 @@ func TestPGXMock_GetAccountCredential_NotFound(t *testing.T) {
 }
 
 func TestPGXMock_GetAccountCredential_Error(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2174,6 +2250,7 @@ func TestPGXMock_GetAccountCredential_Error(t *testing.T) {
 // ─── DeleteAccountCredentials ─────────────────────────────────────────────────
 
 func TestPGXMock_DeleteAccountCredentials_Success(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2188,6 +2265,7 @@ func TestPGXMock_DeleteAccountCredentials_Success(t *testing.T) {
 // ─── HasAccountCredentials ────────────────────────────────────────────────────
 
 func TestPGXMock_HasAccountCredentials_True(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2201,6 +2279,7 @@ func TestPGXMock_HasAccountCredentials_True(t *testing.T) {
 }
 
 func TestPGXMock_HasAccountCredentials_False(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2224,6 +2303,7 @@ var overrideCols = []string{
 }
 
 func TestPGXMock_GetAccountServiceOverride_Success(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2246,6 +2326,7 @@ func TestPGXMock_GetAccountServiceOverride_Success(t *testing.T) {
 }
 
 func TestPGXMock_GetAccountServiceOverride_NotFound(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2258,6 +2339,7 @@ func TestPGXMock_GetAccountServiceOverride_NotFound(t *testing.T) {
 }
 
 func TestPGXMock_GetAccountServiceOverride_Error(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2272,6 +2354,7 @@ func TestPGXMock_GetAccountServiceOverride_Error(t *testing.T) {
 // ─── ListAccountServiceOverrides ─────────────────────────────────────────────
 
 func TestPGXMock_ListAccountServiceOverrides_Success(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2299,6 +2382,7 @@ func TestPGXMock_ListAccountServiceOverrides_Success(t *testing.T) {
 }
 
 func TestPGXMock_ListAccountServiceOverrides_Error(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2317,6 +2401,7 @@ func expectUnmanagedPlan(mock pgxmock.PgxPoolIface) {
 }
 
 func TestPGXMock_SetPlanAccounts_Success(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2352,6 +2437,7 @@ func TestPGXMock_SetPlanAccounts_Success(t *testing.T) {
 }
 
 func TestPGXMock_SetPlanAccounts_ProviderMismatchRollsBackBeforeDelete(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2378,6 +2464,7 @@ func TestPGXMock_SetPlanAccounts_ProviderMismatchRollsBackBeforeDelete(t *testin
 }
 
 func TestPGXMock_SetPlanAccounts_Empty(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2401,6 +2488,7 @@ func TestPGXMock_SetPlanAccounts_Empty(t *testing.T) {
 }
 
 func TestPGXMock_SetPlanAccounts_EmptyMissingPlanReturnsNotFound(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2417,6 +2505,7 @@ func TestPGXMock_SetPlanAccounts_EmptyMissingPlanReturnsNotFound(t *testing.T) {
 }
 
 func TestPGXMock_SetPlanAccounts_BeginError(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2431,6 +2520,7 @@ func TestPGXMock_SetPlanAccounts_BeginError(t *testing.T) {
 // ─── GetPlanAccounts ──────────────────────────────────────────────────────────
 
 func TestPGXMock_GetPlanAccounts_Success(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2447,6 +2537,7 @@ func TestPGXMock_GetPlanAccounts_Success(t *testing.T) {
 }
 
 func TestPGXMock_GetPlanAccounts_Error(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2460,6 +2551,7 @@ func TestPGXMock_GetPlanAccounts_Error(t *testing.T) {
 // ─── GetStaleProcessingExchanges ─────────────────────────────────────────────
 
 func TestPGXMock_GetStaleProcessingExchanges_Success(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2476,6 +2568,7 @@ func TestPGXMock_GetStaleProcessingExchanges_Success(t *testing.T) {
 // ─── CancelAllPendingExchanges ────────────────────────────────────────────────
 
 func TestPGXMock_CancelAllPendingExchanges_Success(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2495,6 +2588,7 @@ func TestPGXMock_CancelAllPendingExchanges_Success(t *testing.T) {
 // NOT a substring of "ladder_run_id IS NOT NULL", so the two matchers are
 // mutually exclusive.
 func TestPGXMock_CancelPendingExchangesByOrigin_Standalone(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2510,6 +2604,7 @@ func TestPGXMock_CancelPendingExchangesByOrigin_Standalone(t *testing.T) {
 }
 
 func TestPGXMock_CancelPendingExchangesByOrigin_Ladder(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2525,6 +2620,7 @@ func TestPGXMock_CancelPendingExchangesByOrigin_Ladder(t *testing.T) {
 }
 
 func TestPGXMock_CancelPendingExchangesByOrigin_UnknownOrigin_FailsLoud(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2541,6 +2637,7 @@ func TestPGXMock_CancelPendingExchangesByOrigin_UnknownOrigin_FailsLoud(t *testi
 // ─── SaveRIExchangeRecord ─────────────────────────────────────────────────────
 
 func TestPGXMock_SaveRIExchangeRecord_InsertColumnAlignment(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2563,6 +2660,7 @@ func TestPGXMock_SaveRIExchangeRecord_InsertColumnAlignment(t *testing.T) {
 }
 
 func TestPGXMock_ReserveRIExchange_CommitsCeilingBeforeReturn(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	mock.ExpectBegin()
@@ -2583,6 +2681,7 @@ func TestPGXMock_ReserveRIExchange_CommitsCeilingBeforeReturn(t *testing.T) {
 }
 
 func TestPGXMock_ReserveRIExchange_RollsBackWhenQuoteExceedsHeadroom(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	mock.ExpectBegin()
@@ -2599,6 +2698,7 @@ func TestPGXMock_ReserveRIExchange_RollsBackWhenQuoteExceedsHeadroom(t *testing.
 }
 
 func TestPGXMock_ReserveRIExchange_DatabaseFailuresDoNotReturnCeiling(t *testing.T) {
+	t.Parallel()
 	for _, stage := range []string{"begin", "lock", "read", "insert"} {
 		t.Run(stage, func(t *testing.T) {
 			mock := newMock(t)
@@ -2635,6 +2735,7 @@ func TestPGXMock_ReserveRIExchange_DatabaseFailuresDoNotReturnCeiling(t *testing
 }
 
 func TestPGXMock_ReserveRIExchange_CommitFailureDoesNotReturnCeiling(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	mock.ExpectBegin()
@@ -2656,6 +2757,7 @@ func TestPGXMock_ReserveRIExchange_CommitFailureDoesNotReturnCeiling(t *testing.
 }
 
 func TestRIExchangeMicros_RejectsInvalidPrecision(t *testing.T) {
+	t.Parallel()
 	for _, value := range []string{"", "-1", "1.0000001", "100000000000000", "1/2", "NaN"} {
 		_, err := riExchangeMicros(value)
 		require.Error(t, err, value)
@@ -2668,6 +2770,7 @@ func TestRIExchangeMicros_RejectsInvalidPrecision(t *testing.T) {
 // ─── CleanupOldExecutions ─────────────────────────────────────────────────────
 
 func TestPGXMock_CleanupOldExecutions_Success(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2685,6 +2788,7 @@ func TestPGXMock_CleanupOldExecutions_Success(t *testing.T) {
 // ─── SavePurchaseHistory ──────────────────────────────────────────────────────
 
 func TestPGXMock_SavePurchaseHistory_Success(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2710,6 +2814,7 @@ func TestPGXMock_SavePurchaseHistory_Success(t *testing.T) {
 // (provider, external_id), and a stored row with no account is still a
 // success: refusing it would lose a bought commitment's history (#621).
 func TestPGXMock_SavePurchaseHistory_ResolvesAccountAndKeepsUnmatchedRow(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 
@@ -2725,6 +2830,7 @@ func TestPGXMock_SavePurchaseHistory_ResolvesAccountAndKeepsUnmatchedRow(t *test
 
 // No row back means the dedupe kept an existing row: not an error.
 func TestPGXMock_SavePurchaseHistory_AlreadyRecorded(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 
@@ -2739,6 +2845,7 @@ func TestPGXMock_SavePurchaseHistory_AlreadyRecorded(t *testing.T) {
 }
 
 func TestPGXMock_SavePurchaseHistory_DBError(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 
@@ -2758,6 +2865,7 @@ func TestPGXMock_SavePurchaseHistory_DBError(t *testing.T) {
 // FK violation (post-migration 000053) into a structured 409 response.
 
 func TestPGXMock_CountPendingExecutionsForAccount_Success(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2772,6 +2880,7 @@ func TestPGXMock_CountPendingExecutionsForAccount_Success(t *testing.T) {
 }
 
 func TestPGXMock_CountPendingExecutionsForAccount_Zero(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2786,6 +2895,7 @@ func TestPGXMock_CountPendingExecutionsForAccount_Zero(t *testing.T) {
 }
 
 func TestPGXMock_ListPendingExecutionIDsForAccount_Success(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2804,6 +2914,7 @@ func TestPGXMock_ListPendingExecutionIDsForAccount_Success(t *testing.T) {
 }
 
 func TestPGXMock_ListPendingExecutionIDsForAccount_Empty(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2830,6 +2941,7 @@ func TestPGXMock_ListPendingExecutionIDsForAccount_Empty(t *testing.T) {
 // uses DESC, regresses to the GetExecutionsByStatuses query, or drops the
 // stable secondary sort.
 func TestPGXMock_GetPlannedExecutions_UsesASCOrdering(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2863,6 +2975,7 @@ func TestPGXMock_GetPlannedExecutions_UsesASCOrdering(t *testing.T) {
 // nil/empty status list returns nil with no SQL roundtrip (pgxmock fails on
 // any unexpected query since none is registered here).
 func TestPGXMock_GetPlannedExecutions_EmptyStatuses(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2878,6 +2991,7 @@ func TestPGXMock_GetPlannedExecutions_EmptyStatuses(t *testing.T) {
 // Mirrors GetExecutionsByStatuses' clamping so callers can pass user-supplied
 // values without sanitizing upstream.
 func TestPGXMock_GetPlannedExecutions_LimitClamping(t *testing.T) {
+	t.Parallel()
 	t.Run("negative falls back to DefaultListLimit", func(t *testing.T) {
 		mock := newMock(t)
 		store := storeWith(mock)
@@ -2945,6 +3059,7 @@ func stuckExecCols() []string {
 }
 
 func TestPGXMock_ListStuckExecutions_ReturnsMultiple(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2968,6 +3083,7 @@ func TestPGXMock_ListStuckExecutions_ReturnsMultiple(t *testing.T) {
 }
 
 func TestPGXMock_ListStuckExecutions_EmptyStatuses(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -2982,6 +3098,7 @@ func TestPGXMock_ListStuckExecutions_EmptyStatuses(t *testing.T) {
 }
 
 func TestPGXMock_ListStuckExecutions_QueryError(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -3032,6 +3149,7 @@ func minimalRegRow(id, accountName, contactEmail string) []interface{} {
 // filter.Search value beginning with "%" is forwarded to the DB as "\%..."
 // (escaped) so it matches the literal substring, not every row.
 func TestPGXMock_ListAccountRegistrations_SearchEscapesPercent(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -3059,6 +3177,7 @@ func TestPGXMock_ListAccountRegistrations_SearchEscapesPercent(t *testing.T) {
 // "_" in filter.Search is sent as "\_" so it is not treated as the SQL
 // single-character wildcard.
 func TestPGXMock_ListAccountRegistrations_SearchEscapesUnderscore(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -3084,6 +3203,7 @@ func TestPGXMock_ListAccountRegistrations_SearchEscapesUnderscore(t *testing.T) 
 // literal "\" in filter.Search is doubled to "\\" before being bound, so the
 // backslash is treated as data rather than as the LIKE escape character.
 func TestPGXMock_ListAccountRegistrations_SearchEscapesBackslash(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -3121,6 +3241,7 @@ func errNoRows() error {
 // propagate as-is and NOT be mapped to ErrNotFound, which callers like the
 // purchase reaper treat as a benign race-loss.
 func TestPGXMock_TransitionExecutionStatus_ProbeHardErrorNotMappedToNotFound(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -3166,6 +3287,7 @@ func TestPGXMock_TransitionExecutionStatus_ProbeHardErrorNotMappedToNotFound(t *
 // getOrCreateExecution to treat the not-found case as a fatal error, making the
 // create-execution branch unreachable against the real store.
 func TestPGXMock_GetExecutionByPlanAndDate_NotFoundWrapsErrNotFound(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -3206,6 +3328,7 @@ func TestPGXMock_GetExecutionByPlanAndDate_NotFoundWrapsErrNotFound(t *testing.T
 // parameter and sets canceled_by (not cancelled_by).
 // Regression guard for the #1277 follow-up fix.
 func TestPGXMock_CancelExecutionAtomic_WritesCanonicalStatus(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -3234,6 +3357,7 @@ func TestPGXMock_CancelExecutionAtomic_WritesCanonicalStatus(t *testing.T) {
 // TestPGXMock_CancelScheduledExecutionAtomic_WritesCanonicalStatus mirrors the
 // above for the scheduled-execution cancel path.
 func TestPGXMock_CancelScheduledExecutionAtomic_WritesCanonicalStatus(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -3258,6 +3382,7 @@ func TestPGXMock_CancelScheduledExecutionAtomic_WritesCanonicalStatus(t *testing
 // the literal 'cancelled'), so this test double-checks that the parameterized
 // form is used and the value is the canonical spelling.
 func TestPGXMock_CancelAllPendingExchanges_WritesCanonicalStatus(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -3275,6 +3400,7 @@ func TestPGXMock_CancelAllPendingExchanges_WritesCanonicalStatus(t *testing.T) {
 // TestPGXMock_CancelPendingExchangesByOrigin_Standalone_WritesCanonicalStatus
 // asserts the standalone branch passes StatusCanceled.
 func TestPGXMock_CancelPendingExchangesByOrigin_Standalone_WritesCanonicalStatus(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -3292,6 +3418,7 @@ func TestPGXMock_CancelPendingExchangesByOrigin_Standalone_WritesCanonicalStatus
 // TestPGXMock_CancelPendingExchangesByOrigin_Ladder_WritesCanonicalStatus
 // asserts the ladder branch passes StatusCanceled.
 func TestPGXMock_CancelPendingExchangesByOrigin_Ladder_WritesCanonicalStatus(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -3311,6 +3438,7 @@ func TestPGXMock_CancelPendingExchangesByOrigin_Ladder_WritesCanonicalStatus(t *
 // so Plans-canceled rows written by new code are not missed.
 // Regression guard for the #1277 follow-up Defect 2 fix.
 func TestPGXMock_CleanupOldExecutions_IncludesCanonicalStatus(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -3336,6 +3464,7 @@ func TestPGXMock_CleanupOldExecutions_IncludesCanonicalStatus(t *testing.T) {
 // Each anchor is asserted separately so a failure names the branch that
 // regressed instead of just "the SQL changed".
 func TestPGXMock_CleanupOldExecutions_RetainsCanceledOnUpdatedAt(t *testing.T) {
+	t.Parallel()
 	anchors := map[string]string{
 		"canceled branch retains on updated_at":      `(?s)status = 'canceled'\s+AND updated_at`,
 		"completed branch retains on scheduled_date": `(?s)status = 'completed'\s+AND scheduled_date`,
@@ -3372,6 +3501,7 @@ func TestPGXMock_CleanupOldExecutions_RetainsCanceledOnUpdatedAt(t *testing.T) {
 // jumps. Asserting on config.HealthScoredExecutionStatuses rather than a
 // literal means adding a scored status extends this guard automatically.
 func TestPGXMock_CleanupOldExecutions_ExcludesEveryHealthScoredStatus(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -3413,6 +3543,7 @@ func TestPGXMock_CleanupOldExecutions_ExcludesEveryHealthScoredStatus(t *testing
 // anchors fail the test if a refactor reintroduces a LIMIT, drops the
 // aggregation, or drops the updated_at window.
 func TestPGXMock_CountExecutionsByPlanAndStatus_AggregatesInSQL(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -3449,6 +3580,7 @@ func TestPGXMock_CountExecutionsByPlanAndStatus_AggregatesInSQL(t *testing.T) {
 // column would count a purchase cancelled today under next year's date and
 // make the "in the last N days" wording in the factor note a lie.
 func TestPGXMock_CountExecutionsByPlanAndStatus_PassesSinceBound(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -3477,6 +3609,7 @@ func TestPGXMock_CountExecutionsByPlanAndStatus_PassesSinceBound(t *testing.T) {
 // `plan_id IS NOT NULL` filter in the query itself, which
 // TestPGXMock_CountExecutionsByPlanAndStatus_AggregatesInSQL pins.
 func TestPGXMock_CountExecutionsByPlanAndStatus_NullPlanIDRow(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -3501,6 +3634,7 @@ func TestPGXMock_CountExecutionsByPlanAndStatus_NullPlanIDRow(t *testing.T) {
 // so the SQL is captured through a custom QueryMatcher and asserted directly
 // rather than expressed as a regex.
 func TestPGXMock_CountExecutionsByPlanAndStatus_NoLimitInQuery(t *testing.T) {
+	t.Parallel()
 	var executedSQL string
 	mock, err := pgxmock.NewPool(pgxmock.QueryMatcherOption(
 		pgxmock.QueryMatcherFunc(func(expectedSQL, actualSQL string) error {
@@ -3528,6 +3662,7 @@ func TestPGXMock_CountExecutionsByPlanAndStatus_NoLimitInQuery(t *testing.T) {
 // short-circuit: an empty status list returns an empty (non-nil) map with no
 // SQL roundtrip, so callers can index it without a nil check.
 func TestPGXMock_CountExecutionsByPlanAndStatus_EmptyStatuses(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -3543,6 +3678,7 @@ func TestPGXMock_CountExecutionsByPlanAndStatus_EmptyStatuses(t *testing.T) {
 // failure instead of returning partial counts: a partial count would silently
 // inflate a plan's health score.
 func TestPGXMock_CountExecutionsByPlanAndStatus_QueryError(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -3564,6 +3700,7 @@ func TestPGXMock_CountExecutionsByPlanAndStatus_QueryError(t *testing.T) {
 // handler skips them. Dropping the predicate lets them push pending
 // approvals past the cap again.
 func TestPGXMock_GetExecutionsByStatuses_ExcludesCleanCompleted(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 
@@ -3578,6 +3715,7 @@ func TestPGXMock_GetExecutionsByStatuses_ExcludesCleanCompleted(t *testing.T) {
 }
 
 func TestPGXMock_ReserveApprovedRIExchange_ReservesCeilingExcludingOwnRow(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	id := "550e8400-e29b-41d4-a716-000000000656"
@@ -3607,6 +3745,7 @@ func TestPGXMock_ReserveApprovedRIExchange_ReservesCeilingExcludingOwnRow(t *tes
 }
 
 func TestPGXMock_ReserveApprovedRIExchange_RefusesWhenInitialExceedsHeadroom(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	id := "550e8400-e29b-41d4-a716-000000000657"
@@ -3625,6 +3764,7 @@ func TestPGXMock_ReserveApprovedRIExchange_RefusesWhenInitialExceedsHeadroom(t *
 }
 
 func TestPGXMock_ReserveApprovedRIExchange_RejectsRowThatIsNotProcessing(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	const id = "550e8400-e29b-41d4-a716-000000000658"
@@ -3642,6 +3782,7 @@ func TestPGXMock_ReserveApprovedRIExchange_RejectsRowThatIsNotProcessing(t *test
 // Malformed caps and a malformed stored quote can never reserve, so they carry
 // the sentinel the approval handler uses to fail the row instead of retrying.
 func TestPGXMock_ReserveApprovedRIExchange_DeterministicInputsAreInvalidReservations(t *testing.T) {
+	t.Parallel()
 	const id = "550e8400-e29b-41d4-a716-000000000659"
 	t.Run("invalid daily cap", func(t *testing.T) {
 		_, err := storeWith(newMock(t)).ReserveApprovedRIExchange(context.Background(), id, "abc", "1000")
@@ -3668,6 +3809,7 @@ func TestPGXMock_ReserveApprovedRIExchange_DeterministicInputsAreInvalidReservat
 // exchange config path is a read-modify-write of the whole row, so an upsert that
 // omitted them would reset them to NULL on any unrelated config save.
 func TestPGXMock_UpdateGlobalConfigAtomic_PreservesAutoPurchaseStamps(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()
@@ -3717,6 +3859,7 @@ func TestPGXMock_UpdateGlobalConfigAtomic_PreservesAutoPurchaseStamps(t *testing
 // DESC. Under a plain scheduled_date DESC, 20 plans of 52 future steps fill
 // MaxListLimit and a pending approval due today never comes back.
 func TestPGXMock_GetExecutionsByStatuses_FuturePendingStepsSortLast(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 
@@ -3732,6 +3875,7 @@ func TestPGXMock_GetExecutionsByStatuses_FuturePendingStepsSortLast(t *testing.T
 }
 
 func TestPGXMock_UpdateCloudAccount_ExternalIDHasHistory(t *testing.T) {
+	t.Parallel()
 	mock := newMock(t)
 	store := storeWith(mock)
 	ctx := context.Background()

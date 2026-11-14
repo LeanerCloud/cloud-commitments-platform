@@ -32,6 +32,7 @@ func callWithRecover(f func()) (panicked bool) {
 // ==========================================
 
 func TestPostgresStore_GetGlobalConfig_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -48,6 +49,7 @@ func TestPostgresStore_GetGlobalConfig_NilDB(t *testing.T) {
 // ==========================================
 
 func TestPostgresStore_SaveGlobalConfig_NilProviders(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -69,6 +71,7 @@ func TestPostgresStore_SaveGlobalConfig_NilProviders(t *testing.T) {
 }
 
 func TestPostgresStore_SaveGlobalConfig_WithProviders(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -97,6 +100,7 @@ func TestPostgresStore_SaveGlobalConfig_WithProviders(t *testing.T) {
 // ==========================================
 
 func TestPostgresStore_GetServiceConfig_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -112,6 +116,7 @@ func TestPostgresStore_GetServiceConfig_NilDB(t *testing.T) {
 // ==========================================
 
 func TestPostgresStore_SaveServiceConfig_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -138,6 +143,7 @@ func TestPostgresStore_SaveServiceConfig_NilDB(t *testing.T) {
 // ==========================================
 
 func TestPostgresStore_ListServiceConfigs_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -153,6 +159,7 @@ func TestPostgresStore_ListServiceConfigs_NilDB(t *testing.T) {
 // ==========================================
 
 func TestPostgresStore_CreatePurchasePlan_NilDB_GeneratesID(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -180,6 +187,7 @@ func TestPostgresStore_CreatePurchasePlan_NilDB_GeneratesID(t *testing.T) {
 }
 
 func TestPostgresStore_CreatePurchasePlan_NilDB_PreservesExistingID(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -202,6 +210,7 @@ func TestPostgresStore_CreatePurchasePlan_NilDB_PreservesExistingID(t *testing.T
 }
 
 func TestPostgresStore_CreatePurchasePlan_NilDB_WithNullableTimestamps(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -229,6 +238,7 @@ func TestPostgresStore_CreatePurchasePlan_NilDB_WithNullableTimestamps(t *testin
 }
 
 func TestPostgresStore_CreatePurchasePlan_NilDB_EmptyServices(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -251,6 +261,7 @@ func TestPostgresStore_CreatePurchasePlan_NilDB_EmptyServices(t *testing.T) {
 // ==========================================
 
 func TestPostgresStore_GetPurchasePlan_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -266,6 +277,7 @@ func TestPostgresStore_GetPurchasePlan_NilDB(t *testing.T) {
 // ==========================================
 
 func TestPostgresStore_UpdatePurchasePlan_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -288,6 +300,7 @@ func TestPostgresStore_UpdatePurchasePlan_NilDB(t *testing.T) {
 }
 
 func TestPostgresStore_UpdatePurchasePlan_NilDB_WithServices(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -324,6 +337,7 @@ func TestPostgresStore_UpdatePurchasePlan_NilDB_WithServices(t *testing.T) {
 // ==========================================
 
 func TestPostgresStore_DeletePurchasePlan_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -339,6 +353,7 @@ func TestPostgresStore_DeletePurchasePlan_NilDB(t *testing.T) {
 // ==========================================
 
 func TestPostgresStore_ListPurchasePlans_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -354,6 +369,7 @@ func TestPostgresStore_ListPurchasePlans_NilDB(t *testing.T) {
 // ==========================================
 
 func TestPostgresStore_SavePurchaseExecution_NilDB_GeneratesID(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -379,6 +395,7 @@ func TestPostgresStore_SavePurchaseExecution_NilDB_GeneratesID(t *testing.T) {
 }
 
 func TestPostgresStore_SavePurchaseExecution_NilDB_PreservesExistingID(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -410,6 +427,7 @@ func TestPostgresStore_SavePurchaseExecution_NilDB_PreservesExistingID(t *testin
 }
 
 func TestPostgresStore_SavePurchaseExecution_NilDB_EmptyRecommendations(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -433,6 +451,7 @@ func TestPostgresStore_SavePurchaseExecution_NilDB_EmptyRecommendations(t *testi
 // ==========================================
 
 func TestPostgresStore_GetPendingExecutions_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -448,6 +467,7 @@ func TestPostgresStore_GetPendingExecutions_NilDB(t *testing.T) {
 // ==========================================
 
 func TestPostgresStore_GetExecutionByID_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -463,6 +483,7 @@ func TestPostgresStore_GetExecutionByID_NilDB(t *testing.T) {
 // ==========================================
 
 func TestPostgresStore_GetExecutionByPlanAndDate_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -478,6 +499,7 @@ func TestPostgresStore_GetExecutionByPlanAndDate_NilDB(t *testing.T) {
 // ==========================================
 
 func TestPostgresStore_SavePurchaseHistory_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -512,6 +534,7 @@ func TestPostgresStore_SavePurchaseHistory_NilDB(t *testing.T) {
 // ==========================================
 
 func TestPostgresStore_GetPurchaseHistory_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -527,6 +550,7 @@ func TestPostgresStore_GetPurchaseHistory_NilDB(t *testing.T) {
 // ==========================================
 
 func TestPostgresStore_GetAllPurchaseHistory_NilDB(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(nil)
 	ctx := context.Background()
 
@@ -548,6 +572,7 @@ func TestPostgresStore_GetAllPurchaseHistory_NilDB(t *testing.T) {
 // Using pgxmock directly against the real PostgresStore (not the hand-maintained
 // testablePostgresStore wrapper) ensures the live query is tested, not a stale copy.
 func TestSaveGlobalConfig_OfferingClassBindsAt23(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)

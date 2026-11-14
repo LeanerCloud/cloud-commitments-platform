@@ -312,6 +312,7 @@ func (s *testablePostgresStore) GetPurchasePlan(ctx context.Context, planID stri
 
 // TestGetGlobalConfig_NoRows tests that default config is returned when no rows exist.
 func TestGetGlobalConfig_NoRows(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -336,6 +337,7 @@ func TestGetGlobalConfig_NoRows(t *testing.T) {
 
 // TestGetGlobalConfig_Success tests successful retrieval of global config.
 func TestGetGlobalConfig_Success(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -369,6 +371,7 @@ func TestGetGlobalConfig_Success(t *testing.T) {
 
 // TestGetGlobalConfig_Error tests error handling.
 func TestGetGlobalConfig_Error(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -388,6 +391,7 @@ func TestGetGlobalConfig_Error(t *testing.T) {
 
 // TestSaveGlobalConfig_Success tests successful save of global config.
 func TestSaveGlobalConfig_Success(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -425,6 +429,7 @@ func TestSaveGlobalConfig_Success(t *testing.T) {
 
 // TestSaveGlobalConfig_NilEnabledProviders tests that nil EnabledProviders gets converted to empty slice.
 func TestSaveGlobalConfig_NilEnabledProviders(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -460,6 +465,7 @@ func TestSaveGlobalConfig_NilEnabledProviders(t *testing.T) {
 
 // TestSaveGlobalConfig_Error tests error handling.
 func TestSaveGlobalConfig_Error(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -491,6 +497,7 @@ func TestSaveGlobalConfig_Error(t *testing.T) {
 
 // TestGetServiceConfig_Success tests successful retrieval of service config.
 func TestGetServiceConfig_Success(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -528,6 +535,7 @@ func TestGetServiceConfig_Success(t *testing.T) {
 
 // TestGetServiceConfig_NotFound tests service config not found.
 func TestGetServiceConfig_NotFound(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -548,6 +556,7 @@ func TestGetServiceConfig_NotFound(t *testing.T) {
 
 // TestGetServiceConfig_Error tests error handling.
 func TestGetServiceConfig_Error(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -568,6 +577,7 @@ func TestGetServiceConfig_Error(t *testing.T) {
 
 // TestSaveServiceConfig_Success tests successful save of service config.
 func TestSaveServiceConfig_Success(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -608,6 +618,7 @@ func TestSaveServiceConfig_Success(t *testing.T) {
 
 // TestSaveServiceConfig_Error tests error handling.
 func TestSaveServiceConfig_Error(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -637,6 +648,7 @@ func TestSaveServiceConfig_Error(t *testing.T) {
 
 // TestListServiceConfigs_Success tests successful listing of service configs.
 func TestListServiceConfigs_Success(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -668,6 +680,7 @@ func TestListServiceConfigs_Success(t *testing.T) {
 
 // TestListServiceConfigs_Empty tests listing when no configs exist.
 func TestListServiceConfigs_Empty(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -693,6 +706,7 @@ func TestListServiceConfigs_Empty(t *testing.T) {
 
 // TestListServiceConfigs_Error tests error handling.
 func TestListServiceConfigs_Error(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -712,6 +726,7 @@ func TestListServiceConfigs_Error(t *testing.T) {
 
 // TestDeletePurchasePlan_Success tests successful deletion.
 func TestDeletePurchasePlan_Success(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -730,6 +745,7 @@ func TestDeletePurchasePlan_Success(t *testing.T) {
 
 // TestDeletePurchasePlan_NotFound tests deletion of non-existent plan.
 func TestDeletePurchasePlan_NotFound(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -749,6 +765,7 @@ func TestDeletePurchasePlan_NotFound(t *testing.T) {
 
 // TestDeletePurchasePlan_Error tests error handling.
 func TestDeletePurchasePlan_Error(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -768,6 +785,7 @@ func TestDeletePurchasePlan_Error(t *testing.T) {
 
 // TestGetPurchasePlan_Success tests successful retrieval of purchase plan.
 func TestGetPurchasePlan_Success(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -812,6 +830,7 @@ func TestGetPurchasePlan_Success(t *testing.T) {
 
 // TestGetPurchasePlan_NotFound tests retrieval of non-existent plan.
 func TestGetPurchasePlan_NotFound(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -832,6 +851,7 @@ func TestGetPurchasePlan_NotFound(t *testing.T) {
 
 // TestGetPurchasePlan_Error tests error handling.
 func TestGetPurchasePlan_Error(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -852,6 +872,7 @@ func TestGetPurchasePlan_Error(t *testing.T) {
 
 // TestGetPurchasePlan_InvalidJSON tests handling of invalid JSON in services field.
 func TestGetPurchasePlan_InvalidServicesJSON(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -884,6 +905,7 @@ func TestGetPurchasePlan_InvalidServicesJSON(t *testing.T) {
 
 // TestGetPurchasePlan_InvalidRampScheduleJSON tests handling of invalid JSON in ramp_schedule field.
 func TestGetPurchasePlan_InvalidRampScheduleJSON(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
@@ -916,6 +938,7 @@ func TestGetPurchasePlan_InvalidRampScheduleJSON(t *testing.T) {
 
 // TestGetPurchasePlan_AllNullableTimestampsSet tests when all nullable timestamps are set.
 func TestGetPurchasePlan_AllNullableTimestampsSet(t *testing.T) {
+	t.Parallel()
 	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mock.Close()
