@@ -18,15 +18,18 @@ import (
 )
 
 type fakeMigrate struct {
-	versions   []uint // returned by successive readVersion calls
-	dirty      bool
-	runErr     error
-	runCalls   int
-	closed     bool
-	envAtRun   string
-	envWasSet  bool
-	readCalls  int
-	connectErr error
+	versions    []uint // returned by successive readVersion calls
+	dirty       bool
+	runErr      error
+	runCalls    int
+	closed      bool
+	envAtRun    string
+	envWasSet   bool
+	readCalls   int
+	connectErr  error
+	lockErr     error
+	lockCalls   int
+	unlockCalls int
 }
 
 func (f *fakeMigrate) deps() migrateDeps {
@@ -43,6 +46,10 @@ func (f *fakeMigrate) deps() migrateDeps {
 			f.runCalls++
 			f.envAtRun, f.envWasSet = os.LookupEnv(forceVersionEnv)
 			return f.runErr
+		},
+		lockForce: func(context.Context, *pgxpool.Pool) (func(), error) {
+			f.lockCalls++
+			return func() { f.unlockCalls++ }, f.lockErr
 		},
 	}
 }
@@ -325,4 +332,40 @@ func withMigrateBudget(t *testing.T, d time.Duration) context.Context {
 	ctx, cancel := context.WithTimeout(context.Background(), d)
 	t.Cleanup(cancel)
 	return ctx
+}
+
+func TestRunDeployMigrations_ForceRunHoldsLockAcrossValidationAndRun(t *testing.T) {
+	f := &fakeMigrate{versions: []uint{5, 6}, dirty: true}
+	deps := f.deps()
+	read := deps.readVersion
+	deps.readVersion = func(ctx context.Context, p *pgxpool.Pool, path string) (uint, bool, error) {
+		assert.Equal(t, 1, f.lockCalls, "lock must be taken before the version read")
+		return read(ctx, p, path)
+	}
+	run := deps.run
+	deps.run = func(ctx context.Context, p *pgxpool.Pool, path, e, pw string) error {
+		assert.Equal(t, 0, f.unlockCalls, "lock must still be held during Force and Up")
+		return run(ctx, p, path, e, pw)
+	}
+	_, err := runDeployMigrations(context.Background(), migDirCfg(t, 1, 2, 3, 4, 5, 6, 7, 8, 9), okResolver(t),
+		MigrateOptions{ForceVersion: intPtr(5)}, deps)
+	require.NoError(t, err)
+	assert.Equal(t, 1, f.unlockCalls)
+}
+
+func TestRunDeployMigrations_ForceLockFailureStopsBeforeRun(t *testing.T) {
+	f := &fakeMigrate{versions: []uint{5}, dirty: true, lockErr: errors.New("lock down")}
+	_, err := runDeployMigrations(context.Background(), migDirCfg(t, 1, 2, 3, 4, 5, 6, 7, 8, 9), okResolver(t),
+		MigrateOptions{ForceVersion: intPtr(5)}, f.deps())
+	require.ErrorContains(t, err, "lock down")
+	assert.Equal(t, 0, f.readCalls)
+	assert.Equal(t, 0, f.runCalls)
+}
+
+func TestRunDeployMigrations_NoLockWithoutForce(t *testing.T) {
+	f := &fakeMigrate{versions: []uint{5}}
+	_, err := runDeployMigrations(context.Background(), migDirCfg(t, 1, 2, 3, 4, 5, 6, 7, 8, 9), okResolver(t),
+		MigrateOptions{}, f.deps())
+	require.NoError(t, err)
+	assert.Equal(t, 0, f.lockCalls)
 }

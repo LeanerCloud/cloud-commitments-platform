@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/database"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/database/postgres/testhelpers"
@@ -99,4 +100,35 @@ func mustPool(t *testing.T, cfg *database.Config) *pgxpool.Pool {
 	require.NoError(t, err)
 	t.Cleanup(conn.Close)
 	return conn.Pool()
+}
+
+// A forced run must wait while another holds the force-run lock, so a stale
+// validation cannot interleave with the first run's Force and Up.
+func TestRunDeployMigrations_ForceWaitsForConcurrentForcedRun(t *testing.T) {
+	cfg, r := runnerFixture(t, "SELECT * FROM missing_table;")
+	_, err := RunDeployMigrations(context.Background(), cfg, r, MigrateOptions{})
+	require.Error(t, err)
+
+	release, err := realMigrateDeps.lockForce(context.Background(), mustPool(t, cfg))
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(cfg.MigrationsPath, "000002_b.up.sql"), []byte("CREATE TABLE b (id int);"), 0o600))
+
+	done := make(chan error, 1)
+	go func() {
+		_, rerr := RunDeployMigrations(context.Background(), cfg, r, MigrateOptions{ForceVersion: intPtr(1)})
+		done <- rerr
+	}()
+	select {
+	case rerr := <-done:
+		release()
+		t.Fatalf("forced run proceeded while the lock was held: %v", rerr)
+	case <-time.After(2 * time.Second):
+	}
+	release()
+	select {
+	case rerr := <-done:
+		require.NoError(t, rerr)
+	case <-time.After(30 * time.Second):
+		t.Fatal("forced run did not resume after the lock was released")
+	}
 }

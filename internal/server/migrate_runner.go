@@ -49,6 +49,8 @@ type migrateDeps struct {
 	connect     func(ctx context.Context, cfg *database.Config, r secrets.Resolver) (*pgxpool.Pool, func(), error)
 	readVersion func(ctx context.Context, pool *pgxpool.Pool, path string) (uint, bool, error)
 	run         func(ctx context.Context, pool *pgxpool.Pool, path, adminEmail, adminPassword string) error
+	// lockForce serializes forced runs; release must be called when done.
+	lockForce func(ctx context.Context, pool *pgxpool.Pool) (release func(), err error)
 }
 
 var realMigrateDeps = migrateDeps{
@@ -61,6 +63,35 @@ var realMigrateDeps = migrateDeps{
 	},
 	readVersion: migrations.GetMigrationVersion,
 	run:         migrations.RunMigrations,
+	lockForce:   lockForceRun,
+}
+
+// forceRunLockKey is the advisory lock that keeps one forced run from
+// interleaving with another between validation, Force and Up (golang-migrate
+// locks each of those separately, under a different key).
+const forceRunLockKey int64 = 0x4355446c79466f72
+
+// lockForceRun holds the advisory lock on one pooled connection until release.
+func lockForceRun(ctx context.Context, pool *pgxpool.Pool) (func(), error) {
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to acquire a connection for the force-run lock: %w", err)
+	}
+	if _, err := conn.Exec(ctx, "SELECT pg_advisory_lock($1)", forceRunLockKey); err != nil {
+		conn.Release()
+		return nil, fmt.Errorf("failed to take the force-run lock: %w", err)
+	}
+	return func() {
+		// The caller's ctx may be canceled; unlock on a fresh one, and drop the
+		// connection if that fails so the session-level lock dies with it.
+		uctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if _, err := conn.Exec(uctx, "SELECT pg_advisory_unlock($1)", forceRunLockKey); err != nil {
+			logging.Warnf("force-run lock release failed, closing its connection: %v", err)
+			_ = conn.Conn().Close(uctx)
+		}
+		conn.Release()
+	}, nil
 }
 
 // InitConfigStore exposes initConfigStore so cmd/server can run the migrator
@@ -105,6 +136,11 @@ func migrateOnPool(ctx context.Context, pool *pgxpool.Pool, dbCfg *database.Conf
 	if err != nil {
 		return MigrateReport{}, err
 	}
+	release, err := acquireForceLock(ctx, pool, opts, deps)
+	if err != nil {
+		return MigrateReport{}, err
+	}
+	defer release()
 	from, dirty, err := deps.readVersion(ctx, pool, dbCfg.MigrationsPath)
 	if err != nil {
 		return MigrateReport{}, err
@@ -132,6 +168,15 @@ func migrateOnPool(ctx context.Context, pool *pgxpool.Pool, dbCfg *database.Conf
 		return MigrateReport{}, err
 	}
 	return MigrateReport{From: fromInt, To: toInt}, nil
+}
+
+// acquireForceLock takes the force-run lock for forced runs only; other runs
+// are already serialized by golang-migrate's own lock.
+func acquireForceLock(ctx context.Context, pool *pgxpool.Pool, opts MigrateOptions, deps migrateDeps) (func(), error) {
+	if opts.ForceVersion == nil {
+		return func() {}, nil
+	}
+	return deps.lockForce(ctx, pool)
 }
 
 // migrateAdminPassword resolves the password only when an admin user will be
