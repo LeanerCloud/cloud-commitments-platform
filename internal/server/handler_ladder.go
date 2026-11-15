@@ -899,7 +899,8 @@ type ladderPlanJSONDTO struct {
 // boundary; nil stays nil. reasonCode is stored as reason_code when non-empty.
 func marshalLadderPlan(plan *pkgladder.LadderPlan, reasonCode string) (json.RawMessage, error) {
 	actions := make([]ladderPlanJSONAction, 0, len(plan.Actions))
-	for _, a := range plan.Actions {
+	for i := range plan.Actions {
+		a := &plan.Actions[i]
 		action := ladderPlanJSONAction{
 			Action:        string(a.Action),
 			Layer:         string(a.Layer),
