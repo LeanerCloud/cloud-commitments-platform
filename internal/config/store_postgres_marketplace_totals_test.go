@@ -10,7 +10,7 @@ import (
 )
 
 // Issue #1586: the proceeds totals are scoped to the caller's accounts and
-// every total is labelled an estimate.
+// every total is labeled an estimate.
 func TestGetMarketplaceListingProceedsTotalsScopesToAccountAndLabelsEstimate(t *testing.T) {
 	t.Parallel()
 	pool := newMock(t)
