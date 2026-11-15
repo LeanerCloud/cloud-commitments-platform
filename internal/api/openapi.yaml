@@ -5457,8 +5457,8 @@ paths:
         Upserts on (cloud_account_id, provider). Omitted numeric fields take
         their defaults; unknown fields are rejected. A write that arms the
         config (enabled with mode `auto_approve`) or raises or clears an armed
-        config's cap also requires `execute:purchases`, and the admin API key
-        is refused.
+        config's cap or per-sweep ceiling also requires `execute:purchases`, and
+        the admin API key is refused.
       parameters:
         - $ref: '#/components/parameters/CSRFToken'
       requestBody:
@@ -5488,6 +5488,12 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           description: The cloud account does not exist or is outside the session's allowed accounts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: max_hourly_commit_per_sweep was sent but its database migration is not applied.
           content:
             application/json:
               schema:
@@ -9671,6 +9677,10 @@ components:
           type: number
           format: double
           description: Omitted when there is no cap. Saving an aws config requires a cap, but an aws config saved before that rule can still have none, and then it is omitted; ladder runs for it are refused until a cap is set.
+        max_hourly_commit_per_sweep:
+          type: number
+          format: double
+          description: Omitted when no per-sweep ceiling is set, or while the database migration that adds it is not applied. The fire sweep refuses a config without one.
         max_actions_per_run:
           type: integer
         ramp_schedule:
@@ -9751,6 +9761,22 @@ components:
             Cap on the hourly commitment one run may buy, with at most 6
             decimal places. Required for provider aws (a save without it is
             refused with 400); omit or send null for no cap on other providers.
+        max_hourly_commit_per_sweep:
+          type: number
+          format: double
+          nullable: true
+          minimum: 0.000001
+          maximum: 1.0e+12
+          description: >
+            Ceiling on the hourly commitment all fire sweeps of this config
+            may buy within a rolling 24 hours, with at most 6 decimal places.
+            Omit to leave the stored value unchanged; send null to clear it
+            (the sweep then refuses, so clearing lowers spend to zero). On an
+            armed config (enabled, auto_approve) setting a value where none is
+            stored, or raising it, needs the execute:purchases grant and is
+            refused with 403 without it; lowering, keeping and clearing do not.
+            Answers 503 while the database migration that adds the column is
+            not applied.
         max_actions_per_run:
           type: integer
           minimum: 1

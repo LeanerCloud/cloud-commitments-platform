@@ -890,6 +890,11 @@ type StoreInterface interface {
 	GetLadderConfigs(ctx context.Context) ([]LadderConfigDB, error)
 	GetLadderConfig(ctx context.Context, cloudAccountID, provider string) (*LadderConfigDB, error)
 	UpsertLadderConfig(ctx context.Context, cfg *LadderConfigDB) (*LadderConfigDB, error)
+	// GetLadderSweepCeiling and SetLadderSweepCeiling read and write the
+	// per-sweep ceiling (store_postgres_ladder_ceiling.go); both return
+	// ErrLadderCeilingUnavailable until the migration is applied.
+	GetLadderSweepCeiling(ctx context.Context, configID string) (*int64, error)
+	SetLadderSweepCeiling(ctx context.Context, configID string, usdPerHr *float64) error
 
 	// Ladder run/tranche persistence (migration 000080/000081, PR-2).
 	//

@@ -71,9 +71,34 @@ func ladderCapMicros(v *float64) int64 {
 	return n
 }
 
+// ladderCeilingRaised reports whether after lets a sweep spend more than
+// before. Unlike the per-run cap, a nil ceiling means the sweep refuses, so nil
+// is zero spend: NULL -> any value is a raise and clearing is not. A ceiling
+// reaching the gate has passed Validate; an unrepresentable one fails closed
+// as the maximum.
+func ladderCeilingRaised(before, after *float64) bool {
+	if after == nil {
+		return false
+	}
+	if before == nil {
+		return true
+	}
+	return ladderCeilingMicros(after) > ladderCeilingMicros(before)
+}
+
+func ladderCeilingMicros(v *float64) int64 {
+	n, err := config.LadderSweepCeilingMicros(*v)
+	if err != nil {
+		return 1<<63 - 1
+	}
+	return n
+}
+
 // ladderConfigArmEscalates reports whether the write takes the config from
-// not-armed to armed, or raises or clears the cap of an armed config. before
-// is nil when no row exists.
+// not-armed to armed, raises or clears the per-run cap of an armed config, or
+// raises its per-sweep ceiling (ladderCeilingRaised: setting one from NULL
+// counts, clearing does not). A ceiling the request omits is nil on both
+// sides, so it never escalates. before is nil when no row exists.
 func ladderConfigArmEscalates(before, after *config.LadderConfigDB) bool {
 	if !ladderConfigArmed(after) {
 		return false
@@ -81,7 +106,8 @@ func ladderConfigArmEscalates(before, after *config.LadderConfigDB) bool {
 	if !ladderConfigArmed(before) {
 		return true
 	}
-	return ladderCapRaised(before.MaxHourlyCommitPerRun, after.MaxHourlyCommitPerRun)
+	return ladderCapRaised(before.MaxHourlyCommitPerRun, after.MaxHourlyCommitPerRun) ||
+		ladderCeilingRaised(before.MaxHourlyCommitPerSweep, after.MaxHourlyCommitPerSweep)
 }
 
 // requireLadderConfigArmGrant gates a ladder_config write and logs the
@@ -93,24 +119,38 @@ func (h *Handler) requireLadderConfigArmGrant(ctx context.Context, req *events.L
 	if err := h.requireAutoPurchaseGrantFor(ctx, req, session, []string{after.CloudAccountID}, []string{after.Provider}, nil); err != nil {
 		return err
 	}
-	var oldCap *float64
+	var oldCap, oldCeiling *float64
 	if before != nil {
-		oldCap = before.MaxHourlyCommitPerRun
+		oldCap, oldCeiling = before.MaxHourlyCommitPerRun, before.MaxHourlyCommitPerSweep
 	}
-	logging.Infof("ladder config arm or cap raise authorized (write follows): account=%s provider=%s config=%q actor=%s via=%s armed %t -> true cap %s -> %s",
+	logging.Infof("ladder config arm or cap raise authorized (write follows): account=%s provider=%s config=%q actor=%s via=%s armed %t -> true cap %s -> %s sweep ceiling %s -> %s",
 		after.CloudAccountID, after.Provider, ladderConfigID(before), session.UserID, credentialKind(ctx, session),
-		ladderConfigArmed(before), formatLadderCap(oldCap), formatLadderCap(after.MaxHourlyCommitPerRun))
+		ladderConfigArmed(before), formatLadderCap(oldCap), formatLadderCap(after.MaxHourlyCommitPerRun),
+		formatLadderCap(oldCeiling), formatLadderCap(after.MaxHourlyCommitPerSweep))
 	return nil
 }
 
 // gateLadderConfigWrite loads the stored row and applies the arming gate. A
-// lookup failure refuses the write (fail closed).
-func (h *Handler) gateLadderConfigWrite(ctx context.Context, req *events.LambdaFunctionURLRequest, session *Session, after *config.LadderConfigDB) error {
+// lookup failure refuses the write (fail closed). When the request carries a
+// ceiling it also loads the stored one and returns it, so the caller can tell
+// a clear from a no-op.
+func (h *Handler) gateLadderConfigWrite(ctx context.Context, req *events.LambdaFunctionURLRequest, session *Session, after *config.LadderConfigDB, ceilingPresent bool) (*float64, error) {
 	before, err := h.config.GetLadderConfig(ctx, after.CloudAccountID, after.Provider)
 	if err != nil {
-		return fmt.Errorf("failed to load ladder config: %w", err)
+		return nil, fmt.Errorf("failed to load ladder config: %w", err)
 	}
-	return h.requireLadderConfigArmGrant(ctx, req, session, before, after)
+	if ceilingPresent {
+		if err := h.loadStoredLadderCeiling(ctx, before); err != nil {
+			return nil, err
+		}
+	}
+	if err := h.requireLadderConfigArmGrant(ctx, req, session, before, after); err != nil {
+		return nil, err
+	}
+	if before == nil {
+		return nil, nil
+	}
+	return before.MaxHourlyCommitPerSweep, nil
 }
 
 func ladderConfigID(c *config.LadderConfigDB) string {

@@ -40,6 +40,10 @@ func (h *Handler) getLadderConfigs(ctx context.Context, req *events.LambdaFuncti
 		return nil, err
 	}
 
+	if err := h.loadLadderCeilingOnList(ctx, configs); err != nil {
+		return nil, err
+	}
+
 	return map[string]any{"configs": configs}, nil
 }
 
@@ -130,15 +134,30 @@ func (h *Handler) upsertLadderConfig(ctx context.Context, req *events.LambdaFunc
 		return nil, err
 	}
 
-	if err := h.gateLadderConfigWrite(ctx, req, session, &cfg); err != nil {
+	return h.writeLadderConfig(ctx, req, session, &cfg, bodyHasKey(present, "max_hourly_commit_per_sweep"))
+}
+
+// writeLadderConfig gates, upserts and saves the ceiling. A body without the
+// ceiling key leaves the stored ceiling alone; an explicit null clears it.
+func (h *Handler) writeLadderConfig(ctx context.Context, req *events.LambdaFunctionURLRequest, session *Session, cfg *config.LadderConfigDB, ceilingPresent bool) (*config.LadderConfigDB, error) {
+	storedCeiling, err := h.gateLadderConfigWrite(ctx, req, session, cfg, ceilingPresent)
+	if err != nil {
 		return nil, err
 	}
-
-	result, err := h.config.UpsertLadderConfig(ctx, &cfg)
+	want := cfg.MaxHourlyCommitPerSweep
+	result, err := h.config.UpsertLadderConfig(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to upsert ladder config: %w", err)
 	}
-
+	if !ceilingPresent {
+		if err := h.fillLadderCeiling(ctx, result); err != nil {
+			return nil, err
+		}
+		return result, nil
+	}
+	if err := h.saveLadderCeiling(ctx, result, want, storedCeiling); err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 

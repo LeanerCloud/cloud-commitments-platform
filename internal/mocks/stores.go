@@ -2747,6 +2747,30 @@ func (m *MockConfigStore) UpsertLadderConfig(ctx context.Context, cfg *config.La
 	return v, args.Error(1)
 }
 
+// GetLadderSweepCeiling mocks the GetLadderSweepCeiling operation.
+// Returns (nil, nil) when no expectation is registered.
+func (m *MockConfigStore) GetLadderSweepCeiling(ctx context.Context, configID string) (*int64, error) {
+	m.record("GetLadderSweepCeiling", ctx, configID)
+	if !isExpected(&m.Mock, "GetLadderSweepCeiling") {
+		return nil, nil
+	}
+	args := m.Called(ctx, configID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	v, ok := args.Get(0).(*int64)
+	if !ok {
+		m.reporter.wrongReturnType("GetLadderSweepCeiling", "*int64", args.Get(0))
+	}
+	return v, args.Error(1)
+}
+
+// SetLadderSweepCeiling mocks the SetLadderSweepCeiling operation.
+func (m *MockConfigStore) SetLadderSweepCeiling(ctx context.Context, configID string, usdPerHr *float64) error {
+	m.record("SetLadderSweepCeiling", ctx, configID, usdPerHr)
+	return m.Called(ctx, configID, usdPerHr).Error(0)
+}
+
 // SaveLadderRun mocks the SaveLadderRun operation.
 // Returns (nil, nil) when no expectation is registered.
 func (m *MockConfigStore) SaveLadderRun(ctx context.Context, run *config.LadderRunDB) (*config.LadderRunDB, error) {

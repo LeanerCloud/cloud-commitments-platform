@@ -849,6 +849,11 @@ func (c *LadderConfigDB) Validate() error {
 	if err := c.validateLadderRunLimits(); err != nil {
 		return err
 	}
+	if c.MaxHourlyCommitPerSweep != nil {
+		if _, err := LadderSweepCeilingMicros(*c.MaxHourlyCommitPerSweep); err != nil {
+			return err
+		}
+	}
 	return c.validateLadderRampSchedule()
 }
 

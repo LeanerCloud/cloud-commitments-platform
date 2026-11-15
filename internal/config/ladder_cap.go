@@ -22,6 +22,12 @@ func LadderCapMicros(v float64) (int64, error) {
 	return ladderHourlyMicros("max_hourly_commit_per_run", v)
 }
 
+// LadderSweepCeilingMicros is LadderCapMicros for the per-sweep ceiling; the
+// error names max_hourly_commit_per_sweep.
+func LadderSweepCeilingMicros(v float64) (int64, error) {
+	return ladderHourlyMicros("max_hourly_commit_per_sweep", v)
+}
+
 // ladderHourlyMicros is the validation shared by the per-run cap and the
 // per-sweep ceiling: same bounds and precision, the field name only labels the
 // error.

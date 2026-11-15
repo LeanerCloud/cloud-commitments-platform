@@ -1658,7 +1658,12 @@ type LadderConfigDB struct {
 	CreatedAt time.Time `json:"created_at"`
 	// MaxHourlyCommitPerRun caps the total hourly commitment delta a single run
 	// may purchase. nil means no cap.
-	MaxHourlyCommitPerRun      *float64        `json:"max_hourly_commit_per_run,omitempty"`
+	MaxHourlyCommitPerRun *float64 `json:"max_hourly_commit_per_run,omitempty"`
+	// MaxHourlyCommitPerSweep is the rolling-24h ceiling over all sweeps. It is
+	// not part of the ladder_configs upsert: the API reads and writes it through
+	// GetLadderSweepCeiling/SetLadderSweepCeiling so an unmigrated schema keeps
+	// the four config queries working. nil means not set (the sweep refuses).
+	MaxHourlyCommitPerSweep    *float64        `json:"max_hourly_commit_per_sweep,omitempty"`
 	CloudAccountID             string          `json:"cloud_account_id"`
 	Provider                   string          `json:"provider"`
 	Mode                       string          `json:"mode"`    // ladder.ModeEmailApproval | ladder.ModeAutoApprove
