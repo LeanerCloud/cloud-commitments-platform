@@ -26,11 +26,14 @@ import {
   closeAccountModal,
   handleAccountFormSubmit,
   handleDiscoverOrgAccounts,
+  loadAccountsForProvider,
   openAccountModal,
+  testAccount,
   updateAwsAuthModeFields,
   updateAzureAuthModeFields,
   updateGCPAuthModeFields,
 } from './modules/settings-accounts';
+import type { AccountStatusFilter } from './modules/settings-accounts';
 import { renderAwsBastionTrustPolicy } from './modules/settings-aws-trust';
 import { setupDirtyTracking, snapshotAllFields, updateDirtyMarkers } from './modules/settings-dirty';
 import {
@@ -68,7 +71,7 @@ import {
 } from './modules/settings-save-helpers';
 import { GLOBAL_CONFIG_FIELDS, SERVICE_FIELDS, TRACKED_FIELDS, savedSnapshot } from './modules/settings-state';
 import type { AccountProvider } from './modules/settings-state';
-export { openAccountModal } from './modules/settings-accounts';
+export { loadAccountsForProvider, openAccountModal } from './modules/settings-accounts';
 export type { AccountModalOptions } from './modules/settings-accounts';
 export { resetConfigCache } from './modules/settings-aws-trust';
 export { isUnsavedChanges } from './modules/settings-dirty';
@@ -92,85 +95,7 @@ let legacyRekeyedServices = new Set<string>();
 // in-progress state.
 let saveInFlight = false;
 
-/**
- * Load and render accounts list for a provider
- */
-export async function loadAccountsForProvider(provider: AccountProvider): Promise<void> {
-  const container = document.getElementById(`${provider}-accounts-list`);
-  if (!container) return;
-  try {
-    const accounts = await api.listAccounts({ provider });
-    renderSelfAccountBanner(container, accounts, provider);
-    renderAccountsList(container, accounts, provider);
-  } catch {
-    container.textContent = 'Failed to load accounts.';
-  }
-}
-
-/**
- * Show a banner to add CUDly's own host account if not already present.
- * Only shown for the provider matching CUDLY_SOURCE_CLOUD.
- */
-async function renderSelfAccountBanner(container: HTMLElement, accounts: api.CloudAccount[], provider: AccountProvider): Promise<void> {
-  // Remove any existing banner first (prevents duplicates on re-render)
-  container.querySelector('.self-account-banner')?.remove();
-
-  const hasSelf = accounts.some(a => a.is_self);
-  if (hasSelf) return;
-
-  // Check if this provider matches the source cloud
-  try {
-    const cfg = await api.getConfig();
-    if (!cfg.source_identity || cfg.source_identity.provider !== provider) return;
-    const extId = cfg.source_identity.account_id || cfg.source_identity.subscription_id || cfg.source_identity.project_id;
-    if (!extId) return;
-
-    const banner = document.createElement('div');
-    banner.className = 'account-row self-account-banner';
-
-    const info = document.createElement('span');
-    info.className = 'account-info';
-    info.textContent = `CUDly host account (${extId})`;
-    banner.appendChild(info);
-
-    const addBtn = document.createElement('button');
-    addBtn.type = 'button';
-    addBtn.className = 'btn btn-small';
-    addBtn.textContent = 'Add';
-    addBtn.addEventListener('click', async () => {
-      addBtn.disabled = true;
-      addBtn.textContent = 'Adding...';
-      try {
-        await api.createSelfAccount();
-        await loadAccountsForProvider(provider);
-      } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : String(e);
-        if (msg.includes('409')) {
-          await loadAccountsForProvider(provider);
-        } else {
-          addBtn.textContent = 'Failed';
-        }
-      }
-    });
-    banner.appendChild(addBtn);
-
-    container.prepend(banner);
-  } catch {
-    // Config fetch failed — skip silently
-  }
-}
-
-/**
- * Render accounts list into a container element as a scannable table.
- *
- * Replaces the prior inline-row layout ("Account Name (12345) Edit Test
- * Credentials Overrides Delete" as a single text-flow). The table surfaces
- * each field in its own column, uses a status pill for Active/Disabled,
- * and isolates the destructive Delete action in the right-most column.
- */
-type AccountStatusFilter = 'all' | 'active' | 'disabled';
-
-function renderAccountsList(
+export function renderAccountsList(
   container: HTMLElement,
   accounts: api.CloudAccount[],
   provider: AccountProvider,
@@ -318,56 +243,6 @@ function renderAccountsList(
   // the table; they now live in the account-overrides-modal (issue #122)
   // so the accounts table stays compact and per-account scoping is
   // unambiguous.
-}
-
-/**
- * Test account credentials. Surfaces progress + outcome via toast so the
- * signal isn't confined to the button label (which auto-clears in 3s and
- * provides no detail beyond OK/Failed). The button keeps its inline status
- * as a secondary affordance so the user's gaze point — the row they just
- * clicked — still gets feedback.
- */
-async function testAccount(accountId: string, accountLabel: string, btn: HTMLButtonElement): Promise<void> {
-  // The row action is an icon button: progress and result go to its hidden
-  // text, its tooltip and a data-test-result tint; the toasts carry the
-  // message itself.
-  const labelEl = btn.querySelector<HTMLElement>('.sr-only') ?? btn;
-  const original = labelEl.textContent;
-  const originalTitle = btn.title;
-  const show = (text: string, result?: 'ok' | 'failed'): void => {
-    labelEl.textContent = text;
-    btn.title = text;
-    if (result) btn.dataset['testResult'] = result;
-  };
-  const restore = (): void => {
-    labelEl.textContent = original;
-    btn.title = originalTitle;
-    delete btn.dataset['testResult'];
-    btn.disabled = false;
-  };
-  btn.disabled = true;
-  show('Testing...');
-  showToast({ message: `Testing credentials for ${accountLabel}…`, kind: 'info', timeout: 3_000 });
-  try {
-    const result = await api.testAccountCredentials(accountId);
-    show(result.ok ? 'OK' : 'Failed', result.ok ? 'ok' : 'failed');
-    if (result.ok) {
-      const detail = result.message ? `: ${result.message}` : '';
-      showToast({ message: `Credentials OK for ${accountLabel}${detail}`, kind: 'success', timeout: 5_000 });
-    } else {
-      showToast({
-        message: `Credentials failed for ${accountLabel}${result.message ? `: ${result.message}` : ''}`,
-        kind: 'error',
-        timeout: null,
-      });
-    }
-    setTimeout(restore, 3000);
-  } catch (err: unknown) {
-    show('Error', 'failed');
-    const msg = err instanceof Error ? err.message : String(err);
-    showToast({ message: `Failed to test credentials for ${accountLabel}: ${msg}`, kind: 'error', timeout: null });
-    setTimeout(restore, 3000);
-  }
 }
 
 /**
