@@ -27,8 +27,8 @@ func pinBeforeDown(ctx context.Context, t *testing.T, version uint, users map[st
 	require.NoError(t, migrations.MigrateToVersion(ctx, pool, getMigrationsPath(), version))
 	for email, groups := range users {
 		_, err := pool.Exec(ctx, `
-			INSERT INTO users (id, email, password_hash, salt, active, group_ids, created_at, updated_at)
-			VALUES (gen_random_uuid(), $1, '', '', true, $2::uuid[], NOW(), NOW())`, email, groups)
+			INSERT INTO users (id, email, password_hash, active, group_ids, created_at, updated_at)
+			VALUES (gen_random_uuid(), $1, '', true, $2::uuid[], NOW(), NOW())`, email, groups)
 		require.NoError(t, err)
 	}
 	return pool

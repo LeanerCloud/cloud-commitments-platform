@@ -361,7 +361,7 @@ func TestCombinedPlanPurchase_ManualOffRoutedApproval(t *testing.T) {
 	response := f.approveAs(t, f.creator, 2400)
 	assert.Equal(t, 403, response.StatusCode, response.Body)
 	approver := uuid.NewString()
-	_, err = f.pool.Exec(context.Background(), `INSERT INTO users (id,email,password_hash,salt,active,group_ids,created_at,updated_at) SELECT $1,'approver@example.invalid','x','y',true,ARRAY[g.id],now(),now() FROM groups g ORDER BY g.name LIMIT 1`, approver)
+	_, err = f.pool.Exec(context.Background(), `INSERT INTO users (id,email,password_hash,active,group_ids,created_at,updated_at) SELECT $1,'approver@example.invalid','x',true,ARRAY[g.id],now(),now() FROM groups g ORDER BY g.name LIMIT 1`, approver)
 	require.NoError(t, err)
 	response = f.approveAs(t, approver, 2399)
 	assert.Equal(t, 403, response.StatusCode, response.Body)
@@ -388,7 +388,7 @@ func TestCombinedPlanPurchase_NonUSDApprovalRefusedUnderCap(t *testing.T) {
 	require.Len(t, stored.Recommendations, 1)
 	assert.Equal(t, "EUR", stored.Recommendations[0].CommitmentCurrency, "the currency must round-trip to the execution row")
 	approver := uuid.NewString()
-	_, err = f.pool.Exec(context.Background(), `INSERT INTO users (id,email,password_hash,salt,active,group_ids,created_at,updated_at) SELECT $1,'approver@example.invalid','x','y',true,ARRAY[g.id],now(),now() FROM groups g ORDER BY g.name LIMIT 1`, approver)
+	_, err = f.pool.Exec(context.Background(), `INSERT INTO users (id,email,password_hash,active,group_ids,created_at,updated_at) SELECT $1,'approver@example.invalid','x',true,ARRAY[g.id],now(),now() FROM groups g ORDER BY g.name LIMIT 1`, approver)
 	require.NoError(t, err)
 	for _, capAmount := range []float64{2400, 1_000_000} {
 		response := f.approveAs(t, approver, capAmount)
@@ -426,7 +426,7 @@ func TestCombinedPlanPurchase_AutomaticWithFourEyesWaitsForApproval(t *testing.T
 	assert.Equal(t, "notified", row.Status, "the step waits in the approval queue")
 
 	approver := uuid.NewString()
-	_, err = f.pool.Exec(ctx, `INSERT INTO users (id,email,password_hash,salt,active,group_ids,created_at,updated_at) SELECT $1,'approver@example.invalid','x','y',true,ARRAY[g.id],now(),now() FROM groups g ORDER BY g.name LIMIT 1`, approver)
+	_, err = f.pool.Exec(ctx, `INSERT INTO users (id,email,password_hash,active,group_ids,created_at,updated_at) SELECT $1,'approver@example.invalid','x',true,ARRAY[g.id],now(),now() FROM groups g ORDER BY g.name LIMIT 1`, approver)
 	require.NoError(t, err)
 	response := f.approveAs(t, approver, 0)
 	require.Equal(t, 200, response.StatusCode, response.Body)

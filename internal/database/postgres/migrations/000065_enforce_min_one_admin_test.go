@@ -27,8 +27,8 @@ func seedActiveAdmin(t *testing.T, ctx context.Context, pool *pgxpool.Pool, emai
 	t.Helper()
 	var id string
 	err := pool.QueryRow(ctx, `
-		INSERT INTO users (id, email, password_hash, salt, active, group_ids, created_at, updated_at)
-		VALUES (gen_random_uuid(), $1, '', '', true, ARRAY[$2::uuid], NOW(), NOW())
+		INSERT INTO users (id, email, password_hash, active, group_ids, created_at, updated_at)
+		VALUES (gen_random_uuid(), $1, '', true, ARRAY[$2::uuid], NOW(), NOW())
 		RETURNING id
 	`, email, adminGroupIDForMinAdminTest).Scan(&id)
 	require.NoError(t, err, "seeding admin %s must succeed", email)

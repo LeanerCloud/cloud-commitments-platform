@@ -27,7 +27,7 @@ import (
 func insertNonCreator(t *testing.T, f *pauseClaimFixture) string {
 	t.Helper()
 	id := uuid.NewString()
-	_, err := f.pool.Exec(f.ctx, `INSERT INTO users (id,email,password_hash,salt,active,group_ids,created_at,updated_at) SELECT $1,'operator@example.invalid','x','y',true,ARRAY[g.id],now(),now() FROM groups g ORDER BY g.name LIMIT 1`, id)
+	_, err := f.pool.Exec(f.ctx, `INSERT INTO users (id,email,password_hash,active,group_ids,created_at,updated_at) SELECT $1,'operator@example.invalid','x',true,ARRAY[g.id],now(),now() FROM groups g ORDER BY g.name LIMIT 1`, id)
 	require.NoError(t, err)
 	require.NotEqual(t, id, *f.execution.CreatedByUserID)
 	return id

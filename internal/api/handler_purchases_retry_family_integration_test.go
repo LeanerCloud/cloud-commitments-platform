@@ -49,8 +49,8 @@ func (f *createConcurrencyFixture) newUser(ctx context.Context, t *testing.T, na
 	t.Helper()
 	id := uuid.NewString()
 	_, err := f.pool.Exec(ctx, `
-		INSERT INTO users (id, email, password_hash, salt, active, group_ids, created_at, updated_at)
-		SELECT $1, $2, 'x', 'y', true, ARRAY[g.id], now(), now()
+		INSERT INTO users (id, email, password_hash, active, group_ids, created_at, updated_at)
+		SELECT $1, $2, 'x', true, ARRAY[g.id], now(), now()
 		  FROM groups g ORDER BY g.name LIMIT 1`, id, name+"-"+id+"@example.com")
 	require.NoError(t, err)
 	return id

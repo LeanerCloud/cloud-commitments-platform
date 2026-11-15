@@ -100,8 +100,8 @@ func TestRetrySuccessorRacesFreshSubmit(t *testing.T) {
 	ctx := context.Background()
 	creator := uuid.NewString()
 	_, err := pg.DB.Pool().Exec(ctx, `
-		INSERT INTO users (id, email, password_hash, salt, active, group_ids, created_at, updated_at)
-		SELECT $1, 'retrier@example.com', 'x', 'y', true, ARRAY[g.id], now(), now()
+		INSERT INTO users (id, email, password_hash, active, group_ids, created_at, updated_at)
+		SELECT $1, 'retrier@example.com', 'x', true, ARRAY[g.id], now(), now()
 		  FROM groups g ORDER BY g.name LIMIT 1`, creator)
 	require.NoError(t, err)
 

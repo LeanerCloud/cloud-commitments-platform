@@ -20,8 +20,8 @@ func TestMigration_APIKeyPasswordVersion(t *testing.T) {
 
 	var id string
 	var version int64
-	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO users (email, password_hash, salt, group_ids)
-		VALUES ('password-version@example.com', 'hash-1', '', ARRAY[$1::uuid]) RETURNING id, password_version`,
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO users (email, password_hash, group_ids)
+		VALUES ('password-version@example.com', 'hash-1', ARRAY[$1::uuid]) RETURNING id, password_version`,
 		adminGroupIDForMinAdminTest).Scan(&id, &version))
 	require.Zero(t, version)
 	require.NoError(t, pool.QueryRow(ctx, `UPDATE users SET email = 'renamed@example.com', password_hash = 'hash-1'

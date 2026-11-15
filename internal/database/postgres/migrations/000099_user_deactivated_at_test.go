@@ -25,8 +25,8 @@ func seedDeactivatedAtUser(ctx context.Context, t *testing.T, pool *pgxpool.Pool
 	t.Helper()
 	var userID string
 	err := pool.QueryRow(ctx, `
-		INSERT INTO users (email, password_hash, salt, active, last_login_at, password_reset_token, group_ids)
-		VALUES ($1, 'hash', '', $2, $3, $4, ARRAY[$5::uuid])
+		INSERT INTO users (email, password_hash, active, last_login_at, password_reset_token, group_ids)
+		VALUES ($1, 'hash', $2, $3, $4, ARRAY[$5::uuid])
 		RETURNING id
 	`, email, active, lastLoginAt, resetToken, adminGroupIDForMinAdminTest).Scan(&userID)
 	require.NoError(t, err)

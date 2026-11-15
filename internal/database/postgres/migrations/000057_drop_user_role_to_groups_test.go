@@ -56,8 +56,8 @@ func TestMigration_DropUserRoleToGroups(t *testing.T) {
 	// row with an unknown role to exercise the fail-safe net.
 	seed := func(email, role string) {
 		_, e := pool.Exec(ctx, `
-			INSERT INTO users (id, email, password_hash, salt, role, active, group_ids, created_at, updated_at)
-			VALUES (gen_random_uuid(), $1, '', '', $2, true, '{}', NOW(), NOW())
+			INSERT INTO users (id, email, password_hash, role, active, group_ids, created_at, updated_at)
+			VALUES (gen_random_uuid(), $1, '', $2, true, '{}', NOW(), NOW())
 		`, email, role)
 		require.NoError(t, e, "seeding %s", email)
 	}
@@ -99,15 +99,15 @@ func TestMigration_DropUserRoleToGroups(t *testing.T) {
 
 	// The DB must refuse a zero-group user (the >= 1-group CHECK).
 	_, err = pool.Exec(ctx, `
-		INSERT INTO users (id, email, password_hash, salt, active, group_ids, created_at, updated_at)
-		VALUES (gen_random_uuid(), 'zero@test.example', '', '', true, '{}', NOW(), NOW())
+		INSERT INTO users (id, email, password_hash, active, group_ids, created_at, updated_at)
+		VALUES (gen_random_uuid(), 'zero@test.example', '', true, '{}', NOW(), NOW())
 	`)
 	require.Error(t, err, "the DB must reject a user with zero groups (users_min_one_group CHECK)")
 
 	// A user WITH a group inserts fine.
 	_, err = pool.Exec(ctx, `
-		INSERT INTO users (id, email, password_hash, salt, active, group_ids, created_at, updated_at)
-		VALUES (gen_random_uuid(), 'ok@test.example', '', '', true,
+		INSERT INTO users (id, email, password_hash, active, group_ids, created_at, updated_at)
+		VALUES (gen_random_uuid(), 'ok@test.example', '', true,
 		        ARRAY['`+readOnlyUsersGroupIDTest+`']::uuid[], NOW(), NOW())
 	`)
 	require.NoError(t, err, "a user with at least one group must insert successfully")
@@ -145,11 +145,11 @@ func TestMigration_DropUserRoleToGroups_Down(t *testing.T) {
 
 	// Seed group-only users (post-#907 shape) before rolling back.
 	_, err := pool.Exec(ctx, `
-		INSERT INTO users (id, email, password_hash, salt, active, group_ids, created_at, updated_at)
+		INSERT INTO users (id, email, password_hash, active, group_ids, created_at, updated_at)
 		VALUES
-			(gen_random_uuid(), 'adm@test.example', '', '', true, ARRAY['`+defaultAdminGroupIDTest+`']::uuid[], NOW(), NOW()),
-			(gen_random_uuid(), 'ro@test.example',  '', '', true, ARRAY['`+readOnlyUsersGroupIDTest+`']::uuid[], NOW(), NOW()),
-			(gen_random_uuid(), 'std@test.example', '', '', true, ARRAY['`+standardUsersGroupIDTest+`']::uuid[], NOW(), NOW())
+			(gen_random_uuid(), 'adm@test.example', '', true, ARRAY['`+defaultAdminGroupIDTest+`']::uuid[], NOW(), NOW()),
+			(gen_random_uuid(), 'ro@test.example',  '', true, ARRAY['`+readOnlyUsersGroupIDTest+`']::uuid[], NOW(), NOW()),
+			(gen_random_uuid(), 'std@test.example', '', true, ARRAY['`+standardUsersGroupIDTest+`']::uuid[], NOW(), NOW())
 	`)
 	require.NoError(t, err)
 

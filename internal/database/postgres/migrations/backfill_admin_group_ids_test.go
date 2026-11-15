@@ -41,8 +41,8 @@ func TestMigration_BackfillAdminGroupIDs(t *testing.T) {
 	// Simulate a restored/manually-seeded admin whose group_ids drifted to
 	// empty (the bug pattern from issue #351).
 	_, err := pool.Exec(ctx, `
-		INSERT INTO users (id, email, password_hash, salt, role, active, group_ids, created_at, updated_at)
-		VALUES (gen_random_uuid(), $1, '', '', 'admin', false, '{}', NOW(), NOW())
+		INSERT INTO users (id, email, password_hash, role, active, group_ids, created_at, updated_at)
+		VALUES (gen_random_uuid(), $1, '', 'admin', false, '{}', NOW(), NOW())
 	`, adminEmail)
 	require.NoError(t, err)
 

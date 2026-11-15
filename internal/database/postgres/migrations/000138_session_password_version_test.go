@@ -29,8 +29,8 @@ func TestMigration_SessionPasswordVersion(t *testing.T) {
 	require.False(t, hasColumn())
 
 	var userID string
-	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO users (email, password_hash, salt, group_ids)
-		VALUES ('session-version@example.com', 'hash-1', '', ARRAY[$1::uuid]) RETURNING id`,
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO users (email, password_hash, group_ids)
+		VALUES ('session-version@example.com', 'hash-1', ARRAY[$1::uuid]) RETURNING id`,
 		adminGroupIDForMinAdminTest).Scan(&userID))
 	_, err := pool.Exec(ctx, `UPDATE users SET password_hash = 'hash-2' WHERE id = $1`, userID)
 	require.NoError(t, err)

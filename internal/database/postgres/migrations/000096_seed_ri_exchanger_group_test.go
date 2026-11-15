@@ -82,8 +82,8 @@ func TestMigration_SeedRIExchangerGroup(t *testing.T) {
 
 		const adminEmail = "admin-riexchanger-test@test.example"
 		_, err := pool.Exec(ctx, `
-			INSERT INTO users (id, email, password_hash, salt, active, group_ids, created_at, updated_at)
-			VALUES (gen_random_uuid(), $1, '', '', true, ARRAY[$2::uuid], NOW(), NOW())
+			INSERT INTO users (id, email, password_hash, active, group_ids, created_at, updated_at)
+			VALUES (gen_random_uuid(), $1, '', true, ARRAY[$2::uuid], NOW(), NOW())
 		`, adminEmail, adminGroupIDForPurchaserTest)
 		require.NoError(t, err)
 
@@ -107,8 +107,8 @@ func TestMigration_SeedRIExchangerGroup(t *testing.T) {
 
 		const adminEmail = "admin-riexchanger-idempotent@test.example"
 		_, err := pool.Exec(ctx, `
-			INSERT INTO users (id, email, password_hash, salt, active, group_ids, created_at, updated_at)
-			VALUES (gen_random_uuid(), $1, '', '', true, ARRAY[$2::uuid, $3::uuid], NOW(), NOW())
+			INSERT INTO users (id, email, password_hash, active, group_ids, created_at, updated_at)
+			VALUES (gen_random_uuid(), $1, '', true, ARRAY[$2::uuid, $3::uuid], NOW(), NOW())
 		`, adminEmail, adminGroupIDForPurchaserTest, riExchangerGroupIDTest)
 		require.NoError(t, err)
 

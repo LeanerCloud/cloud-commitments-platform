@@ -48,8 +48,8 @@ func TestMigration_PurchaseExecutionsCreatedBySystem(t *testing.T) {
 	require.NoError(t, err, "system-created row without a creator is valid")
 
 	_, err = pool.Exec(ctx, `
-		INSERT INTO users (id, email, password_hash, salt, active, group_ids, created_at, updated_at)
-		VALUES ('00000000-0000-0000-0000-0000000000b1', 'u@example.com', '', '', true, ARRAY[gen_random_uuid()], NOW(), NOW())`)
+		INSERT INTO users (id, email, password_hash, active, group_ids, created_at, updated_at)
+		VALUES ('00000000-0000-0000-0000-0000000000b1', 'u@example.com', '', true, ARRAY[gen_random_uuid()], NOW(), NOW())`)
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, `
 		INSERT INTO purchase_executions (execution_id, status, step_number, scheduled_date, recommendations,
