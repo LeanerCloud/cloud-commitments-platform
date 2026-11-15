@@ -41,15 +41,15 @@ import {
   readGraceInput,
   setInputChecked,
   setInputValue,
-  termLabel,
 } from './modules/settings-fields';
 import {
   cachedGlobalDefaults,
   closeAccountOverridesModal,
-  getOverrideServicesForProvider,
   loadOverridesPanel,
   openAccountOverridesModal,
+  overrideModalContext,
   refreshRecommendationsAfterOverrideChange,
+  resetOverrideModalState,
   setCachedGlobalDefaults,
 } from './modules/settings-overrides';
 import {
@@ -74,7 +74,7 @@ import type { AccountProvider } from './modules/settings-state';
 export { resetConfigCache } from './modules/settings-aws-trust';
 export { isUnsavedChanges } from './modules/settings-dirty';
 export { isPermissionDeniedError, applyReadOnlySettings, copyToClipboard } from './modules/settings-fields';
-export { setGlobalDefaultsForTest, loadOverridesPanel } from './modules/settings-overrides';
+export { setGlobalDefaultsForTest, loadOverridesPanel, openOverrideModal } from './modules/settings-overrides';
 
 let cachedSourceCloud: string | undefined;
 
@@ -387,140 +387,6 @@ async function testAccount(accountId: string, accountLabel: string, btn: HTMLBut
   }
 }
 
-// State carried from openOverrideModal → submitOverrideForm so the form
-// handler knows which account/provider/panel it belongs to without
-// inspecting the DOM. Cleared on close so it can't leak across opens.
-let overrideModalContext: {
-  accountId: string;
-  provider: string;
-  panel: HTMLElement;
-  /** Services available for bulk selection (excludes already-overridden). */
-  availableServices: ReadonlyArray<{ value: string; label: string }>;
-} | null = null;
-let overridePaymentOptionsController: AbortController | null = null;
-
-/**
- * Open the create-override modal for a specific account.
- *
- * `existingOverrides` is used to filter the service dropdown so users
- * can't pick a service that already has an override for this account
- * (the backend would UPSERT, silently overwriting the existing values —
- * users should use the panel's Reset + re-create flow for that, not the
- * Add flow).
- *
- * Issue #104.
- */
-export function openOverrideModal(
-  accountId: string,
-  provider: string,
-  existingOverrides: api.AccountServiceOverride[],
-  panel: HTMLElement,
-): void {
-  const modal = document.getElementById('override-modal');
-  if (!modal) return;
-
-  // Populate available-services list before writing context so bulk mode can
-  // reference it from the start.
-  const used = new Set(
-    existingOverrides
-      .filter(o => o.provider === provider)
-      .map(o => o.service),
-  );
-  const available = getOverrideServicesForProvider(provider).filter(s => !used.has(s.value));
-
-  overrideModalContext = { accountId, provider, panel, availableServices: available };
-
-  setInputValue('override-account-id', accountId);
-  setInputValue('override-provider', provider);
-
-  // Reset form fields to defaults each open so a previous cancelled
-  // session doesn't bleed values forward.
-  setInputValue('override-term', '');
-  setInputValue('override-payment', '');
-  setInputValue('override-coverage', '');
-  const errEl = document.getElementById('override-form-error');
-  if (errEl) errEl.textContent = '';
-
-  // Issue #112: update the "Inherit" option on the term select to show the
-  // current global default so the user knows what they'd be inheriting.
-  const termInheritOpt = document.querySelector<HTMLOptionElement>('#override-term option[value=""]');
-  if (termInheritOpt) {
-    termInheritOpt.textContent = inheritCurrentlyLabel(termLabel(String(cachedGlobalDefaults.term)));
-  }
-
-  // Issue #112: update the coverage placeholder to show the current global
-  // default. Uses .placeholder (plain text assignment), not innerHTML -- safe.
-  const coverageInput = document.getElementById('override-coverage') as HTMLInputElement | null;
-  if (coverageInput) {
-    coverageInput.placeholder = inheritCurrentlyLabel(`${cachedGlobalDefaults.coverage}%`);
-  }
-
-  // Reset bulk-mode toggle to off so the modal always opens in single-service
-  // mode (issue #119).
-  const bulkToggle = document.getElementById('override-bulk-toggle') as HTMLInputElement | null;
-  if (bulkToggle) bulkToggle.checked = false;
-  applyOverrideBulkMode(false, available);
-
-  // Populate the single-service dropdown with provider-specific services,
-  // excluding any that already have an override for this account. Issue #109
-  // extends this to Azure and GCP (previously AWS-only per issue #104 follow-up).
-  const select = document.getElementById('override-service') as HTMLSelectElement | null;
-  if (select) {
-    select.replaceChildren();
-    if (available.length === 0) {
-      const opt = document.createElement('option');
-      opt.value = '';
-      opt.textContent = 'All services already have overrides';
-      opt.disabled = true;
-      select.appendChild(opt);
-      const submitBtn = document.getElementById('override-submit-btn') as HTMLButtonElement | null;
-      if (submitBtn) submitBtn.disabled = true;
-    } else {
-      for (const { value, label } of available) {
-        const opt = document.createElement('option');
-        opt.value = value;
-        opt.textContent = label;
-        select.appendChild(opt);
-      }
-      const submitBtn = document.getElementById('override-submit-btn') as HTMLButtonElement | null;
-      if (submitBtn) submitBtn.disabled = false;
-    }
-  }
-
-  // Wire service/term changes to repopulate payment options. AWS rejects
-  // some (service, term, payment) tuples (e.g., RDS 3yr no-upfront) — the
-  // global Settings cards already hide invalid combinations; the override
-  // modal must do the same so we can't silently save an invalid combo.
-  // Per #107.
-  overridePaymentOptionsController?.abort();
-  overridePaymentOptionsController = new AbortController();
-  syncOverridePaymentOptions(provider);
-  // After payment options update, re-evaluate bulk conflict gating (issue #119).
-  const onChange = () => {
-    syncOverridePaymentOptions(provider);
-    syncBulkServiceConflicts(provider);
-  };
-  select?.addEventListener('change', onChange, { signal: overridePaymentOptionsController.signal });
-  const termSel = document.getElementById('override-term') as HTMLSelectElement | null;
-  termSel?.addEventListener('change', onChange, { signal: overridePaymentOptionsController.signal });
-  const paymentSel = document.getElementById('override-payment') as HTMLSelectElement | null;
-  paymentSel?.addEventListener('change', onChange, { signal: overridePaymentOptionsController.signal });
-
-  // Wire the bulk-mode toggle (issue #119). AbortController cleans it up on close.
-  bulkToggle?.addEventListener(
-    'change',
-    () => {
-      const ctx = overrideModalContext;
-      applyOverrideBulkMode(bulkToggle.checked, ctx?.availableServices ?? []);
-    },
-    { signal: overridePaymentOptionsController.signal },
-  );
-
-  // Focus moves into the dialog and Escape closes it (#731). When this opens
-  // on top of the account overrides modal, closing it hands focus back there.
-  openModal(modal, { onClose: resetOverrideModalState });
-}
-
 /**
  * Switch the override modal between single-service and bulk-service mode.
  *
@@ -528,7 +394,7 @@ export function openOverrideModal(
  * In bulk mode it is hidden and a checkbox group is shown instead (issue #119).
  * Uses DOM APIs throughout — no innerHTML — so no XSS risk from service values.
  */
-function applyOverrideBulkMode(
+export function applyOverrideBulkMode(
   bulk: boolean,
   available: ReadonlyArray<{ value: string; label: string }>,
 ): void {
@@ -598,7 +464,7 @@ function applyOverrideBulkMode(
  * blank ("Inherit") every checkbox stays enabled because no hard restriction
  * can be evaluated.
  */
-function syncBulkServiceConflicts(provider: string): void {
+export function syncBulkServiceConflicts(provider: string): void {
   const termRaw = (document.getElementById('override-term') as HTMLSelectElement | null)?.value ?? '';
   const paymentRaw = (document.getElementById('override-payment') as HTMLSelectElement | null)?.value ?? '';
 
@@ -643,7 +509,7 @@ function syncBulkServiceConflicts(provider: string): void {
 // syncOverridePaymentOptions filters the override-payment <select> down to
 // the (service, term) combinations AWS supports. Called whenever the user
 // changes service or term in the modal. Per #107.
-function syncOverridePaymentOptions(provider: string): void {
+export function syncOverridePaymentOptions(provider: string): void {
   const serviceSel = document.getElementById('override-service') as HTMLSelectElement | null;
   const termSel = document.getElementById('override-term') as HTMLSelectElement | null;
   const paymentSel = document.getElementById('override-payment') as HTMLSelectElement | null;
@@ -689,16 +555,6 @@ export function closeOverrideModal(): void {
   if (modal) closeModal(modal);
   // Idempotent; covers a close of a modal that was never opened via openModal.
   resetOverrideModalState();
-}
-
-function resetOverrideModalState(): void {
-  overrideModalContext = null;
-  overridePaymentOptionsController?.abort();
-  overridePaymentOptionsController = null;
-  // Reset bulk toggle so next open always starts in single-service mode.
-  const bulkToggle = document.getElementById('override-bulk-toggle') as HTMLInputElement | null;
-  if (bulkToggle) bulkToggle.checked = false;
-  applyOverrideBulkMode(false, []);
 }
 
 /**
