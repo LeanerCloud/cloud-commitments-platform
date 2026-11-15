@@ -332,6 +332,12 @@ gsutil -m setmeta -h "Cache-Control:public, max-age=31536000, immutable" \
 gcloud compute url-maps invalidate-cdn-cache cudly-url-map --path "/*"
 ```
 
+### Experimental: GCP Compute CUD term from the recommendation plan
+
+The global setting `experimental_gcp_plan_term` (Settings, "Experimental" card; migration 000173) is off by default. When on, GCP Compute Engine recommendations take their term from each recommendation's root plan instead of defaulting to 1 year. The plan payload shape is unverified against a live Recommender, so leave it off unless you are testing it.
+
+Recommendations are not marked with where their term came from, so after you flip the flag, rows stored under the old and new behavior can mix terms and the UI cannot tell them apart (#857, decided to document rather than add a per-recommendation marker). With the flag on, a recommendation that has neither a root plan term nor an explicit term is skipped instead of defaulted to 1 year. Keep the flag off in production.
+
 ---
 
 ## Archera insured-commitment comparison (optional)
