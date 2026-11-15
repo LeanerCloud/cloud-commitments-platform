@@ -5,7 +5,7 @@
  * scheduler / purchase flow match service configs and per-account overrides
  * on that exact id, so Settings must write the same ids. The DOM is the real
  * frontend/src/index.html and the backend slug list is read from
- * internal/purchase/execution.go (mapServiceSlug), so a drift fails here.
+ * internal/purchase (the .go file that defines mapServiceSlug), so a drift fails here.
  */
 
 import * as fs from 'fs';
@@ -29,9 +29,14 @@ jest.mock('../toast', () => ({ showToast: jest.fn(() => ({ dismiss: jest.fn() })
 import * as api from '../api';
 
 function backendServiceSlugs(): string[] {
-  const src = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'internal', 'purchase', 'execution.go'), 'utf-8');
+  const dir = path.join(__dirname, '..', '..', '..', 'internal', 'purchase');
+  const file = fs.readdirSync(dir)
+    .filter(f => f.endsWith('.go') && !f.endsWith('_test.go'))
+    .find(f => fs.readFileSync(path.join(dir, f), 'utf-8').includes('func mapServiceSlug('));
+  if (!file) throw new Error('func mapServiceSlug not found in internal/purchase');
+  const src = fs.readFileSync(path.join(dir, file), 'utf-8');
   const block = /func mapServiceSlug\(service string\)[\s\S]*?slugs := map\[string\]common\.ServiceType\{([\s\S]*?)\n\t\}/.exec(src);
-  if (!block) throw new Error('mapServiceSlug slug map not found in execution.go');
+  if (!block) throw new Error(`mapServiceSlug slug map not found in ${file}`);
   const slugs = [...block[1]!.matchAll(/"([\w-]+)":/g)].map(m => m[1]!);
   if (!slugs.includes('compute')) throw new Error(`unexpected mapServiceSlug parse: ${JSON.stringify(slugs)}`);
   return slugs;
