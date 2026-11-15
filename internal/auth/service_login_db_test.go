@@ -59,6 +59,7 @@ func overwriteSecurityColumns(ctx context.Context, store *PostgresStore, u *User
 }
 
 func TestIntegration_LoginPreservesSecurityChanges(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(setupAuthTestDB(t))
 	ctx := t.Context()
 	for _, scenario := range []string{"wrong-password", "wrong-mfa", "password-success", "totp-success"} {
@@ -130,6 +131,7 @@ func TestIntegration_LoginPreservesSecurityChanges(t *testing.T) {
 }
 
 func TestIntegration_LoginConcurrentFailures(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(setupAuthTestDB(t))
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	var workers sync.WaitGroup
@@ -194,6 +196,7 @@ type loginWriteOrderStore struct {
 }
 
 func TestIntegration_LoginSequentialFailures(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(setupAuthTestDB(t))
 	service := NewService(ServiceConfig{Store: store})
 	service.bcryptCostOverride = 4
@@ -253,6 +256,7 @@ func (s *loginWriteOrderStore) RecordSuccessfulLogin(ctx context.Context, id str
 }
 
 func TestIntegration_LoginMixedOrdering(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(setupAuthTestDB(t))
 	for _, initial := range []int{0, MaxFailedLoginAttempts - 1} {
 		for _, successFirst := range []bool{false, true} {
@@ -352,6 +356,7 @@ func dbClock(t *testing.T, store *PostgresStore) time.Time {
 }
 
 func TestIntegration_LoginLockoutExpiry(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(setupAuthTestDB(t))
 	service := NewService(ServiceConfig{Store: store})
 	service.bcryptCostOverride = 4

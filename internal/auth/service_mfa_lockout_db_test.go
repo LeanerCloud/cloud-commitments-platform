@@ -65,6 +65,7 @@ func prepareMFALockoutAccount(f *credentialRaceFixture, enrolled bool) string {
 }
 
 func TestIntegration_MFALifecycleWrongCodesLockAccount(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(setupAuthTestDB(t))
 
 	// Baseline: the same number of wrong codes at Login locks the account.

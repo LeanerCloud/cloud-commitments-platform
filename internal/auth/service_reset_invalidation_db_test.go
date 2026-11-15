@@ -14,6 +14,7 @@ import (
 )
 
 func TestIntegration_CredentialChangeInvalidatesResetToken(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(setupAuthTestDB(t))
 	ctx := t.Context()
 	const changed = "ChangedPassword789!"
@@ -44,6 +45,7 @@ func TestIntegration_CredentialChangeInvalidatesResetToken(t *testing.T) {
 }
 
 func TestIntegration_CompletePasswordResetEnforcesExpiryInSQL(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(setupAuthTestDB(t))
 	ctx := t.Context()
 
@@ -99,6 +101,7 @@ func (m *inviteMailSink) SendUserInviteEmail(context.Context, string, string) er
 // Forgot Password, even while the 7-day invite token is still live, and two
 // concurrent requests still store and mail exactly one token.
 func TestIntegration_InvitedUserForgotPasswordReissuesLink(t *testing.T) {
+	t.Parallel()
 	db := setupAuthTestDB(t)
 	store := NewPostgresStore(db)
 	ctx := t.Context()

@@ -14,6 +14,7 @@ import (
 // Issue #227: a session plus the password must not replace an enabled factor,
 // sequentially or by racing the victim's enrollment.
 func TestIntegration_MFAReplacementNeedsCurrentFactor(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(setupAuthTestDB(t))
 	ctx := t.Context()
 

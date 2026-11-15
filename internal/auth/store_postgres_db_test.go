@@ -73,6 +73,7 @@ func newBootstrapCandidate(email string) *User {
 // INSERT end to end: column ordering, the Administrators-group forcing logic,
 // and the NOT EXISTS guard's agreement with AdminExists.
 func TestIntegration_CreateAdminIfNone_Bootstrap(t *testing.T) {
+	t.Parallel()
 	db := setupAuthTestDB(t)
 	store := NewPostgresStore(db)
 	ctx := context.Background()
@@ -162,6 +163,7 @@ func TestIntegration_CreateAdminIfNone_Bootstrap(t *testing.T) {
 // repeated barrier-synchronized attempts. Two callers is the production case
 // (two operators bootstrapping at once) and keeps this the cheap fast path.
 func TestIntegration_CreateAdminIfNone_ConcurrentBootstrapOnce(t *testing.T) {
+	t.Parallel()
 	requireConcurrentBootstrapOnce(t, setupAuthTestDB(t), 2, 25)
 }
 
@@ -174,6 +176,7 @@ func TestIntegration_CreateAdminIfNone_ConcurrentBootstrapOnce(t *testing.T) {
 // happening to interleave, and the test shows the lock holds when every pool
 // connection is taken by a contender.
 func TestIntegration_CreateAdminIfNone_ConcurrentBootstrapOnce_Stress(t *testing.T) {
+	t.Parallel()
 	requireConcurrentBootstrapOnce(t, setupAuthTestDB(t), 50, 10)
 }
 

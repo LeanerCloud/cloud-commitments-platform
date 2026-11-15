@@ -56,6 +56,7 @@ func createRotationUser(t *testing.T, svc *Service, store *PostgresStore, email 
 }
 
 func TestIntegration_APIKeyRejectedAfterPasswordRotation(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(setupAuthTestDB(t))
 	svc := newRotationService(store)
 	ctx := t.Context()

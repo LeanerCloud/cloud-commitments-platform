@@ -12,6 +12,7 @@ import (
 )
 
 func TestIntegration_LoginRecoveryPersistenceFailure(t *testing.T) {
+	t.Parallel()
 	db := setupAuthTestDB(t)
 	store := NewPostgresStore(db)
 	service := NewService(ServiceConfig{Store: store})

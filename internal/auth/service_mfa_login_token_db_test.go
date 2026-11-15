@@ -48,6 +48,7 @@ func (f *credentialRaceFixture) tokenRows() int {
 }
 
 func TestIntegration_MFALoginToken(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(setupAuthTestDB(t))
 
 	t.Run("happy-path-stores-hash-and-signs-in", func(t *testing.T) {

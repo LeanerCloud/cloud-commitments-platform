@@ -165,6 +165,7 @@ func assertOnlyChanged(t *testing.T, enrolled, stored *User, mutate func(want *U
 }
 
 func TestIntegration_CredentialWritesPreserveConcurrentMFA(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(setupAuthTestDB(t))
 	ctx := t.Context()
 
@@ -235,6 +236,7 @@ func TestIntegration_CredentialWritesPreserveConcurrentMFA(t *testing.T) {
 }
 
 func TestIntegration_CredentialWritesRejectStaleCredentials(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(setupAuthTestDB(t))
 	ctx := t.Context()
 
@@ -313,6 +315,7 @@ func (f *credentialRaceFixture) issueResetToken() string {
 }
 
 func TestIntegration_ResetConfirmPreservesConcurrentMFA(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(setupAuthTestDB(t))
 	ctx := t.Context()
 
@@ -346,6 +349,7 @@ func TestIntegration_ResetConfirmPreservesConcurrentMFA(t *testing.T) {
 }
 
 func TestIntegration_ResetConfirmRejectsStaleRead(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(setupAuthTestDB(t))
 	ctx := t.Context()
 
@@ -430,6 +434,7 @@ func (f *credentialRaceFixture) enrollMFA() []string {
 }
 
 func TestIntegration_RecoveryCodeLoginRejectsStaleRead(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(setupAuthTestDB(t))
 	ctx := t.Context()
 

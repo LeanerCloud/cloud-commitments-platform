@@ -15,6 +15,7 @@ import (
 )
 
 func TestIntegration_SystemManagedGroup_APIFlagAndUpdateGuard(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(setupAuthTestDB(t))
 	svc := NewService(ServiceConfig{Store: store})
 	ctx := t.Context()

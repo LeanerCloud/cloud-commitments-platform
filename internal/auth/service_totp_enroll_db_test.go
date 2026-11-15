@@ -14,6 +14,7 @@ import (
 
 // Issue #442: the code that turns MFA on is spent like any other TOTP code.
 func TestIntegration_EnrollmentCodeIsSpent(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(setupAuthTestDB(t))
 	ctx := t.Context()
 	step := func() int64 { return time.Now().Unix() / 30 }

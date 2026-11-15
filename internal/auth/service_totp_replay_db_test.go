@@ -14,6 +14,7 @@ import (
 
 // Issue #442: a TOTP code is accepted once, whichever endpoint spends it.
 func TestIntegration_TOTPCodeIsAcceptedOnce(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(setupAuthTestDB(t))
 	ctx := t.Context()
 	step := func() int64 { return time.Now().Unix() / 30 }

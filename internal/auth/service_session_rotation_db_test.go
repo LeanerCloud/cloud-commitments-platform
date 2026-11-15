@@ -62,6 +62,7 @@ var rotatePassword = map[string]func(t *testing.T, svc *Service, store *Postgres
 }
 
 func TestIntegration_SessionRejectedAfterPasswordRotation(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(setupAuthTestDB(t))
 	svc := newRotationService(store)
 	ctx := t.Context()

@@ -10,6 +10,7 @@ import (
 )
 
 func TestIntegration_UpdateUserAdminFieldsReturnsStoredUpdatedAt(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(setupAuthTestDB(t))
 	f := newCredentialRaceFixture(t, store, "admin-fields-updated-at@example.com")
 	read := f.stored()

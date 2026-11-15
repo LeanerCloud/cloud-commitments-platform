@@ -18,6 +18,7 @@ import (
 )
 
 func TestIntegration_UserStoreWorksWithoutSaltColumn(t *testing.T) {
+	t.Parallel()
 	db := setupAuthTestDB(t)
 	ctx := t.Context()
 	_, err := db.Exec(ctx, "ALTER TABLE users DROP COLUMN salt")

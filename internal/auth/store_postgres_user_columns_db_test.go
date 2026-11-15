@@ -91,6 +91,7 @@ func readUserByName(t *testing.T, db *database.Connection, id string) *User {
 }
 
 func TestIntegration_UserColumns_ScanUserRoundTripsEveryColumn(t *testing.T) {
+	t.Parallel()
 	db := setupAuthTestDB(t)
 	store := NewPostgresStore(db)
 	ctx := context.Background()
@@ -126,6 +127,7 @@ func insertedByStore(u *User) *User {
 }
 
 func TestIntegration_UserColumns_CreateUserWritesEveryColumn(t *testing.T) {
+	t.Parallel()
 	db := setupAuthTestDB(t)
 	store := NewPostgresStore(db)
 	user := distinctColumnsUser()
@@ -135,6 +137,7 @@ func TestIntegration_UserColumns_CreateUserWritesEveryColumn(t *testing.T) {
 }
 
 func TestIntegration_UserColumns_CreateAdminIfNoneWritesEveryColumn(t *testing.T) {
+	t.Parallel()
 	db := setupAuthTestDB(t)
 	store := NewPostgresStore(db)
 	user := distinctColumnsUser() // already carries the Administrators group

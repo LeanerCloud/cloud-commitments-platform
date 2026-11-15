@@ -19,6 +19,7 @@ func totpNow(secret string) string { return generateTOTP(secret, time.Now().Unix
 // Issue #527: disable and recovery-code regeneration write only the MFA
 // columns, guarded by the secret and codes they read.
 func TestIntegration_MFADisableAndRegenerateAreColumnScoped(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(setupAuthTestDB(t))
 	ctx := t.Context()
 
@@ -149,6 +150,7 @@ func TestIntegration_MFADisableAndRegenerateAreColumnScoped(t *testing.T) {
 // only on the value read before it. Issue #568 (d): the caller is told the
 // enrollment expired, not that the account changed.
 func TestIntegration_MFAEnableExpiryEnforcedInWrite(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(setupAuthTestDB(t))
 	ctx := t.Context()
 	f := newCredentialRaceFixture(t, store, "mfa-cas-expiry@example.com")
@@ -204,6 +206,7 @@ func newMFAColumnsUser(t *testing.T, store *PostgresStore, email string, row mfa
 // ReplaceMFARecoveryCodes guards refuses a stale write on its own (the other
 // two still match the read), and DisableMFA clears the pending enrollment too.
 func TestIntegration_MFAWriteGuardsArePinnedIndividually(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(setupAuthTestDB(t))
 	ctx := t.Context()
 	const readSecret = "READ-SECRET"
@@ -258,6 +261,7 @@ func TestIntegration_MFAWriteGuardsArePinnedIndividually(t *testing.T) {
 // write was refused by the expiry check, and ErrUserChanged for every other
 // refusal, including the losers of concurrent enables of one enrollment.
 func TestIntegration_EnableMFARefusalReason(t *testing.T) {
+	t.Parallel()
 	store := NewPostgresStore(setupAuthTestDB(t))
 	ctx := t.Context()
 	const pending = "PENDING-SECRET"

@@ -75,7 +75,7 @@ func countActiveAdmins(t *testing.T, db DBConnection) int {
 	return n
 }
 
-// waitForAdminLockWaiter blocks until some backend is queued on the
+// waitForAdminLockWaiter blocks until some backend of this database is queued on the
 // admin-invariant advisory lock. A bigint advisory key is reported in
 // pg_locks split into classid (high 32 bits) and objid (low 32 bits).
 func waitForAdminLockWaiter(t *testing.T, db DBConnection) {
@@ -86,6 +86,7 @@ func waitForAdminLockWaiter(t *testing.T, db DBConnection) {
 		require.NoError(t, db.QueryRow(context.Background(), `
 			SELECT COUNT(*) FROM pg_locks
 			WHERE locktype = 'advisory' AND NOT granted
+			  AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
 			  AND ((classid::bigint << 32) | objid::bigint) = $1`,
 			int64(adminInvariantAdvisoryLockKey)).Scan(&waiting))
 		if waiting > 0 {
@@ -103,6 +104,7 @@ func waitForAdminLockWaiter(t *testing.T, db DBConnection) {
 // issue #63 the write updated or deleted the row first and only reached the
 // lock in the deferred trigger at commit, so NOWAIT failed with 55P03.
 func TestIntegration_AdminDemotingWrites_LockBeforeRowLock(t *testing.T) {
+	t.Parallel()
 	db := setupAuthTestDB(t)
 	store := NewPostgresStore(db)
 
@@ -186,6 +188,7 @@ func runConcurrently(fns ...func() error) []error {
 // of the pair succeeds, the other gets ErrLastAdmin, and one active admin is
 // left.
 func TestIntegration_ConcurrentDemotionOfLastTwoAdmins(t *testing.T) {
+	t.Parallel()
 	db := setupAuthTestDB(t)
 	store := NewPostgresStore(db)
 	svc := NewService(ServiceConfig{Store: store})
@@ -225,6 +228,7 @@ func TestIntegration_ConcurrentDemotionOfLastTwoAdmins(t *testing.T) {
 // bootstrap must never insert; the demotion succeeds only when another admin
 // remains.
 func TestIntegration_ConcurrentBootstrapVersusDemotion(t *testing.T) {
+	t.Parallel()
 	db := setupAuthTestDB(t)
 	store := NewPostgresStore(db)
 	svc := NewService(ServiceConfig{Store: store})
@@ -321,6 +325,7 @@ func mixedAdminWorkload(ctx context.Context, store *PostgresStore, admins []*Use
 // remains. A write path that still locked the row before the advisory lock
 // would deadlock against one that takes the advisory lock first.
 func TestIntegration_AdminWrites_NoDeadlock(t *testing.T) {
+	t.Parallel()
 	db := setupAuthTestDB(t)
 	pool := lockTimeoutPool(t, db, "10s")
 	store := NewPostgresStore(pool)
