@@ -32,6 +32,7 @@ func setupStore(ctx context.Context, t *testing.T) *commitmentopts.PostgresStore
 }
 
 func TestPostgresStore_HasData_EmptyIsFalse(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := setupStore(ctx, t)
 
@@ -41,6 +42,7 @@ func TestPostgresStore_HasData_EmptyIsFalse(t *testing.T) {
 }
 
 func TestPostgresStore_Get_EmptyReturnsFalseBool(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := setupStore(ctx, t)
 
@@ -51,6 +53,7 @@ func TestPostgresStore_Get_EmptyReturnsFalseBool(t *testing.T) {
 }
 
 func TestPostgresStore_SaveAndGet(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := setupStore(ctx, t)
 
@@ -92,6 +95,7 @@ func TestPostgresStore_SaveAndGet(t *testing.T) {
 }
 
 func TestPostgresStore_Save_IdempotentOnRerun(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := setupStore(ctx, t)
 
@@ -110,6 +114,7 @@ func TestPostgresStore_Save_IdempotentOnRerun(t *testing.T) {
 }
 
 func TestPostgresStore_Save_EmptyCombosStillMarksRun(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := setupStore(ctx, t)
 
