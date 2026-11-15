@@ -200,3 +200,139 @@ func (m *Manager) getAWSAccountID(ctx context.Context) (string, error) {
 	}
 	return *result.Account, nil
 }
+
+// executeSinglePurchase executes a single purchase using the appropriate provider.
+// provCfg carries optional per-account credentials; pass nil to use ambient credentials.
+// opts carries execution-level metadata (the source surface) that providers stamp
+// onto the commitment they create.
+func (m *Manager) executeSinglePurchase(ctx context.Context, rec config.RecommendationRecord, provCfg *provider.Config, opts common.PurchaseOptions, ownNames *purchaseOwnNames) (common.PurchaseResult, error) {
+	// Per-purchase Info logs tagged with the owning execution ID so a
+	// CloudWatch filter on the execution UUID surfaces every step of the
+	// purchase attempt -- provider construction, service-client lookup,
+	// details decode, the cloud SDK call, and the result. Issue #667
+	// surfaced that the prior flow had ZERO observable signal between the
+	// approve handler and the final aggregated error toast; a timed-out
+	// SDK call left no trace in CloudWatch beyond the wrapped error.
+	logging.Infof("purchase[%s]: starting rec %s/%s/%s/%s (count=%d term=%dyr payment=%s)",
+		opts.ExecutionID, rec.Provider, rec.Service, rec.Region, rec.ResourceType, rec.Count, rec.Term, rec.Payment)
+
+	// Cap this individual rec at 30s so one hung rec (SDK retry storm, STS
+	// hang, pagination hang) cannot exhaust the Lambda budget and starve the
+	// other recs running in parallel in the same execution. 30s matches the
+	// purchasecfg hard limits (2 retries * 15s HTTP timeout) from issue #683.
+	// The parent ctx governs the overall Lambda budget; this per-rec deadline
+	// is always the shorter of the two.
+	recTuple := fmt.Sprintf("%s/%s/%s/%s", rec.Provider, rec.Service, rec.Region, rec.ResourceType)
+	recCtx, recCancel := context.WithTimeout(ctx, m.budgets.perRecTimeout())
+	defer recCancel()
+
+	// Create the provider
+	t0 := time.Now()
+	cloudProvider, err := m.providerFactory.CreateAndValidateProvider(recCtx, rec.Provider, provCfg)
+	if err != nil {
+		logging.Errorf("purchase[%s]: provider construction failed for %s after %s: %v",
+			opts.ExecutionID, rec.Provider, time.Since(t0), err)
+		return common.PurchaseResult{}, fmt.Errorf("failed to create %s provider: %w", rec.Provider, err)
+	}
+	logging.Infof("purchase[%s]: provider %s constructed in %s", opts.ExecutionID, rec.Provider, time.Since(t0))
+
+	// Map service string to ServiceType
+	serviceType := m.mapServiceType(rec.Service)
+
+	// Get the service client for this region
+	t0 = time.Now()
+	serviceClient, err := cloudProvider.GetServiceClient(recCtx, purchaseClientService(rec.Provider, serviceType), rec.Region)
+	if err != nil {
+		logging.Errorf("purchase[%s]: service client lookup failed for %s/%s in %s after %s: %v",
+			opts.ExecutionID, rec.Provider, serviceType, rec.Region, time.Since(t0), err)
+		return common.PurchaseResult{}, fmt.Errorf("failed to get service client: %w", err)
+	}
+	logging.Infof("purchase[%s]: service client %s/%s/%s ready in %s",
+		opts.ExecutionID, rec.Provider, serviceType, rec.Region, time.Since(t0))
+
+	// Build the recommendation in common format
+	recommendation := common.Recommendation{
+		Provider:       common.ProviderType(rec.Provider),
+		Service:        serviceType,
+		Region:         rec.Region,
+		ResourceType:   rec.ResourceType,
+		Count:          rec.Count,
+		Term:           common.Term(fmt.Sprintf("%dyr", rec.Term)),
+		PaymentOption:  common.PaymentOption(rec.Payment),
+		CommitmentCost: rec.UpfrontCost,
+	}
+
+	// Reconstruct the typed *Details pointer from the persisted JSON
+	// payload (issue #453). The scheduler stores the full
+	// common.ServiceDetails at collection time; this is the read-back
+	// step that yields a *ComputeDetails / *DatabaseDetails /
+	// *CacheDetails / *SavingsPlanDetails (etc.) keyed on rec.Service
+	// so the cloud service client's findOfferingID type-assertion
+	// succeeds with the full per-rec details (Platform, Tenancy,
+	// Scope, AZConfig, HourlyCommitment, …), not just an Engine string.
+	//
+	// Legacy rows persisted before #453 carry an empty rec.Details —
+	// DecodeServiceDetailsFor returns a zero-valued typed pointer for
+	// those. The AWS EC2 client does not fill the gaps: an empty Platform
+	// or an empty or unknown Tenancy or Scope is rejected before the request
+	// is sent (providers/aws ec2/client.go buildEC2OfferingQuery), so the
+	// purchase fails loudly instead of buying a default configuration. Engine
+	// is preserved on the record column too, so we use it as a last-resort
+	// fallback for DB/Cache services to avoid silently mis-purchasing a
+	// legacy non-default-engine rec as the default engine.
+	details, detailsErr := common.DecodeServiceDetailsFor(rec.Service, rec.Details)
+	if detailsErr != nil {
+		logging.Errorf("purchase[%s]: decode service details failed for %s rec %s: %v",
+			opts.ExecutionID, rec.Service, rec.ResourceType, detailsErr)
+		return common.PurchaseResult{}, fmt.Errorf("decode service details for %s rec %s: %w", rec.Service, rec.ResourceType, detailsErr)
+	}
+	if details != nil {
+		applyEngineFallback(details, rec.Engine)
+		recommendation.Details = details
+	}
+	// One log line capturing the details shape that's about to drive
+	// findOfferingID. detailsAbsent=true is the legacy-row fallback
+	// (issue #453) and a strong indicator that filters will fall back
+	// to defaults — surface it so a "no offerings found" failure is
+	// linkable to a stale rec rather than a transient AWS issue.
+	logging.Infof("purchase[%s]: details ready for %s/%s (detailsAbsent=%v engine=%q idempotencyToken=%q)",
+		opts.ExecutionID, rec.Provider, rec.Service, len(rec.Details) == 0, rec.Engine, opts.IdempotencyToken)
+
+	// Execute the purchase. This is the call that hits the cloud SDK
+	// (and ultimately the AWS / Azure / GCP API). Time it explicitly so
+	// CloudWatch shows whether a failure came from the SDK call itself
+	// (which the AWS SDK retries up to 3× × 30s by default) versus
+	// something earlier in the flow — issue #667.
+	opts, err = preSubmitChecks(recCtx, serviceClient, rec, recommendation, opts, ownNames)
+	if err != nil {
+		return common.PurchaseResult{}, err
+	}
+	tCall := time.Now()
+	result, err := serviceClient.PurchaseCommitment(recCtx, recommendation, opts)
+	elapsed := time.Since(tCall)
+	if err != nil {
+		logRecCtxErr(opts.ExecutionID, recTuple, elapsed, recCtx.Err())
+		logging.Errorf("purchase[%s]: %s/%s/%s/%s PurchaseCommitment failed after %s: %v",
+			opts.ExecutionID, rec.Provider, rec.Service, rec.Region, rec.ResourceType, elapsed, err)
+		return result, purchaseCallError(ctx, err)
+	}
+
+	if !result.Success {
+		if result.Error != nil {
+			logging.Errorf("purchase[%s]: %s/%s/%s/%s PurchaseCommitment returned Success=false after %s: %v",
+				opts.ExecutionID, rec.Provider, rec.Service, rec.Region, rec.ResourceType, elapsed, result.Error)
+			return result, result.Error
+		}
+		logging.Errorf("purchase[%s]: %s/%s/%s/%s PurchaseCommitment returned Success=false after %s (no error detail)",
+			opts.ExecutionID, rec.Provider, rec.Service, rec.Region, rec.ResourceType, elapsed)
+		return result, fmt.Errorf("purchase was not successful")
+	}
+
+	cost := "unknown"
+	if result.Cost != nil {
+		cost = fmt.Sprintf("%.2f", *result.Cost)
+	}
+	logging.Infof("purchase[%s]: %s/%s/%s/%s PurchaseCommitment succeeded in %s (commitmentID=%s, cost=%s)",
+		opts.ExecutionID, rec.Provider, rec.Service, rec.Region, rec.ResourceType, elapsed, result.CommitmentID, cost)
+	return result, nil
+}
