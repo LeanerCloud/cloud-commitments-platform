@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 )
@@ -191,4 +192,161 @@ func recRedriveRefusalReason(rec config.RecommendationRecord) string {
 		// Unknown provider: refuse to re-drive rather than risk a double-buy.
 		return fmt.Sprintf("provider %q is not known to reject a duplicate purchase, so re-driving this could buy a second commitment", rec.Provider)
 	}
+}
+
+// awsPurchaseIsEC2 reports whether a service slug (ec2 or compute) dispatches to the EC2 path,
+// matching through mapServiceSlug, the executor's own table, so spellings cannot drift.
+func awsPurchaseIsEC2(service string) bool {
+	svc, ok := mapServiceSlug(service)
+	if !ok {
+		return false
+	}
+	switch svc {
+	case common.ServiceEC2, common.ServiceCompute:
+		return true
+	default:
+		return false
+	}
+}
+
+// claimAndRedrive atomically claims a stranded execution (by transitioning its
+// status from "approved" to "running") and then re-drives it via
+// executeAndFinalize. It is extracted from RecoverStrandedApprovals to keep that
+// function's cyclomatic complexity within the gocyclo:10 limit.
+//
+// It re-drives the row the claim returned, never the caller's pre-claim
+// snapshot (issue #1037). The sweep chose the re-drive path from a SELECT, and
+// an edit or a concurrent writer can change the row's recommendations, amount
+// or account before the claim lands. The re-drive gate (redrivable) is therefore
+// re-run on the claimed row; when the claimed row no longer qualifies it is
+// failed exactly as safeFail would have failed it had the sweep read it in
+// that state (failClaimedRedrive), and nothing is bought.
+//
+// Returns (true, nil) when the claim was won and the re-drive completed (row is
+// now in a terminal state), or when the claimed row was failed because it no
+// longer qualifies for a re-drive. A re-drive error is not fatal --
+// executeAndFinalize already stamped a terminal status -- so it returns
+// (false, nil) on drive failure too (the failed row is still visible in
+// History).
+// Returns (false, nil) when the CAS claim is lost to a concurrent sweep or the
+// row vanishes mid-flight (both are benign races).
+// Returns (false, err) on a genuine DB error during the claim step, or when a
+// terminal status could not be persisted (ErrAuditLoss).
+func (m *Manager) claimAndRedrive(ctx context.Context, exec *config.PurchaseExecution) (bool, error) {
+	// Atomically claim ownership before re-driving to prevent two concurrent
+	// sweeps (or a late original completion) from both calling executeAndFinalize
+	// on the same approved row. The CAS transitions "approved" -> "running";
+	// only the winner proceeds.
+	// System-initiated: recovery sweep passes nil so transitioned_by = NULL.
+	claimed, claimErr := m.claimRunning(ctx, exec.ExecutionID, []string{"approved"}, nil)
+	if claimErr != nil {
+		// ErrNotFound: row vanished between SELECT and CAS - benign race.
+		// ErrExecutionNotInExpectedStatus: another sweep or the original run
+		// already claimed/completed this row - also benign.
+		if errors.Is(claimErr, config.ErrNotFound) || errors.Is(claimErr, config.ErrExecutionNotInExpectedStatus) {
+			logging.Warnf("Skipping re-drive of %s (CAS claim lost to concurrent worker): %v", exec.ExecutionID, claimErr)
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to claim execution %s for re-drive: %w", exec.ExecutionID, claimErr)
+	}
+	// Carry the whole committed row, not just its status: the purchase below
+	// must buy exactly the row this claim owns. The snapshot the sweep listed
+	// may predate an edit that landed before the CAS (issue #1037).
+	*exec = *claimed
+	if !redrivable(exec) {
+		return m.failClaimedRedrive(ctx, exec)
+	}
+	logging.Infof("Recovering stranded execution %s via idempotent re-drive (issue #639)", exec.ExecutionID)
+	if driveErr := m.executeAndFinalize(ctx, exec); driveErr != nil {
+		logging.Errorf("Re-drive of stranded execution %s failed: %v", exec.ExecutionID, driveErr)
+		// Persistence failures (ErrAuditLoss) are non-benign: the row was CAS-ed
+		// to "running" but SavePurchaseExecution failed, so no terminal status was
+		// persisted. Propagate so the sweep surfaces the error rather than silently
+		// dropping a row that is now stranded in "running".
+		if errors.Is(driveErr, config.ErrAuditLoss) {
+			return false, fmt.Errorf("persistence failure re-driving execution %s (row stranded in running): %w", exec.ExecutionID, driveErr)
+		}
+		// Benign provider/rec errors: finalizeExecution already stamped a terminal
+		// status (failed/partially_completed) and SavePurchaseExecution succeeded.
+		// The row is in a terminal state; log and continue without counting as
+		// recovered.
+		return false, nil
+	}
+	return true, nil
+}
+
+// safeFail atomically transitions a stranded execution to "failed" and stamps a
+// recovery error on it. It is extracted from RecoverStrandedApprovals to keep
+// that function's cyclomatic complexity within the gocyclo:10 limit.
+//
+// Returns (true, nil) when the row was successfully transitioned to "failed".
+// Returns (false, nil) when TransitionExecutionStatus fails but the row has
+// already left "approved" (benign race - the original run completed late;
+// not counted as a recovery since no action was taken here).
+// Returns (false, err) when a real store failure occurs.
+func (m *Manager) safeFail(ctx context.Context, exec *config.PurchaseExecution) (bool, error) {
+	logging.Errorf("Recovering stranded approved execution %s (approved but never finalized; failing it for visibility)", exec.ExecutionID)
+
+	// System-initiated: stranded-execution recovery passes nil so transitioned_by = NULL.
+	updated, txErr := m.config.TransitionExecutionStatus(ctx, exec.ExecutionID, []string{"approved"}, "failed", nil)
+	if txErr != nil {
+		// ErrNotFound means the row vanished between the stale SELECT and
+		// this CAS attempt (e.g. deleted by an operator or a concurrent
+		// sweep already claimed and deleted it). That is a benign race-loss:
+		// there is nothing left to fail, and the caller should not be
+		// charged with an error.
+		if errors.Is(txErr, config.ErrNotFound) {
+			logging.Warnf("Skipping recovery of %s (row no longer exists, benign race-loss): %v", exec.ExecutionID, txErr)
+			return false, nil
+		}
+		// ErrExecutionNotInExpectedStatus means the row exists but its
+		// status has already moved out of "approved" (a concurrent sweep or
+		// the original run won the CAS race). Treat identically to the
+		// ErrNotFound case: nothing left to do here, no re-read needed.
+		// This mirrors claimAndRedrive and reaper.go, which both treat this
+		// sentinel as terminally benign.
+		if errors.Is(txErr, config.ErrExecutionNotInExpectedStatus) {
+			logging.Warnf("Skipping recovery of %s (row already left approved state, benign CAS race-loss): %v", exec.ExecutionID, txErr)
+			return false, nil
+		}
+		// Distinguish benign races (row already left the "approved"
+		// state - concurrent sweep handled it, or the original run
+		// finished after the LIST snapshot) from real store
+		// failures (DB unreachable, query syntax error). A real
+		// store failure must fail the sweep so a transient DB
+		// outage does not silently under-recover. We probe the
+		// current row state via GetExecutionByID: a clean read
+		// with Status != "approved" confirms the race; any other
+		// outcome (read error, still-approved row) is a real
+		// failure worth propagating.
+		current, getErr := m.config.GetExecutionByID(ctx, exec.ExecutionID)
+		if getErr == nil && current != nil && current.Status != "approved" {
+			logging.Warnf("Skipping recovery of %s (already transitioned out of approved): %v", exec.ExecutionID, txErr)
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to transition stranded execution %s to failed: %w", exec.ExecutionID, txErr)
+	}
+	// This sweep won the CAS, so it is the one writer that notifies (#1195),
+	// unless the guarded stamp below finds the row already recovered: then the
+	// in-memory failed row is stale and a failure email would be false.
+	// The interrupted run may already have bought, so the email reports an
+	// unknown outcome rather than a failure to retry (#1415).
+	notify := true
+	defer func() {
+		if notify {
+			m.notifyOutcomeUnknown(ctx, updated)
+		}
+	}()
+
+	updated.Error = strandedRecoveryError(exec)
+	if saveErr := m.config.SaveExecutionIfStatus(ctx, updated, []string{config.StatusFailed}); saveErr != nil {
+		notify = !errors.Is(saveErr, config.ErrExecutionNotInExpectedStatus)
+		// Guarded on "failed" (issue #835): the stamp lands only while the row
+		// is still in the status this CAS set, never over a later writer's.
+		// The atomic flip to "failed" already landed via TransitionExecutionStatus;
+		// only the explanatory error string failed to persist. Log loudly but
+		// still count the recovery - the row is no longer stranded in "approved".
+		logging.Errorf("AUDIT GAP: failed to stamp recovery error on %s: %v", exec.ExecutionID, saveErr)
+	}
+	return true, nil
 }
