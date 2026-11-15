@@ -22,6 +22,7 @@ import (
 // the real Postgres store, and each snapshot lands with its pkg/common
 // commitment_type. Before the fix all three were stored as "RI".
 func TestCollector_GCPCommittedUse_DB(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 

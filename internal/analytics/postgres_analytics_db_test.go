@@ -51,6 +51,7 @@ func getMigrationsPath() string {
 func f64ptr(v float64) *float64 { return &v }
 
 func TestPostgresAnalyticsStore_SaveSnapshot_DB(t *testing.T) {
+	t.Parallel()
 	skipIfDBTestsOptedOut(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -127,6 +128,7 @@ func TestPostgresAnalyticsStore_SaveSnapshot_DB(t *testing.T) {
 }
 
 func TestPostgresAnalyticsStore_QuerySavings_DB(t *testing.T) {
+	t.Parallel()
 	skipIfDBTestsOptedOut(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -253,6 +255,7 @@ func TestPostgresAnalyticsStore_QuerySavings_DB(t *testing.T) {
 }
 
 func TestPostgresAnalyticsStore_QueryByProvider_DB(t *testing.T) {
+	t.Parallel()
 	skipIfDBTestsOptedOut(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -337,6 +340,7 @@ func TestPostgresAnalyticsStore_QueryByProvider_DB(t *testing.T) {
 }
 
 func TestPostgresAnalyticsStore_QueryByService_DB(t *testing.T) {
+	t.Parallel()
 	skipIfDBTestsOptedOut(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -394,6 +398,7 @@ func TestPostgresAnalyticsStore_QueryByService_DB(t *testing.T) {
 }
 
 func TestPostgresAnalyticsStore_BulkInsertSnapshots_DB(t *testing.T) {
+	t.Parallel()
 	skipIfDBTestsOptedOut(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -449,6 +454,7 @@ func TestPostgresAnalyticsStore_BulkInsertSnapshots_DB(t *testing.T) {
 }
 
 func TestPostgresAnalyticsStore_PartitionManagement_DB(t *testing.T) {
+	t.Parallel()
 	skipIfDBTestsOptedOut(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -487,6 +493,7 @@ func TestPostgresAnalyticsStore_PartitionManagement_DB(t *testing.T) {
 }
 
 func TestPostgresAnalyticsStore_QueryMonthlyTotals_DB(t *testing.T) {
+	t.Parallel()
 	skipIfDBTestsOptedOut(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -548,6 +555,7 @@ func TestPostgresAnalyticsStore_QueryMonthlyTotals_DB(t *testing.T) {
 }
 
 func TestPostgresAnalyticsStore_RefreshMaterializedViews_DB(t *testing.T) {
+	t.Parallel()
 	skipIfDBTestsOptedOut(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -566,6 +574,7 @@ func TestPostgresAnalyticsStore_RefreshMaterializedViews_DB(t *testing.T) {
 }
 
 func TestPostgresAnalyticsStore_Close_DB(t *testing.T) {
+	t.Parallel()
 	skipIfDBTestsOptedOut(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)

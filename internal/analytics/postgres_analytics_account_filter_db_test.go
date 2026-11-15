@@ -60,6 +60,7 @@ type accountFilterFixture struct {
 }
 
 func TestPostgresAnalyticsStore_AccountFilterSemantics_DB(t *testing.T) {
+	t.Parallel()
 	skipIfDBTestsOptedOut(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)

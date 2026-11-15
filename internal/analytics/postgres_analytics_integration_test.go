@@ -15,6 +15,7 @@ import (
 )
 
 func TestPostgresAnalyticsStore_SaveSnapshot(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	// A fresh migrated database of its own, on the package's shared server
@@ -88,6 +89,7 @@ func TestPostgresAnalyticsStore_SaveSnapshot(t *testing.T) {
 }
 
 func TestPostgresAnalyticsStore_QuerySavings(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	// A fresh migrated database of its own, on the package's shared server
@@ -211,6 +213,7 @@ func TestPostgresAnalyticsStore_QuerySavings(t *testing.T) {
 }
 
 func TestPostgresAnalyticsStore_QueryMonthlyTotals(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	// A fresh migrated database of its own, on the package's shared server
@@ -278,6 +281,7 @@ func TestPostgresAnalyticsStore_QueryMonthlyTotals(t *testing.T) {
 // and total_usage, a bucket with one region lacking a figure reads as unknown
 // (nil) rather than the known regions' sum, and a known 0 stays a real 0.
 func TestPostgresAnalyticsStore_QueryMonthlyTotals_UnknownStaysUnknown(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	container := testhelpers.RequireMigratedDatabase(ctx, t, getMigrationsPath())
 	store := analytics.NewPostgresAnalyticsStore(container.DB)
@@ -331,6 +335,7 @@ func TestPostgresAnalyticsStore_QueryMonthlyTotals_UnknownStaysUnknown(t *testin
 }
 
 func TestPostgresAnalyticsStore_QueryByProvider(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	// A fresh migrated database of its own, on the package's shared server
@@ -412,6 +417,7 @@ func TestPostgresAnalyticsStore_QueryByProvider(t *testing.T) {
 }
 
 func TestPostgresAnalyticsStore_QueryByService(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	// A fresh migrated database of its own, on the package's shared server
@@ -466,6 +472,7 @@ func TestPostgresAnalyticsStore_QueryByService(t *testing.T) {
 }
 
 func TestPostgresAnalyticsStore_BulkInsertSnapshots(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	// A fresh migrated database of its own, on the package's shared server
@@ -518,6 +525,7 @@ func TestPostgresAnalyticsStore_BulkInsertSnapshots(t *testing.T) {
 }
 
 func TestPostgresAnalyticsStore_PartitionManagement(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	// A fresh migrated database of its own, on the package's shared server
@@ -553,6 +561,7 @@ func TestPostgresAnalyticsStore_PartitionManagement(t *testing.T) {
 }
 
 func TestPostgresAnalyticsStore_RefreshMaterializedViews(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	// A fresh migrated database of its own, on the package's shared server
@@ -568,6 +577,7 @@ func TestPostgresAnalyticsStore_RefreshMaterializedViews(t *testing.T) {
 }
 
 func TestPostgresAnalyticsStore_Close(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	// Empty database: Close needs a connection, not a schema
