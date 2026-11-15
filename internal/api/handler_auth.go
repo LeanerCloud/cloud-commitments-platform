@@ -131,12 +131,19 @@ func (h *Handler) getCurrentUser(ctx context.Context, req *events.LambdaFunction
 		return nil, err
 	}
 
-	return &CurrentUserResponse{
+	resp := &CurrentUserResponse{
 		ID:         user.ID,
 		Email:      user.Email,
 		Groups:     user.Groups,
 		MFAEnabled: user.MFAEnabled,
-	}, nil
+	}
+	// A reloaded page holds no CSRF token; re-derive it from the session.
+	if issuer, ok := h.auth.(csrfTokenIssuer); ok {
+		if resp.CSRFToken, err = issuer.CSRFTokenForSession(ctx, h.extractBearerToken(req)); err != nil {
+			return nil, err
+		}
+	}
+	return resp, nil
 }
 
 // getCurrentUserPermissions handles GET /api/auth/me/permissions.

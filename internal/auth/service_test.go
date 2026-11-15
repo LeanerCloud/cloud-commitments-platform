@@ -1094,3 +1094,24 @@ func TestService_ValidateCSRFToken(t *testing.T) {
 		mockStore.AssertExpectations(t)
 	})
 }
+
+func TestService_CSRFTokenForSession(t *testing.T) {
+	ctx := context.Background()
+	mockStore := new(MockStore)
+	service := createTestService(mockStore, new(MockEmailSender))
+
+	hashed := hashSessionToken("session-token")
+	mockStore.On("GetSession", ctx, hashed).Return(&Session{
+		UserID: "user-123", Token: hashed, ExpiresAt: time.Now().Add(time.Hour), CreatedAt: time.Now(),
+	}, nil)
+	mockStore.On("GetUserByID", ctx, "user-123").Return(&User{ID: "user-123", Active: true}, nil)
+	mockStore.On("GetSession", ctx, hashSessionToken("bad")).Return(nil, fmt.Errorf("session not found"))
+
+	got, err := service.CSRFTokenForSession(ctx, "session-token")
+	require.NoError(t, err)
+	assert.Equal(t, deriveCSRFToken(service.csrfKey, "session-token"), got)
+	require.NoError(t, service.ValidateCSRFToken(ctx, "session-token", got))
+
+	_, err = service.CSRFTokenForSession(ctx, "bad")
+	assert.Error(t, err)
+}

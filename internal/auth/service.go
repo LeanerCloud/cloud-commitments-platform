@@ -401,6 +401,15 @@ func (s *Service) checkSessionUser(ctx context.Context, session *Session) error 
 	return nil
 }
 
+// CSRFTokenForSession returns the CSRF token of a valid session, derived the
+// same way createSession derives it.
+func (s *Service) CSRFTokenForSession(ctx context.Context, sessionToken string) (string, error) {
+	if _, err := s.ValidateSession(ctx, sessionToken); err != nil {
+		return "", fmt.Errorf("invalid session: %w", err)
+	}
+	return deriveCSRFToken(s.csrfKey, sessionToken), nil
+}
+
 // ValidateCSRFToken validates the CSRF token for a session.
 //
 // The expected CSRF token is derived as HMAC-SHA256(csrfKey, rawSessionToken),

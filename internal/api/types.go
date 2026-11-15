@@ -524,6 +524,7 @@ type PlanWithHealth struct {
 type CurrentUserResponse struct {
 	ID         string   `json:"id"`
 	Email      string   `json:"email"`
+	CSRFToken  string   `json:"csrf_token,omitempty"`
 	Groups     []string `json:"groups,omitempty"`
 	MFAEnabled bool     `json:"mfa_enabled"`
 }

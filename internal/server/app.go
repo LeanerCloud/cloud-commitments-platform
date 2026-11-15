@@ -1340,6 +1340,11 @@ func (a *authServiceAdapter) GetAllowedAccountsAPI(ctx context.Context, userID s
 	return a.service.ResolveAllowedAccounts(ctx, userID)
 }
 
+// CSRFTokenForSession re-derives the CSRF token of a live session (GET /api/auth/me).
+func (a *authServiceAdapter) CSRFTokenForSession(ctx context.Context, sessionToken string) (string, error) {
+	return a.service.CSRFTokenForSession(ctx, sessionToken)
+}
+
 // CSRF validation.
 func (a *authServiceAdapter) ValidateCSRFToken(ctx context.Context, sessionToken, csrfToken string) error {
 	return a.service.ValidateCSRFToken(ctx, sessionToken, csrfToken)
