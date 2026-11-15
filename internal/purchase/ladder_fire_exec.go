@@ -43,11 +43,11 @@ func newLadderExecution(tr config.LadderTrancheDB, recs []config.RecommendationR
 // resolve step and the claim can change the amount. A build or save error rolls
 // the whole config's claim back. Each saved execution is also recorded in execs
 // by tranche id for the notice step.
-func ladderClaimCreate(store ladderExecSaver, registry *LadderInstrumentRegistry, cfg *config.LadderConfigDB, region string,
+func ladderClaimCreate(store ladderExecSaver, registry *LadderInstrumentRegistry, cfg *config.LadderConfigDB, region string, stored []config.RecommendationRecord,
 	delay time.Duration, now time.Time, execs map[string]*config.PurchaseExecution,
 ) func(ctx context.Context, tx pgx.Tx, tr config.LadderTrancheDB) (string, error) {
 	return func(ctx context.Context, tx pgx.Tx, tr config.LadderTrancheDB) (string, error) {
-		recs, err := registry.Build(LadderBuildInput{Tranche: tr, CloudAccountID: cfg.CloudAccountID, Region: region})
+		recs, err := registry.Build(LadderBuildInput{Tranche: tr, CloudAccountID: cfg.CloudAccountID, Region: region, StoredRecs: stored})
 		if err != nil {
 			return "", fmt.Errorf("build ladder tranche %s: %w", tr.ID, err)
 		}

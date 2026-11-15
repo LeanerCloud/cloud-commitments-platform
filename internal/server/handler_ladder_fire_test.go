@@ -160,3 +160,7 @@ func TestLadderFire_OtherProcessAccountRefusesTheSweep(t *testing.T) {
 	assert.Equal(t, 1, res.Skipped)
 	assert.Zero(t, store.claims)
 }
+
+func (f *fireFakeStore) ListStoredRecommendations(context.Context, config.RecommendationFilter) ([]config.RecommendationRecord, error) {
+	return nil, nil
+}

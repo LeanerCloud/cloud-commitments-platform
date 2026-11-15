@@ -16,6 +16,9 @@ type LadderBuildInput struct {
 	CloudAccountID string                 // cloud_accounts.id, not the 12-digit number.
 	Region         string                 // deployment region.
 	Tranche        config.LadderTrancheDB // read-only; Build never mutates it.
+	// StoredRecs is read before the claim for the EC2 Instance SP builder,
+	// which takes family identity and split weights from it, never amounts.
+	StoredRecs []config.RecommendationRecord
 }
 
 // LadderInstrumentBuilder turns one claimed tranche into the records to buy.
@@ -31,7 +34,8 @@ type LadderInstrumentRegistry struct {
 // NewLadderInstrumentRegistry returns the registry of buildable layers.
 func NewLadderInstrumentRegistry() *LadderInstrumentRegistry {
 	return &LadderInstrumentRegistry{builders: map[ladder.LayerType]LadderInstrumentBuilder{
-		ladder.LayerComputeSP: buildComputeSPRecs,
+		ladder.LayerComputeSP:     buildComputeSPRecs,
+		ladder.LayerEC2InstanceSP: buildEC2InstanceSPRecs,
 	}}
 }
 

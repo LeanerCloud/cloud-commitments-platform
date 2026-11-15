@@ -143,3 +143,17 @@ func TestLadderNoticeFacts_UseTheFlooredAmountThatIsBought(t *testing.T) {
 	_, err = ladderNoticeFactsFor(&config.LadderTrancheDB{}, &config.PurchaseExecution{}, &config.CloudAccount{})
 	require.Error(t, err)
 }
+
+func TestLadderNoticeFacts_SumEveryFamilyRecord(t *testing.T) {
+	recs, err := NewLadderInstrumentRegistry().Build(ec2Input(1.0, storedEC2SP("m5", 3), storedEC2SP("c5", 1)))
+	require.NoError(t, err)
+	require.Len(t, recs, 2)
+	exec := &config.PurchaseExecution{Recommendations: recs}
+	facts, err := ladderNoticeFactsFor(&config.LadderTrancheDB{ID: "T1"}, exec, &config.CloudAccount{ExternalID: "x"})
+	require.NoError(t, err)
+	assert.InDelta(t, 1.0, facts.HourlyCommitment, 1e-12)
+	assert.Equal(t, 1, facts.TermYears)
+	exec.Recommendations[1].Term = 3
+	_, err = ladderNoticeFactsFor(&config.LadderTrancheDB{}, exec, &config.CloudAccount{})
+	require.Error(t, err)
+}

@@ -139,7 +139,11 @@ func fireLadderConfig(ctx context.Context, deps LadderFireDeps, cfg *config.Ladd
 	if err != nil {
 		return fmt.Errorf("list due tranches: %w", err)
 	}
-	rv := resolveLadderTranches(rows, cfg, deps.Registry, deps.Region)
+	stored, err := readLadderEvidence(ctx, deps.Store, cfg, rows)
+	if err != nil {
+		return err
+	}
+	rv := resolveLadderTranches(rows, cfg, deps.Registry, deps.Region, stored)
 	logLadderResolution(cfg.ID, rv)
 	res.Due += rv.Due
 	res.Unresolved += len(rv.Unresolved)
@@ -147,7 +151,7 @@ func fireLadderConfig(ctx context.Context, deps LadderFireDeps, cfg *config.Ladd
 		return nil
 	}
 	execs := map[string]*config.PurchaseExecution{}
-	create := ladderClaimCreate(deps.Store, deps.Registry, cfg, deps.Region, plan.global.GetPurchaseDelay(), now, execs)
+	create := ladderClaimCreate(deps.Store, deps.Registry, cfg, deps.Region, stored, plan.global.GetPurchaseDelay(), now, execs)
 	claimed, err := deps.Store.ClaimDueLadderTranches(ctx, cfg.ID, now, ladderFireClaimLimit,
 		config.LadderClaimFilter{Layers: plan.layers, TrancheIDs: rv.IDs, CeilingMicros: plan.ceilingMicro}, create)
 	if err != nil {

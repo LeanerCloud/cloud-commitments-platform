@@ -20,6 +20,7 @@ type LadderFireStore interface {
 	GetGlobalConfig(ctx context.Context) (*config.GlobalConfig, error)
 	GetLadderConfigs(ctx context.Context) ([]config.LadderConfigDB, error)
 	GetCloudAccount(ctx context.Context, id string) (*config.CloudAccount, error)
+	ListStoredRecommendations(ctx context.Context, filter config.RecommendationFilter) ([]config.RecommendationRecord, error)
 	GetLadderSweepCeiling(ctx context.Context, configID string) (*int64, error)
 	ListDueLadderTranches(ctx context.Context, configID string, asOf time.Time, limit int, layers []ladder.LayerType) ([]config.LadderDueRow, error)
 	ClaimDueLadderTranches(ctx context.Context, configID string, asOf time.Time, limit int, filter config.LadderClaimFilter,

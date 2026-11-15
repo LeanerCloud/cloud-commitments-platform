@@ -92,24 +92,33 @@ func sendLadderNotice(ctx context.Context, deps LadderFireDeps, plan *ladderFire
 }
 
 // ladderNoticeFactsFor reads what the notice states from the execution's own
-// record, the amount actually bought after the builder's flooring, not from the
-// raw tranche amount.
+// records, the amount actually bought after the builder's flooring, not from the
+// raw tranche amount. An EC2 Instance SP tranche has one record per family, so
+// the amount is their sum; the term must be the same across them.
 func ladderNoticeFactsFor(tr *config.LadderTrancheDB, exec *config.PurchaseExecution, acct *config.CloudAccount) (LadderNoticeFacts, error) {
-	if len(exec.Recommendations) != 1 {
-		return LadderNoticeFacts{}, fmt.Errorf("expected one recommendation, got %d", len(exec.Recommendations))
+	if len(exec.Recommendations) == 0 {
+		return LadderNoticeFacts{}, errors.New("execution has no recommendation")
 	}
-	rec := exec.Recommendations[0]
-	decoded, err := common.DecodeServiceDetailsFor(rec.Service, rec.Details)
-	if err != nil {
-		return LadderNoticeFacts{}, fmt.Errorf("decode recommendation details: %w", err)
-	}
-	sp, ok := decoded.(*common.SavingsPlanDetails)
-	if !ok {
-		return LadderNoticeFacts{}, fmt.Errorf("recommendation is not a Savings Plan (%T)", decoded)
+	var hourly float64
+	term := exec.Recommendations[0].Term
+	for i := range exec.Recommendations {
+		rec := &exec.Recommendations[i]
+		if rec.Term != term {
+			return LadderNoticeFacts{}, fmt.Errorf("recommendations differ in term (%d and %d years)", term, rec.Term)
+		}
+		decoded, err := common.DecodeServiceDetailsFor(rec.Service, rec.Details)
+		if err != nil {
+			return LadderNoticeFacts{}, fmt.Errorf("decode recommendation details: %w", err)
+		}
+		sp, ok := decoded.(*common.SavingsPlanDetails)
+		if !ok {
+			return LadderNoticeFacts{}, fmt.Errorf("recommendation is not a Savings Plan (%T)", decoded)
+		}
+		hourly += sp.HourlyCommitment
 	}
 	label := acct.ExternalID
 	if acct.Name != "" {
 		label = acct.Name + " (" + acct.ExternalID + ")"
 	}
-	return LadderNoticeFacts{HourlyCommitment: sp.HourlyCommitment, TermYears: rec.Term, AccountLabel: label, TrancheID: tr.ID}, nil
+	return LadderNoticeFacts{HourlyCommitment: hourly, TermYears: term, AccountLabel: label, TrancheID: tr.ID}, nil
 }

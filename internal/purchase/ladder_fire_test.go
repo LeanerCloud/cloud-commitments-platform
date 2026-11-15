@@ -18,6 +18,9 @@ import (
 // the first claimTake due rows (all when negative).
 type fakeFireStore struct {
 	stampErr      error
+	storedErr     error
+	stored        []config.RecommendationRecord
+	storedFilters []config.RecommendationFilter
 	ceilingErr    error
 	globalErr     error
 	claimErrFor   map[string]error
@@ -220,4 +223,9 @@ func TestSweep_ConfigErrorsAreIsolated(t *testing.T) {
 func TestRunLadderFire_RequiresItsDeps(t *testing.T) {
 	_, err := RunLadderFire(context.Background(), LadderFireDeps{})
 	require.Error(t, err)
+}
+
+func (f *fakeFireStore) ListStoredRecommendations(_ context.Context, filter config.RecommendationFilter) ([]config.RecommendationRecord, error) {
+	f.storedFilters = append(f.storedFilters, filter)
+	return f.stored, f.storedErr
 }
