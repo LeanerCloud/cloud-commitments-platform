@@ -74,9 +74,9 @@ func TestAcquireClaim_Refusals(t *testing.T) {
 		name      string
 		phase     string
 		orderID   string
+		wantClaim common.Claim
 		leaseLeft float64
 		settle    float64
-		wantClaim common.Claim
 	}{
 		{name: "live lease", phase: "claimed", leaseLeft: 30, wantErr: common.ErrClaimHeld},
 		{name: "live sending lease", phase: "sending", leaseLeft: 30, wantErr: common.ErrClaimHeld},
@@ -95,7 +95,7 @@ func TestAcquireClaim_Refusals(t *testing.T) {
 			if tc.wantErr != nil {
 				require.ErrorIs(t, err, tc.wantErr)
 				assert.Equal(t, common.Claim{}, c)
-				assert.Equal(t, errors.Is(err, common.ErrOutcomeUnknown), tc.wantErr == common.ErrClaimSettlePending)
+				assert.Equal(t, errors.Is(tc.wantErr, common.ErrClaimSettlePending), errors.Is(err, common.ErrOutcomeUnknown))
 				return
 			}
 			require.NoError(t, err)
