@@ -6,9 +6,7 @@ import * as api from './api';
 import { fetchAndPopulateCommitmentOptions } from './commitmentOptions';
 import { initFederationPanel } from './federation';
 import { confirmDialog } from './confirmDialog';
-import { deleteAccount } from './settings-account-delete';
 import { showToast } from './toast';
-import { rowIconButton } from './lib/row-icon-button';
 import {
   normalizePaymentValue,
 } from './commitmentOptions';
@@ -28,12 +26,10 @@ import {
   handleDiscoverOrgAccounts,
   loadAccountsForProvider,
   openAccountModal,
-  testAccount,
   updateAwsAuthModeFields,
   updateAzureAuthModeFields,
   updateGCPAuthModeFields,
 } from './modules/settings-accounts';
-import type { AccountStatusFilter } from './modules/settings-accounts';
 import { renderAwsBastionTrustPolicy } from './modules/settings-aws-trust';
 import { setupDirtyTracking, snapshotAllFields, updateDirtyMarkers } from './modules/settings-dirty';
 import {
@@ -48,7 +44,6 @@ import {
 import {
   closeAccountOverridesModal,
   closeOverrideModal,
-  openAccountOverridesModal,
   setCachedGlobalDefaults,
   submitOverrideForm,
 } from './modules/settings-overrides';
@@ -94,156 +89,6 @@ let legacyRekeyedServices = new Set<string>();
 // mirrored on the Save button's disabled attribute so the UI reflects the
 // in-progress state.
 let saveInFlight = false;
-
-export function renderAccountsList(
-  container: HTMLElement,
-  accounts: api.CloudAccount[],
-  provider: AccountProvider,
-  filter: AccountStatusFilter = 'all'
-): void {
-  // Remove prior rendered rows (banner lives in a separate className
-  // managed by renderSelfAccountBanner). `.account-overrides-panel` used
-  // to be cleaned up here too — it was the inline expandable panel each
-  // account carried before #122/#124 moved overrides into a per-account
-  // modal. No such elements exist anymore.
-  container.querySelectorAll(
-    '.accounts-table, .accounts-empty, .status-chip-row'
-  ).forEach(el => el.remove());
-
-  if (!accounts || accounts.length === 0) {
-    if (!container.querySelector('.self-account-banner')) {
-      const empty = document.createElement('p');
-      empty.className = 'accounts-empty';
-      empty.textContent = 'No accounts configured.';
-      container.appendChild(empty);
-    }
-    return;
-  }
-
-  // Status chip filter — mirrors the P3 audit recommendation scoped to
-  // states the per-provider table actually exposes (Active/Disabled).
-  const activeCount = accounts.filter(a => a.enabled).length;
-  const disabledCount = accounts.length - activeCount;
-  const chipRow = document.createElement('div');
-  chipRow.className = 'status-chip-row';
-  chipRow.setAttribute('role', 'tablist');
-  chipRow.setAttribute('aria-label', 'Filter accounts by status');
-  const chips: Array<{ key: AccountStatusFilter; label: string; count: number }> = [
-    { key: 'all', label: 'All', count: accounts.length },
-    { key: 'active', label: 'Active', count: activeCount },
-    { key: 'disabled', label: 'Disabled', count: disabledCount },
-  ];
-  chips.forEach(({ key, label, count }) => {
-    const chip = document.createElement('button');
-    chip.type = 'button';
-    chip.className = 'status-chip' + (filter === key ? ' active' : '');
-    chip.textContent = `${label} (${count})`;
-    chip.setAttribute('role', 'tab');
-    chip.setAttribute('aria-selected', String(filter === key));
-    chip.addEventListener('click', () => {
-      if (filter === key) return;
-      renderAccountsList(container, accounts, provider, key);
-    });
-    chipRow.appendChild(chip);
-  });
-  container.appendChild(chipRow);
-
-  const visible = accounts.filter(a => {
-    if (filter === 'active') return a.enabled;
-    if (filter === 'disabled') return !a.enabled;
-    return true;
-  });
-
-  const table = document.createElement('table');
-  table.className = 'accounts-table';
-  const thead = document.createElement('thead');
-  const headerRow = document.createElement('tr');
-  ['Name', 'Account ID', 'Status', 'Actions'].forEach((label) => {
-    const th = document.createElement('th');
-    th.textContent = label;
-    headerRow.appendChild(th);
-  });
-  thead.appendChild(headerRow);
-  table.appendChild(thead);
-
-  const tbody = document.createElement('tbody');
-
-  visible.forEach((account) => {
-    const accountLabel = account.name.includes(account.external_id)
-      ? account.name
-      : `${account.name} (${account.external_id})`;
-    const tr = document.createElement('tr');
-
-    const nameTd = document.createElement('td');
-    nameTd.textContent = account.name;
-    if (account.is_self) {
-      const self = document.createElement('span');
-      self.className = 'badge badge-info';
-      self.textContent = ' Self';
-      self.setAttribute('title', 'The cloud account running CUDly itself');
-      nameTd.appendChild(self);
-    }
-    tr.appendChild(nameTd);
-
-    const idTd = document.createElement('td');
-    idTd.className = 'monospace';
-    idTd.textContent = account.external_id;
-    tr.appendChild(idTd);
-
-    const statusTd = document.createElement('td');
-    const status = document.createElement('span');
-    status.className = account.enabled
-      ? 'badge badge-success'
-      : 'badge badge-warning';
-    status.textContent = account.enabled ? 'Active' : 'Disabled';
-    statusTd.appendChild(status);
-    tr.appendChild(statusTd);
-
-    const actionsTd = document.createElement('td');
-    actionsTd.className = 'account-actions';
-    // Compact icon buttons in one non-wrapping row, like the Users rows.
-    const actions = document.createElement('div');
-    actions.className = 'row-actions';
-
-    const editBtn = rowIconButton({
-      icon: 'edit', text: 'Edit', title: 'Edit account', ariaLabel: `Edit ${accountLabel}`,
-    });
-    editBtn.addEventListener('click', () => openAccountModal(provider, account));
-    actions.appendChild(editBtn);
-
-    const testBtn = rowIconButton({
-      icon: 'zap', text: 'Test', title: 'Test credentials', ariaLabel: `Test credentials for ${accountLabel}`,
-    });
-    testBtn.addEventListener('click', () => void testAccount(account.id, accountLabel, testBtn));
-    actions.appendChild(testBtn);
-
-    const overridesBtn = rowIconButton({
-      icon: 'sliders', text: 'Overrides', title: 'Service overrides', ariaLabel: `Service overrides for ${accountLabel}`,
-    });
-    overridesBtn.addEventListener('click', () => openAccountOverridesModal(account));
-    actions.appendChild(overridesBtn);
-
-    // Destructive Delete: the subtle danger icon variant, set slightly apart
-    // from the routine actions. .btn-destructive stays as the hook that
-    // identifies the row's delete action.
-    const deleteBtn = rowIconButton({
-      icon: 'trash-2', text: 'Delete', title: 'Delete account', ariaLabel: `Delete ${accountLabel}`,
-      className: 'btn-destructive btn-danger account-delete-btn',
-    });
-    deleteBtn.addEventListener('click', () => void deleteAccount(account, provider, loadAccountsForProvider));
-    actions.appendChild(deleteBtn);
-
-    actionsTd.appendChild(actions);
-    tr.appendChild(actionsTd);
-    tbody.appendChild(tr);
-  });
-  table.appendChild(tbody);
-  container.appendChild(table);
-  // Per-account overrides used to render in inline panels appended below
-  // the table; they now live in the account-overrides-modal (issue #122)
-  // so the accounts table stays compact and per-account scoping is
-  // unambiguous.
-}
 
 /**
  * Set up settings event handlers
