@@ -1818,11 +1818,11 @@ func (s *Scheduler) convertRecommendations(recs []common.Recommendation, provide
 		// "upfront"/"monthly" inside their pricing switches; the validator
 		// no longer accepts those aliases. Normalize once here so persisted
 		// recs always carry the provider-canonical token.
-		if canon, ok := config.NormalizePaymentOption(providerName, rec.PaymentOption); ok {
-			if canon != rec.PaymentOption {
+		if canon, ok := config.NormalizePaymentOption(providerName, string(rec.PaymentOption)); ok {
+			if canon != string(rec.PaymentOption) {
 				logging.Warnf("convertRecommendations: coerced %s payment_option %q to canonical %q (account=%s service=%s sku=%s)",
 					providerName, rec.PaymentOption, canon, rec.Account, rec.Service, rec.ResourceType)
-				rec.PaymentOption = canon
+				rec.PaymentOption = common.PaymentOption(canon)
 			}
 		} else if rec.PaymentOption != "" {
 			// Unknown provider or unmapped token: leave as-is. The next
@@ -1840,7 +1840,7 @@ func (s *Scheduler) convertRecommendations(recs []common.Recommendation, provide
 		// clients entirely, since "3yr" is itself a whitelisted value (issue
 		// #1207 follow-up). Drop the recommendation instead of persisting a
 		// fabricated term.
-		termStr := strings.TrimSuffix(rec.Term, "yr")
+		termStr := strings.TrimSuffix(string(rec.Term), "yr")
 		term, err := strconv.Atoi(termStr)
 		if err != nil || term <= 0 {
 			logging.Errorf("convertRecommendations: dropping %s rec (account=%s service=%s sku=%s region=%s): invalid term %q",
@@ -1869,7 +1869,7 @@ func (s *Scheduler) convertRecommendations(recs []common.Recommendation, provide
 			AvailabilityZone:  zonalAvailabilityZone(rec.Details),
 			Count:             rec.Count,
 			Term:              term,
-			Payment:           rec.PaymentOption,
+			Payment:           string(rec.PaymentOption),
 			UpfrontCost:       rec.CommitmentCost,
 			MonthlyCost:       rec.RecurringMonthlyCost, // nil when provider API didn't return a monthly breakdown
 			Savings:           rec.EstimatedSavings,

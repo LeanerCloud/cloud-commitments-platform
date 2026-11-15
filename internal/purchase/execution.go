@@ -1315,8 +1315,8 @@ func (m *Manager) executeSinglePurchase(ctx context.Context, rec config.Recommen
 		Region:         rec.Region,
 		ResourceType:   rec.ResourceType,
 		Count:          rec.Count,
-		Term:           fmt.Sprintf("%dyr", rec.Term),
-		PaymentOption:  rec.Payment,
+		Term:           common.Term(fmt.Sprintf("%dyr", rec.Term)),
+		PaymentOption:  common.PaymentOption(rec.Payment),
 		CommitmentCost: rec.UpfrontCost,
 	}
 
