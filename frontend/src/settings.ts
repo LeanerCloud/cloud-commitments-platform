@@ -12,7 +12,6 @@ import { rowIconButton } from './lib/row-icon-button';
 import {
   normalizePaymentValue,
 } from './commitmentOptions';
-import { openModal, closeModal } from './modal';
 import {
   injectServiceFilterControls,
   populateServiceFilterControls,
@@ -23,6 +22,14 @@ import {
 import { initLadderingSettings } from './ladder';
 import { showSkeletonText } from './lib/skeleton';
 import { canonicalizeServiceConfigs } from './lib/settings-service-ids';
+import {
+  accountModalOnSave,
+  accountModalProvider,
+  clearAwsExternalIdDraft,
+  closeAccountModal,
+  openAccountModal,
+  resolveAwsExternalIdForModal,
+} from './modules/settings-accounts';
 import { renderAwsBastionTrustPolicy, renderAwsTrustPolicy } from './modules/settings-aws-trust';
 import { setupDirtyTracking, snapshotAllFields, updateDirtyMarkers } from './modules/settings-dirty';
 import {
@@ -62,28 +69,14 @@ import {
 } from './modules/settings-save-helpers';
 import { GLOBAL_CONFIG_FIELDS, SERVICE_FIELDS, TRACKED_FIELDS, savedSnapshot } from './modules/settings-state';
 import type { AccountProvider } from './modules/settings-state';
+export { openAccountModal } from './modules/settings-accounts';
+export type { AccountModalOptions } from './modules/settings-accounts';
 export { resetConfigCache } from './modules/settings-aws-trust';
 export { isUnsavedChanges } from './modules/settings-dirty';
 export { isPermissionDeniedError, applyReadOnlySettings, copyToClipboard } from './modules/settings-fields';
 export { setGlobalDefaultsForTest, loadOverridesPanel, openOverrideModal } from './modules/settings-overrides';
 
 let cachedSourceCloud: string | undefined;
-
-// sessionStorage key for the in-progress (unsaved) AWS External ID. Persists
-// across modal close/reopen cycles within the same session so the operator
-// can copy the value into AWS, close the modal, and come back to the same
-// value (issue #126). Cleared on successful save.
-const AWS_DRAFT_EXTERNAL_ID_KEY = 'cudly:aws-account-modal:draft-external-id';
-
-/** Options for the account modal (used by the registrations approval flow). */
-export interface AccountModalOptions {
-  onSave?: (provider: AccountProvider, request: api.CloudAccountRequest) => Promise<void>;
-}
-
-// Track which provider's account is being edited (for the modal)
-let accountModalProvider: AccountProvider = 'aws';
-// Optional callback for the registrations approval flow.
-let accountModalOnSave: AccountModalOptions['onSave'] | undefined;
 
 // Cached service configs from last load — used as base when saving to preserve
 // non-UI fields when a row is re-keyed. For an existing row the server overlays only
@@ -378,138 +371,7 @@ async function testAccount(accountId: string, accountLabel: string, btn: HTMLBut
   }
 }
 
-/**
- * Open account modal for add or edit
- */
-export function openAccountModal(provider: AccountProvider, account?: api.CloudAccount, options?: AccountModalOptions): void {
-  accountModalProvider = provider;
-  accountModalOnSave = options?.onSave;
-  const modal = document.getElementById('account-modal');
-  if (!modal) return;
-
-  const title = document.getElementById('account-modal-title');
-  if (title) title.textContent = account ? 'Edit account' : 'Add account';
-
-  setInputValue('account-id', account?.id ?? '');
-  setInputValue('account-provider', provider);
-  setInputValue('account-name', account?.name ?? '');
-  setInputValue('account-description', account?.description ?? '');
-  setInputValue('account-contact-email', account?.contact_email ?? '');
-  setInputValue('account-external-id', account?.external_id ?? '');
-  setInputChecked('account-enabled', account?.enabled ?? true);
-  // Approving a registration auto-enables the account server-side, so the toggle would be a no-op there.
-  document.getElementById('account-enabled-row')?.classList.toggle('hidden', !!options?.onSave);
-
-  // Show/hide provider-specific fields
-  const awsFields = document.getElementById('account-aws-fields');
-  const azureFields = document.getElementById('account-azure-fields');
-  const gcpFields = document.getElementById('account-gcp-fields');
-  if (awsFields) awsFields.classList.toggle('hidden', provider !== 'aws');
-  if (azureFields) azureFields.classList.toggle('hidden', provider !== 'azure');
-  if (gcpFields) gcpFields.classList.toggle('hidden', provider !== 'gcp');
-
-  if (provider === 'aws') {
-    populateAwsAccountFields(account);
-  } else if (provider === 'azure') {
-    const azureAuthMode = account?.azure_auth_mode ?? 'workload_identity_federation';
-    const azureAuthSelect = document.getElementById('account-azure-auth-mode') as HTMLSelectElement | null;
-    if (azureAuthSelect) azureAuthSelect.value = azureAuthMode;
-    setInputValue('account-azure-tenant-id', account?.azure_tenant_id ?? '');
-    setInputValue('account-azure-client-id', account?.azure_client_id ?? '');
-    setInputValue('account-azure-client-secret', '');
-    updateAzureAuthModeFields(azureAuthMode);
-  } else if (provider === 'gcp') {
-    const gcpMode = account?.gcp_auth_mode ?? 'workload_identity_federation';
-    const gcpAuthSelect = document.getElementById('account-gcp-auth-mode') as HTMLSelectElement | null;
-    if (gcpAuthSelect) gcpAuthSelect.value = gcpMode;
-    const gcpEmailEl = document.getElementById('account-gcp-client-email') as HTMLInputElement | null;
-    if (gcpEmailEl) gcpEmailEl.value = account?.gcp_client_email ?? '';
-    const gcpJsonEl = document.getElementById('account-gcp-service-account-json') as HTMLTextAreaElement | null;
-    if (gcpJsonEl) gcpJsonEl.value = '';
-    const wifConfig = document.getElementById('account-gcp-wif-config') as HTMLTextAreaElement | null;
-    if (wifConfig) wifConfig.value = '';
-    updateGCPAuthModeFields(gcpMode);
-  }
-
-  openModal(modal);
-}
-
-/**
- * Populate AWS-specific fields in the account modal
- */
-function generateExternalID(): string {
-  // crypto.randomUUID is available in all supported browsers (Chrome
-  // 92+, Firefox 95+, Safari 15.4+). Fall back to crypto.getRandomValues
-  // (a strict superset of randomUUID's availability) for older runtimes.
-  // The External ID is a security primitive that protects against the
-  // confused-deputy problem on cross-account sts:AssumeRole, so the
-  // fallback MUST also be a CSPRNG — never Math.random() (issue #127).
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
-    const bytes = new Uint8Array(16);
-    crypto.getRandomValues(bytes);
-    return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
-  }
-  // Last-resort fallback: a runtime with no Web Crypto at all (jsdom
-  // without polyfill, very old webviews). Not security-secret-quality,
-  // but "never empty" matters for the form to submit and the backend
-  // length/charset validator (issue #128) will then catch obviously-
-  // weak inputs. Math.random is intentionally NOT used here — see #127.
-  return `cudly-fallback-${Date.now().toString(36)}`;
-}
-
-/**
- * Return the AWS External ID for the current modal session.
- *
- * - When editing an existing account: always use the persisted value.
- * - When creating a new account: reuse the same draft value across modal
- *   close/reopen cycles so an operator who copied the ID into their IAM
- *   trust policy and then reopens the modal sees the same value (issue
- *   #126). The draft is keyed in sessionStorage (cleared on tab close)
- *   and is reset on a successful save.
- *
- * Falls back to in-memory generation if sessionStorage is unavailable
- * (e.g., privacy-mode browsers, tests with no Storage shim) — that path
- * preserves the legacy regenerate-on-reopen behaviour but never breaks.
- */
-function resolveAwsExternalIdForModal(account?: api.CloudAccount): string {
-  if (account?.aws_external_id) return account.aws_external_id;
-
-  let storage: Storage | undefined;
-  try {
-    storage = typeof sessionStorage !== 'undefined' ? sessionStorage : undefined;
-  } catch {
-    storage = undefined;
-  }
-
-  if (storage) {
-    try {
-      const existing = storage.getItem(AWS_DRAFT_EXTERNAL_ID_KEY);
-      if (existing) return existing;
-      const fresh = generateExternalID();
-      storage.setItem(AWS_DRAFT_EXTERNAL_ID_KEY, fresh);
-      return fresh;
-    } catch {
-      // Quota / permission errors — fall through to in-memory generation.
-    }
-  }
-  return generateExternalID();
-}
-
-/** Clear the in-progress AWS External ID draft. Called after successful save. */
-function clearAwsExternalIdDraft(): void {
-  try {
-    if (typeof sessionStorage !== 'undefined') {
-      sessionStorage.removeItem(AWS_DRAFT_EXTERNAL_ID_KEY);
-    }
-  } catch {
-    // sessionStorage unavailable — nothing to clear.
-  }
-}
-
-function populateAwsAccountFields(account?: api.CloudAccount): void {
+export function populateAwsAccountFields(account?: api.CloudAccount): void {
   const authMode = (account?.aws_auth_mode ?? 'workload_identity_federation') as string;
   const authModeSelect = document.getElementById('account-aws-auth-mode') as HTMLSelectElement | null;
   if (authModeSelect) authModeSelect.value = authMode;
@@ -583,7 +445,7 @@ function updateAwsAuthModeFields(mode: string, bastionId?: string): void {
  * handle authentication) and managed_identity is ambient, so neither
  * needs a visible field block here.
  */
-function updateAzureAuthModeFields(mode: string): void {
+export function updateAzureAuthModeFields(mode: string): void {
   const secretFields = document.getElementById('account-azure-secret-fields');
   secretFields?.classList.toggle('hidden', mode !== 'client_secret');
 }
@@ -591,7 +453,7 @@ function updateAzureAuthModeFields(mode: string): void {
 /**
  * Show/hide GCP auth mode sub-fields
  */
-function updateGCPAuthModeFields(mode: string): void {
+export function updateGCPAuthModeFields(mode: string): void {
   const keyFields = document.getElementById('account-gcp-key-fields');
   const wifFields = document.getElementById('account-gcp-wif-fields');
   keyFields?.classList.toggle('hidden', mode !== 'service_account_key');
@@ -617,15 +479,6 @@ async function populateBastionAccountDropdown(selectedId?: string): Promise<void
   } catch {
     // Non-critical
   }
-}
-
-/**
- * Close the account modal
- */
-function closeAccountModal(): void {
-  const modal = document.getElementById('account-modal');
-  if (modal) closeModal(modal);
-  accountModalOnSave = undefined;
 }
 
 /**
