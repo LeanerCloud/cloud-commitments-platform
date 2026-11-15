@@ -85,10 +85,17 @@ function setPlanFieldsLocked(service: boolean, coverage: boolean): void {
 // reset to false only in tests via resetRampHandlersForTest().
 let rampHandlersInstalled = false;
 
+// Request generations for loadPlans / loadPlannedPurchases (#1957). A filter
+// change starts a new load while an older one may still be in flight; only the
+// latest call may render, clear the skeleton or show an error callout.
+let plansLoadGeneration = 0;
+let plannedLoadGeneration = 0;
+
 /**
  * Load plans and planned purchases
  */
 export async function loadPlans(): Promise<void> {
+  const generation = ++plansLoadGeneration;
   // Issue #344 T3: skeleton tiles for the plans list. Synchronous
   // render before fetch so the page doesn't sit blank during the
   // round-trip. The planned-purchases skeleton lives in
@@ -129,8 +136,10 @@ export async function loadPlans(): Promise<void> {
       plans = plans.filter(p => planMatchesProvider(p as unknown as BackendPlan, providerFilter));
     }
 
+    if (generation !== plansLoadGeneration) return;
     renderPlans(plans);
   } catch (error) {
+    if (generation !== plansLoadGeneration) return;
     console.error('Failed to load plans:', error);
     const list = document.getElementById('plans-list');
     if (list) {
@@ -153,6 +162,7 @@ export async function loadPlans(): Promise<void> {
 async function loadPlannedPurchases(): Promise<void> {
   const container = document.getElementById('planned-purchases-list');
   if (!container) return;
+  const generation = ++plannedLoadGeneration;
 
   // Issue #344 T3 (CR follow-up on PR #346): skeleton lives here, not
   // in loadPlans, so direct callers (e.g. follow-up refresh paths after
@@ -162,8 +172,10 @@ async function loadPlannedPurchases(): Promise<void> {
 
   try {
     const data = await api.getPlannedPurchases();
+    if (generation !== plannedLoadGeneration) return;
     renderPlannedPurchases(data.purchases || []);
   } catch (error) {
+    if (generation !== plannedLoadGeneration) return;
     console.error('Failed to load planned purchases:', error);
     teardownSkeleton(container);
     const err = error as Error;
