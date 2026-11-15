@@ -7,6 +7,10 @@ name: deploy-queue-watchdog
 # starts holds the slot and every later deploy or rollback waits behind it
 # (issue #708: GCP and Azure dev deploys frozen from 2026-10-05).
 #
+# Queued or pending runs older than 48 hours are ghost runs (GitHub refuses to
+# cancel or delete them): the step summary lists them for a GitHub Support
+# report and the job stays green.
+#
 # Alert-only on purpose: the job fails (red scheduled run, GitHub notifies) and
 # lists the stuck runs; a human cancels them. `waiting` is how the AWS dev
 # orphan in #708 showed up (no approval gate on dev), but it is also the state
