@@ -23,7 +23,7 @@ import { initLadderAccountSelector } from './ladder-account-selector';
 import { LADDER_CONFIG_TABLE_COLUMNS, renderLadderConfigTable } from './ladder-config-table';
 import { renderLadderConfigModal } from './ladder-config-modal';
 import { listAccountsMinimal, type AccountSummary } from './api/accounts';
-import { readLadderNumbers } from './ladder-form-numbers';
+import { parseSweepCeiling, readLadderNumbers } from './ladder-form-numbers';
 import { initRampEditor, rampScheduleProblem, showRampJsonError } from './ladder-ramp-editor';
 import { DEFAULT_RAMP_STEPS, formatRampJson } from './ladder-ramp-schedule';
 import { showFieldError, clearFieldErrors } from './lib/field-errors';
@@ -258,6 +258,12 @@ function openLadderConfigModal(existing?: api.LadderConfig): void {
   setValue('ladder-cfg-max-hourly', existing?.max_hourly_commit_per_run != null
     ? String(existing.max_hourly_commit_per_run)
     : '');
+  const sweepInitial = existing?.max_hourly_commit_per_sweep != null
+    ? String(existing.max_hourly_commit_per_sweep)
+    : '';
+  setValue('ladder-cfg-max-sweep', sweepInitial);
+  const sweepField = document.getElementById('ladder-cfg-max-sweep');
+  if (sweepField) sweepField.dataset['initial'] = sweepInitial;
   setValue('ladder-cfg-max-actions', String(existing?.max_actions_per_run ?? 10));
 
   const defaultRamp = formatRampJson({ steps: DEFAULT_RAMP_STEPS });
@@ -315,6 +321,15 @@ export async function saveLadderConfig(): Promise<void> {
     return;
   }
 
+  const sweepField = document.getElementById('ladder-cfg-max-sweep') as HTMLInputElement | null;
+  const sweep = parseSweepCeiling(sweepField?.value ?? '', sweepField?.dataset['initial'] ?? '');
+  if (!sweep.ok) {
+    if (sweepField) showFieldError(sweepField, sweep.message);
+    showToast({ message: sweep.message, kind: 'error' });
+    sweepField?.focus();
+    return;
+  }
+
   // The backend refuses an AWS config without a cap (#1815); say so here too.
   if (maxHourlyRaw === '' && identity.provider === 'aws' && maxHourlyField) {
     showFieldError(maxHourlyField, 'max_hourly_commit_per_run is required for AWS. Enter a positive $/hr cap.');
@@ -331,6 +346,7 @@ export async function saveLadderConfig(): Promise<void> {
     cadence: ((document.getElementById('ladder-cfg-cadence') as HTMLSelectElement | null)?.value ?? 'daily') as api.LadderConfig['cadence'],
     ...numbers.values,
     max_hourly_commit_per_run: maxHourly,
+    ...sweep.patch,
     ramp_schedule: rampSchedule,
   };
 

@@ -93,7 +93,7 @@ describe('ladder.ts', () => {
     expect(container.querySelector('p')).toBeNull();
     const rows = container.querySelectorAll('tr.skeleton-row');
     expect(rows).toHaveLength(3);
-    expect(rows[0]!.querySelectorAll('td')).toHaveLength(8);
+    expect(rows[0]!.querySelectorAll('td')).toHaveLength(9);
     expect(container.querySelector('.skeleton-status')).toHaveTextContent('Loading…');
 
     resolve([baseConfig({ id: 'config-1' })]);
@@ -334,6 +334,85 @@ describe('ladder.ts', () => {
       expect(mockShowToast).toHaveBeenCalledWith(
         expect.objectContaining({ kind: 'error' }),
       );
+    });
+  });
+
+  describe('saveLadderConfig per-sweep ceiling', () => {
+    const sweep = (): HTMLInputElement => document.getElementById('ladder-cfg-max-sweep') as HTMLInputElement;
+    async function open(existing?: LadderConfig): Promise<void> {
+      await renderSection(existing ? [existing] : []);
+      if (existing) {
+        (document.querySelector('button.ladder-edit-btn') as HTMLButtonElement).click();
+        await waitFor(() => expect(document.getElementById('ladder-cfg-account-status')).toHaveTextContent(/\S/));
+      } else {
+        document.getElementById('ladder-add-config-btn')!.click();
+        await waitFor(() => expect(document.getElementById('ladder-cfg-account')).toBeEnabled());
+      }
+      (document.getElementById('ladder-cfg-ramp-schedule') as HTMLTextAreaElement).value =
+        '{"steps":[{"after_days":0,"fraction":1.0}]}';
+      (api.upsertLadderConfig as jest.Mock).mockResolvedValue(baseConfig());
+    }
+    const sent = (): Record<string, unknown> => (api.upsertLadderConfig as jest.Mock).mock.calls[0][0];
+
+    test('untouched field sends no key', async () => {
+      await open(baseConfig({ cloud_account_id: 'acct-1', max_hourly_commit_per_sweep: 2.5 }));
+      expect(sweep().value).toBe('2.5');
+      await saveLadderConfig();
+      expect(Object.prototype.hasOwnProperty.call(sent(), 'max_hourly_commit_per_sweep')).toBe(false);
+    });
+
+    test('cleared field sends null', async () => {
+      await open(baseConfig({ cloud_account_id: 'acct-1', max_hourly_commit_per_sweep: 2.5 }));
+      sweep().value = '';
+      await saveLadderConfig();
+      expect(sent()['max_hourly_commit_per_sweep']).toBeNull();
+    });
+
+    test('a changed number is sent', async () => {
+      await open(baseConfig({ cloud_account_id: 'acct-1', max_hourly_commit_per_sweep: null }));
+      sweep().value = '4.25';
+      await saveLadderConfig();
+      expect(sent()['max_hourly_commit_per_sweep']).toBe(4.25);
+    });
+
+    test('invalid input is blocked with an inline error and no store call', async () => {
+      await open(baseConfig({ cloud_account_id: 'acct-1', max_hourly_commit_per_sweep: null }));
+      sweep().value = '1e3';
+      await saveLadderConfig();
+      expect(api.upsertLadderConfig).not.toHaveBeenCalled();
+      expect(sweep()).toHaveAttribute('aria-invalid', 'true');
+      expect(document.activeElement).toBe(sweep());
+    });
+
+    test.each(['1,5', 'abc', '+5', '1e3'])('typo %s on a stored ceiling is blocked, not sent as a clear', async raw => {
+      await open(baseConfig({ cloud_account_id: 'acct-1', max_hourly_commit_per_sweep: 2.5 }));
+      sweep().value = raw;
+      await saveLadderConfig();
+      expect(api.upsertLadderConfig).not.toHaveBeenCalled();
+      expect(sweep()).toHaveAttribute('aria-invalid', 'true');
+      expect(document.activeElement).toBe(sweep());
+    });
+
+    test('a server refusal (arming grant, 503) reaches the toast', async () => {
+      await open(baseConfig({ cloud_account_id: 'acct-1', max_hourly_commit_per_sweep: null }));
+      sweep().value = '4';
+      (api.upsertLadderConfig as jest.Mock).mockRejectedValue(new Error('requires the auto-purchase arming grant'));
+      await saveLadderConfig();
+      expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({
+        kind: 'error', message: expect.stringContaining('auto-purchase arming grant'),
+      }));
+    });
+
+    test('the table formats large ceilings readably', async () => {
+      await renderSection([baseConfig({ max_hourly_commit_per_sweep: 1234567.5 })]);
+      expect(document.querySelector('#ladder-configs-table-container tbody')).toHaveTextContent('$1,234,567.5/hr');
+    });
+
+    test('the table shows the ceiling or Not set', async () => {
+      await renderSection([baseConfig({ max_hourly_commit_per_sweep: 2.5 })]);
+      expect(document.querySelector('#ladder-configs-table-container tbody')).toHaveTextContent('$2.5/hr');
+      await renderSection([baseConfig({ max_hourly_commit_per_sweep: null })]);
+      expect(document.querySelector('#ladder-configs-table-container tbody')).toHaveTextContent('Not set');
     });
   });
 

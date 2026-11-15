@@ -25,7 +25,7 @@ export function ladderAccountLabel(config: LadderConfig, accounts: readonly Acco
 }
 
 /** Column count of the table below, so its loading skeleton matches (#186). */
-export const LADDER_CONFIG_TABLE_COLUMNS = 8;
+export const LADDER_CONFIG_TABLE_COLUMNS = 9;
 
 export function renderLadderConfigTable(container: HTMLElement, configs: readonly LadderConfig[], options: LadderConfigTableOptions): void {
   if (configs.length === 0) {
@@ -48,6 +48,7 @@ export function renderLadderConfigTable(container: HTMLElement, configs: readonl
       <td>${escapeHtml(cfg.mode === 'email_approval' ? 'Email Approval' : 'Auto Approve')}</td>
       <td>${escapeHtml(cfg.cadence === 'daily' ? 'Daily' : 'Weekly')}</td>
       <td>${typeof cfg.target_coverage === 'number' ? `${cfg.target_coverage.toFixed(1)}%` : 'N/A'}</td>
+      <td>${typeof cfg.max_hourly_commit_per_sweep === 'number' ? `$${cfg.max_hourly_commit_per_sweep.toLocaleString('en-US', { maximumFractionDigits: 6 })}/hr` : 'Not set'}</td>
       <td>${cfg.updated_at ? escapeHtml(formatDate(cfg.updated_at)) : 'N/A'}</td>
       ${options.canEdit
         ? `<td><button type="button" class="btn-small icon-btn ladder-edit-btn"
@@ -71,6 +72,7 @@ export function renderLadderConfigTable(container: HTMLElement, configs: readonl
           <th>Mode</th>
           <th>Cadence</th>
           <th>Target Coverage</th>
+          <th title="Not set means no ceiling, and the scheduled sweep refuses to buy">Sweep ceiling</th>
           <th>Updated</th>
           <th><span class="sr-only">Actions</span></th>
         </tr>

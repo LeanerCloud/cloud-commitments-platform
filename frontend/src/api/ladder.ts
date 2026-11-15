@@ -48,6 +48,12 @@ export interface LadderConfig {
   /** null = no cap on hourly commitment delta per run */
   max_hourly_commit_per_run: number | null;
   max_actions_per_run: number;
+  /**
+   * Per-sweep hourly commitment ceiling. GET always carries it (null = unset,
+   * and the sweep refuses to buy). On PUT: omit = unchanged, null = clear,
+   * number = set.
+   */
+  max_hourly_commit_per_sweep?: number | null;
   ramp_schedule: { steps: LadderRampStep[] };
   created_at?: string;
   updated_at?: string;

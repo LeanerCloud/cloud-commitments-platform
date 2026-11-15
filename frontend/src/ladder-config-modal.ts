@@ -118,6 +118,13 @@ export function renderLadderConfigModal(): string {
         </div>
 
         <div class="ladder-field">
+          <label for="ladder-cfg-max-sweep">Max Hourly Commit Per Sweep ($/hr)</label>
+          <input type="text" inputmode="decimal" autocomplete="off" id="ladder-cfg-max-sweep" aria-describedby="ladder-cfg-max-sweep-hint"
+                 placeholder="Not set">
+          <span id="ladder-cfg-max-sweep-hint" class="form-hint">Blank means no ceiling, and the scheduled sweep refuses to buy. Raising it on an armed config requires the auto-purchase grant.</span>
+        </div>
+
+        <div class="ladder-field">
           <label for="ladder-cfg-max-actions">Max Actions Per Run</label>
           <input type="number" id="ladder-cfg-max-actions" aria-describedby="ladder-cfg-max-actions-hint"
                  value="10" min="1" max="50" step="1">

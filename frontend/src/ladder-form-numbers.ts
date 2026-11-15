@@ -41,3 +41,34 @@ export function readLadderNumbers(): LadderNumbersResult {
   }
   return { ok: true, values: values as LadderFormNumbers };
 }
+
+const CEILING_MIN = 1e-6;
+const CEILING_MAX = 1e12;
+// Plain decimals only: no exponent, sign or separators, at most 6 decimals
+// (the API stores micro-dollars and refuses finer input).
+const CEILING_FORMAT = /^(\d+(\.\d{0,6})?|\.\d{1,6})$/;
+
+export type SweepCeilingPatch = Pick<Partial<LadderConfig>, 'max_hourly_commit_per_sweep'>;
+
+export type SweepCeilingResult =
+  | { ok: true; patch: SweepCeilingPatch }
+  | { ok: false; message: string };
+
+/**
+ * Maps the per-sweep ceiling field to the PUT semantics: key omitted =
+ * unchanged, null = clear, number = set. `initial` is the value the form was
+ * opened with, so an untouched field sends no key.
+ */
+export function parseSweepCeiling(rawInput: string, initial: string): SweepCeilingResult {
+  const raw = rawInput.trim();
+  if (raw === initial.trim()) return { ok: true, patch: {} };
+  if (raw === '') return { ok: true, patch: { max_hourly_commit_per_sweep: null } };
+  const n = Number(raw);
+  if (!CEILING_FORMAT.test(raw) || !(n >= CEILING_MIN && n <= CEILING_MAX)) {
+    return {
+      ok: false,
+      message: 'Max hourly commit per sweep must be between 0.000001 and 1000000000000 $/hr, with at most 6 decimals, or blank to clear it.',
+    };
+  }
+  return { ok: true, patch: { max_hourly_commit_per_sweep: n } };
+}
