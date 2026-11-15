@@ -23,6 +23,7 @@ import (
 // columns, as old code inserts during a rolling deploy) still applies to every
 // variant of its 6-tuple.
 func TestSuppressionsScopedToPurchasedVariant_RealPostgres(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	pg := testhelpers.RequireMigratedDatabase(ctx, t, "../database/postgres/migrations")
 	store := config.NewPostgresStore(pg.DB)
@@ -78,6 +79,7 @@ func TestSuppressionsScopedToPurchasedVariant_RealPostgres(t *testing.T) {
 // 6-tuple, so the later Linux/UNIX recommendation that was actually bought is
 // filtered instead of re-offered.
 func TestLegacyEC2RetrySuppressesBoughtVariant_RealPostgres(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	pg := testhelpers.RequireMigratedDatabase(ctx, t, "../database/postgres/migrations")
 	store := config.NewPostgresStore(pg.DB)
@@ -108,6 +110,7 @@ func TestLegacyEC2RetrySuppressesBoughtVariant_RealPostgres(t *testing.T) {
 // suppression row and a "compute" rec by an "ec2" row (both spellings exist in
 // stored data), while an Azure "compute" rec is not hidden by an AWS row.
 func TestSuppressionsMatchAcrossEC2Slugs_RealPostgres(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	pg := testhelpers.RequireMigratedDatabase(ctx, t, "../database/postgres/migrations")
 	store := config.NewPostgresStore(pg.DB)
@@ -153,6 +156,7 @@ func TestSuppressionsMatchAcrossEC2Slugs_RealPostgres(t *testing.T) {
 // the Multi-AZ rec at its full count, while a suppression row written before
 // az_config existed (variant set, az_config NULL) still hides both.
 func TestRDSSuppressionScopedToAZConfig_RealPostgres(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	pg := testhelpers.RequireMigratedDatabase(ctx, t, "../database/postgres/migrations")
 	store := config.NewPostgresStore(pg.DB)

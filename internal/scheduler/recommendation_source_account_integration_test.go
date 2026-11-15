@@ -14,6 +14,7 @@ import (
 )
 
 func TestAWSRecommendationSourceAccountPersistence(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	container := testhelpers.RequireMigratedDatabase(ctx, t, "../database/postgres/migrations")
 	store := config.NewPostgresStore(container.DB)

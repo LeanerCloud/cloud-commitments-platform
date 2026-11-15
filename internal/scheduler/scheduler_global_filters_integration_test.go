@@ -17,6 +17,7 @@ import (
 )
 
 func TestGlobalFiltersPersistedAmbientAndRegistered(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	pg := testhelpers.RequireMigratedDatabase(ctx, t, "../database/postgres/migrations")
 	store := config.NewPostgresStore(pg.DB)
@@ -106,6 +107,7 @@ func TestGlobalFiltersPersistedAmbientAndRegistered(t *testing.T) {
 // by AZ) used to fail the whole collection write. With the 8-column index gone
 // the whole 500-row batch lands, siblings included.
 func TestPersistCollectionMultiAZInOneBatch(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	pg := testhelpers.RequireMigratedDatabase(ctx, t, "../database/postgres/migrations")
 	store := config.NewPostgresStore(pg.DB)
@@ -150,6 +152,7 @@ func TestPersistCollectionMultiAZInOneBatch(t *testing.T) {
 // come from the real convertRecommendations, so the Details blob that feeds the
 // generated platform and tenancy columns is the one production writes.
 func TestPersistCollectionPlatformTenancyInOneBatch(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	pg := testhelpers.RequireMigratedDatabase(ctx, t, "../database/postgres/migrations")
 	store := config.NewPostgresStore(pg.DB)

@@ -179,6 +179,7 @@ func TestAzureHoldCarriedAcrossCycles(t *testing.T) {
 // both stay. Before, the upsert committed and reset the marker first, and a
 // failing second write left the held rows purchasable.
 func TestPersistCollection_FailedMarkerWriteRollsBackUpsert(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	container := testhelpers.RequireMigratedDatabase(ctx, t, "../database/postgres/migrations")
 	store := config.NewPostgresStore(container.DB)
@@ -229,6 +230,7 @@ func azureSweep(t *testing.T, store config.StoreInterface) config.PartialProvide
 // the test makes the same UpsertRecommendationsWithPartial call persistCollection
 // makes, with a chosen collection time.
 func TestAzureHoldBoundedAcrossCycles(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	container := testhelpers.RequireMigratedDatabase(ctx, t, "../database/postgres/migrations")
 	store := config.NewPostgresStore(container.DB)
