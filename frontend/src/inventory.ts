@@ -27,6 +27,7 @@ import * as state from './state';
 import { switchInventorySubTab } from './navigation';
 import { syncTabStops } from './lib/tablist';
 import { ownValue } from './lib/own-property';
+import { appendCell, clearChildren, renderEmptyParagraph } from './modules/inventory-dom';
 
 type InventorySubSection = 'active-commitments' | 'coverage' | 'trends' | 'ri-exchange';
 
@@ -171,18 +172,6 @@ function wireRefreshButton(): void {
   btn.dataset['wired'] = '1';
 }
 
-function clearChildren(el: HTMLElement): void {
-  while (el.firstChild) el.removeChild(el.firstChild);
-}
-
-function renderEmptyParagraph(container: HTMLElement, message: string): void {
-  clearChildren(container);
-  const p = document.createElement('p');
-  p.className = 'empty';
-  p.textContent = message;
-  container.appendChild(p);
-}
-
 /**
  * Build a context-aware empty-state message for the active-commitments
  * table. When chip filters are active the message names the scope so
@@ -300,15 +289,6 @@ function buildCommitmentRow(c: api.InventoryCommitment): HTMLTableRowElement {
   appendCell(tr, formatDate(c.end_date));
 
   return tr;
-}
-
-// numeric right-aligns money and count cells with tabular digits (td.num,
-// issue #739) so amounts line up for comparison.
-function appendCell(tr: HTMLTableRowElement, text: string, numeric = false): void {
-  const td = document.createElement('td');
-  td.textContent = text;
-  if (numeric) td.className = 'num';
-  tr.appendChild(td);
 }
 
 // The same provider badge the other tables use (lowercase "aws" before).
