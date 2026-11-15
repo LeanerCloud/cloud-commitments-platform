@@ -379,7 +379,8 @@ func TestExecuteSinglePurchase_RedshiftWithoutRequestedAtRefuses(t *testing.T) {
 }
 
 // fakeAttemptJournal is a never-called journal; the test only checks identity.
-type fakeAttemptJournal struct{}
+// The embedded nil PurchaseClaimer satisfies the manager's journal interface.
+type fakeAttemptJournal struct{ common.PurchaseClaimer }
 
 func (*fakeAttemptJournal) PriorAttempts(context.Context, string) ([]common.AttemptRecord, error) {
 	return nil, nil

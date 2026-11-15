@@ -52,11 +52,14 @@ type ManagerConfig struct {
 }
 
 // AttemptJournal is the journal the manager hands to providers. It must also
-// read claims (go#700), so a wrapper that hides ClaimedByOthers fails to
-// compile instead of silently disabling the cross-lineage exclusion.
+// read claims (go#700) and take the durable purchase claim (go#745), so a wrapper
+// that hides ClaimedByOthers or the claim methods fails to compile instead of
+// silently disabling the cross-lineage exclusion or the cross-process claim the
+// Azure reservation flow finds by type assertion.
 type AttemptJournal interface {
 	common.AttemptJournal
 	common.ClaimReader
+	common.PurchaseClaimer
 }
 
 // Manager handles purchase workflow.
