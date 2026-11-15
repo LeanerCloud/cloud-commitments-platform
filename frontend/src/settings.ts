@@ -25,12 +25,15 @@ import { canonicalizeServiceConfigs } from './lib/settings-service-ids';
 import {
   accountModalOnSave,
   accountModalProvider,
+  buildAccountRequest,
   clearAwsExternalIdDraft,
   closeAccountModal,
   openAccountModal,
-  resolveAwsExternalIdForModal,
+  updateAwsAuthModeFields,
+  updateAzureAuthModeFields,
+  updateGCPAuthModeFields,
 } from './modules/settings-accounts';
-import { renderAwsBastionTrustPolicy, renderAwsTrustPolicy } from './modules/settings-aws-trust';
+import { renderAwsBastionTrustPolicy } from './modules/settings-aws-trust';
 import { setupDirtyTracking, snapshotAllFields, updateDirtyMarkers } from './modules/settings-dirty';
 import {
   applyReadOnlySettings,
@@ -40,8 +43,6 @@ import {
   isPermissionDeniedError,
   populateGraceInput,
   readGraceInput,
-  setInputChecked,
-  setInputValue,
 } from './modules/settings-fields';
 import {
   closeAccountOverridesModal,
@@ -369,161 +370,6 @@ async function testAccount(accountId: string, accountLabel: string, btn: HTMLBut
     showToast({ message: `Failed to test credentials for ${accountLabel}: ${msg}`, kind: 'error', timeout: null });
     setTimeout(restore, 3000);
   }
-}
-
-export function populateAwsAccountFields(account?: api.CloudAccount): void {
-  const authMode = (account?.aws_auth_mode ?? 'workload_identity_federation') as string;
-  const authModeSelect = document.getElementById('account-aws-auth-mode') as HTMLSelectElement | null;
-  if (authModeSelect) authModeSelect.value = authMode;
-
-  setInputValue('account-aws-access-key-id', '');
-  setInputValue('account-aws-secret-access-key', '');
-  // aws_role_arn is the backend column used by all three auth modes that need
-  // a role: role_arn (direct), bastion (target role assumed via bastion creds),
-  // and workload_identity_federation (role assumed via OIDC). Only one of
-  // these fields is visible at a time (see updateAwsAuthModeFields), and the
-  // save path writes whichever one is visible back to req.aws_role_arn. We
-  // pre-fill all three with the same stored value so switching modes mid-edit
-  // doesn't blank the input that just became visible.
-  setInputValue('account-aws-role-arn', account?.aws_role_arn ?? '');
-  // External ID is a CUDly-managed shared secret for cross-account role
-  // assumption (issue #18). On edit, keep whatever was stored before; on
-  // create, generate a value once and persist it in sessionStorage so a
-  // close/reopen cycle returns the same value (issue #126). The field
-  // itself is marked readonly in index.html so users can't hand-craft
-  // values that would defeat the purpose.
-  // Bastion mode shares the same draft External ID value as role_arn mode
-  // (issue #129) — both are AWS sts:ExternalId values used as a confused-
-  // deputy guard. Sharing the draft key keeps a single source of truth so
-  // toggling auth modes mid-edit doesn't surface diverging values, and the
-  // generator semantics are identical (CSPRNG + sessionStorage persistence
-  // until save). The two readonly inputs are wired to the same value.
-  const externalID = resolveAwsExternalIdForModal(account);
-  setInputValue('account-aws-external-id', externalID);
-  setInputValue('account-aws-external-id-bastion', externalID);
-  setInputValue('account-aws-bastion-role-arn', account?.aws_role_arn ?? '');
-  setInputValue('account-aws-wif-role-arn', account?.aws_role_arn ?? '');
-  setInputValue('account-aws-wif-token-file', account?.aws_web_identity_token_file ?? '');
-  setInputChecked('account-aws-is-org-root', account?.aws_is_org_root ?? false);
-
-  updateAwsAuthModeFields(authMode, account?.aws_bastion_id);
-
-  // Render the trust-policy snippet asynchronously — we need the CUDly
-  // host account ID from getConfig.source_identity (issue #19). Kept
-  // void so the modal doesn't block waiting for the network. The bastion
-  // variant (issue #129) is also rendered eagerly so it's ready when the
-  // operator switches to that mode mid-edit.
-  void renderAwsTrustPolicy();
-  void renderAwsBastionTrustPolicy();
-}
-
-/**
- * Show/hide AWS auth mode sub-fields
- */
-function updateAwsAuthModeFields(mode: string, bastionId?: string): void {
-  const keysFields = document.getElementById('account-aws-keys-fields');
-  const roleFields = document.getElementById('account-aws-role-fields');
-  const bastionFields = document.getElementById('account-aws-bastion-fields');
-  const wifFields = document.getElementById('account-aws-wif-fields');
-
-  keysFields?.classList.toggle('hidden', mode !== 'access_keys');
-  roleFields?.classList.toggle('hidden', mode !== 'role_arn');
-  bastionFields?.classList.toggle('hidden', mode !== 'bastion');
-  wifFields?.classList.toggle('hidden', mode !== 'workload_identity_federation');
-
-  if (mode === 'bastion') {
-    // Refresh the dropdown then re-render the trust-policy snippet so
-    // a freshly-selected bastion is reflected in the Principal (#129).
-    void populateBastionAccountDropdown(bastionId).then(() => renderAwsBastionTrustPolicy());
-  }
-}
-
-/**
- * Show/hide Azure auth mode sub-fields. Only client_secret mode has an
- * input block; workload_identity_federation is credential-free (CUDly's
- * OIDC issuer + the App Registration's federated-identity-credential
- * handle authentication) and managed_identity is ambient, so neither
- * needs a visible field block here.
- */
-export function updateAzureAuthModeFields(mode: string): void {
-  const secretFields = document.getElementById('account-azure-secret-fields');
-  secretFields?.classList.toggle('hidden', mode !== 'client_secret');
-}
-
-/**
- * Show/hide GCP auth mode sub-fields
- */
-export function updateGCPAuthModeFields(mode: string): void {
-  const keyFields = document.getElementById('account-gcp-key-fields');
-  const wifFields = document.getElementById('account-gcp-wif-fields');
-  keyFields?.classList.toggle('hidden', mode !== 'service_account_key');
-  wifFields?.classList.toggle('hidden', mode !== 'workload_identity_federation');
-}
-
-/**
- * Populate bastion account dropdown with AWS accounts, optionally pre-selecting one
- */
-async function populateBastionAccountDropdown(selectedId?: string): Promise<void> {
-  const select = document.getElementById('account-aws-bastion-id') as HTMLSelectElement | null;
-  if (!select) return;
-  try {
-    const accounts = await api.listAccounts({ provider: 'aws' });
-    while (select.options.length > 1) select.remove(1);
-    accounts.forEach(a => {
-      const opt = document.createElement('option');
-      opt.value = a.id;
-      opt.textContent = `${a.name} (${a.external_id})`;
-      select.appendChild(opt);
-    });
-    if (selectedId) select.value = selectedId;
-  } catch {
-    // Non-critical
-  }
-}
-
-/**
- * Build the account request from the modal form
- */
-function buildAccountRequest(provider: AccountProvider): api.CloudAccountRequest {
-  const req: api.CloudAccountRequest = {
-    name: (byId<HTMLInputElement>('account-name')?.value ?? '').trim(),
-    description: (byId<HTMLTextAreaElement>('account-description')?.value ?? '').trim() || undefined,
-    contact_email: (byId<HTMLInputElement>('account-contact-email')?.value ?? '').trim() || undefined,
-    provider,
-    external_id: (byId<HTMLInputElement>('account-external-id')?.value ?? '').trim(),
-    enabled: byId<HTMLInputElement>('account-enabled')?.checked ?? true,
-  };
-
-  if (provider === 'aws') {
-    const authMode = byId<HTMLSelectElement>('account-aws-auth-mode')?.value ?? '';
-    req.aws_auth_mode = authMode;
-    req.aws_is_org_root = byId<HTMLInputElement>('account-aws-is-org-root')?.checked ?? false;
-    if (authMode === 'role_arn') {
-      req.aws_role_arn = (byId<HTMLInputElement>('account-aws-role-arn')?.value ?? '').trim();
-      req.aws_external_id = (byId<HTMLInputElement>('account-aws-external-id')?.value ?? '').trim() || undefined;
-    } else if (authMode === 'bastion') {
-      req.aws_bastion_id = byId<HTMLSelectElement>('account-aws-bastion-id')?.value ?? '';
-      req.aws_role_arn = (byId<HTMLInputElement>('account-aws-bastion-role-arn')?.value ?? '').trim();
-      // Collect the External ID for bastion mode too (issue #129) — the
-      // bastion's STS client calls AssumeRole into the target role just
-      // like role_arn mode, so the same sts:ExternalId guard applies.
-      req.aws_external_id = (byId<HTMLInputElement>('account-aws-external-id-bastion')?.value ?? '').trim() || undefined;
-    } else if (authMode === 'workload_identity_federation') {
-      req.aws_role_arn = byId<HTMLInputElement>('account-aws-wif-role-arn')?.value.trim();
-      req.aws_web_identity_token_file = byId<HTMLInputElement>('account-aws-wif-token-file')?.value.trim() || undefined;
-    }
-  } else if (provider === 'azure') {
-    req.azure_subscription_id = req.external_id; // external_id IS the subscription ID for Azure
-    req.azure_auth_mode = byId<HTMLSelectElement>('account-azure-auth-mode')?.value || 'client_secret';
-    req.azure_tenant_id = (byId<HTMLInputElement>('account-azure-tenant-id')?.value ?? '').trim();
-    req.azure_client_id = (byId<HTMLInputElement>('account-azure-client-id')?.value ?? '').trim();
-  } else if (provider === 'gcp') {
-    req.gcp_project_id = req.external_id; // external_id IS the project ID for GCP
-    req.gcp_auth_mode = byId<HTMLSelectElement>('account-gcp-auth-mode')?.value || 'service_account_key';
-    req.gcp_client_email = byId<HTMLInputElement>('account-gcp-client-email')?.value.trim() ?? '';
-  }
-
-  return req;
 }
 
 /**
