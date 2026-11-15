@@ -12,8 +12,6 @@ import { showToast } from './toast';
 import { rowIconButton } from './lib/row-icon-button';
 import {
   isValidCombination,
-  getValidPaymentOptions,
-  getCommitmentConfig,
   normalizePaymentValue,
 } from './commitmentOptions';
 import { openModal, closeModal } from './modal';
@@ -34,22 +32,19 @@ import {
   byId,
   copyToClipboard,
   getFieldValue,
-  inheritCurrentlyLabel,
   isPermissionDeniedError,
-  paymentLabel,
   populateGraceInput,
   readGraceInput,
   setInputChecked,
   setInputValue,
 } from './modules/settings-fields';
 import {
-  cachedGlobalDefaults,
   closeAccountOverridesModal,
+  closeOverrideModal,
   loadOverridesPanel,
   openAccountOverridesModal,
   overrideModalContext,
   refreshRecommendationsAfterOverrideChange,
-  resetOverrideModalState,
   setCachedGlobalDefaults,
 } from './modules/settings-overrides';
 import {
@@ -385,176 +380,6 @@ async function testAccount(accountId: string, accountLabel: string, btn: HTMLBut
     showToast({ message: `Failed to test credentials for ${accountLabel}: ${msg}`, kind: 'error', timeout: null });
     setTimeout(restore, 3000);
   }
-}
-
-/**
- * Switch the override modal between single-service and bulk-service mode.
- *
- * In single mode the normal <select id="override-service"> is shown.
- * In bulk mode it is hidden and a checkbox group is shown instead (issue #119).
- * Uses DOM APIs throughout — no innerHTML — so no XSS risk from service values.
- */
-export function applyOverrideBulkMode(
-  bulk: boolean,
-  available: ReadonlyArray<{ value: string; label: string }>,
-): void {
-  const singleRow = document.getElementById('override-single-service-row');
-  const bulkDiv   = document.getElementById('override-bulk-services');
-  const listDiv   = document.getElementById('override-bulk-services-list');
-  const submitBtn = document.getElementById('override-submit-btn') as HTMLButtonElement | null;
-
-  if (singleRow) singleRow.classList.toggle('hidden', bulk);
-  if (bulkDiv)   bulkDiv.classList.toggle('hidden', !bulk);
-
-  if (!bulk) {
-    // Returning to single-service mode: recompute disabled state from the
-    // single-service <select> so the button is not left stuck disabled after
-    // toggling back from bulk mode.
-    if (submitBtn) {
-      const singleSelect = singleRow?.querySelector('select') as HTMLSelectElement | null;
-      submitBtn.disabled = (singleSelect?.value ?? '') === '';
-    }
-    return;
-  }
-
-  // Rebuild the checkbox list using DOM APIs (no innerHTML).
-  if (listDiv) {
-    listDiv.replaceChildren();
-    for (const { value, label } of available) {
-      const checkLabel = document.createElement('label');
-      checkLabel.className = 'bulk-service-checkbox-label';
-
-      const cb = document.createElement('input');
-      cb.type  = 'checkbox';
-      cb.name  = 'bulk-service';
-      cb.value = value;
-      // Re-evaluate submit-button state whenever a checkbox changes.
-      cb.addEventListener('change', () => {
-        if (submitBtn) {
-          const anyChecked = listDiv.querySelectorAll('input[type="checkbox"]:checked').length > 0;
-          submitBtn.disabled = !anyChecked;
-        }
-      });
-
-      const span = document.createElement('span');
-      span.textContent = label;
-
-      checkLabel.appendChild(cb);
-      checkLabel.appendChild(span);
-      listDiv.appendChild(checkLabel);
-    }
-  }
-
-  // In bulk mode start with submit disabled until at least one box is checked.
-  if (submitBtn) submitBtn.disabled = true;
-
-  // Apply conflict gating for the current term/payment selection immediately
-  // after the list is built, so checkboxes are already disabled if the chosen
-  // combo is invalid for a service before the user interacts (issue #119).
-  syncBulkServiceConflicts(overrideModalContext?.provider ?? '');
-}
-
-/**
- * Disable (and annotate) bulk-service checkboxes whose service does not
- * support the currently selected (term, payment) combo.  Re-enables them
- * if the combo becomes valid again.  Mirrors the single-select path that
- * uses syncOverridePaymentOptions / isValidCombination.  Issue #119.
- *
- * Only acts when both term and payment are explicitly set; when either is
- * blank ("Inherit") every checkbox stays enabled because no hard restriction
- * can be evaluated.
- */
-export function syncBulkServiceConflicts(provider: string): void {
-  const termRaw = (document.getElementById('override-term') as HTMLSelectElement | null)?.value ?? '';
-  const paymentRaw = (document.getElementById('override-payment') as HTMLSelectElement | null)?.value ?? '';
-
-  const listDiv = document.getElementById('override-bulk-services-list');
-  if (!listDiv) return;
-
-  const checkboxes = listDiv.querySelectorAll<HTMLInputElement>('input[name="bulk-service"]');
-  if (checkboxes.length === 0) return;
-
-  // When term or payment is unset ("Inherit"), no restriction can be evaluated.
-  const term = termRaw !== '' ? parseInt(termRaw, 10) : NaN;
-  const payment = paymentRaw;
-  const canEvaluate = payment !== '' && Number.isFinite(term) && term > 0;
-
-  for (const cb of checkboxes) {
-    const service = cb.value;
-    const label = cb.closest('label');
-    if (canEvaluate && !isValidCombination(provider, service, term, payment)) {
-      cb.disabled = true;
-      cb.checked  = false;
-      if (label) {
-        label.title = `${provider}/${service} does not support ${term}-year ${payment}`;
-        label.classList.add('bulk-service-checkbox-label--conflict');
-      }
-    } else {
-      cb.disabled = false;
-      if (label) {
-        label.title = '';
-        label.classList.remove('bulk-service-checkbox-label--conflict');
-      }
-    }
-  }
-
-  // Re-evaluate submit-button state after disabling/enabling checkboxes.
-  const submitBtn = document.getElementById('override-submit-btn') as HTMLButtonElement | null;
-  if (submitBtn) {
-    const anyChecked = listDiv.querySelectorAll('input[type="checkbox"]:checked').length > 0;
-    submitBtn.disabled = !anyChecked;
-  }
-}
-
-// syncOverridePaymentOptions filters the override-payment <select> down to
-// the (service, term) combinations AWS supports. Called whenever the user
-// changes service or term in the modal. Per #107.
-export function syncOverridePaymentOptions(provider: string): void {
-  const serviceSel = document.getElementById('override-service') as HTMLSelectElement | null;
-  const termSel = document.getElementById('override-term') as HTMLSelectElement | null;
-  const paymentSel = document.getElementById('override-payment') as HTMLSelectElement | null;
-  if (!serviceSel || !termSel || !paymentSel) return;
-
-  const service = serviceSel.value;
-  const term = parseInt(termSel.value, 10);
-
-  const previous = paymentSel.value;
-  paymentSel.replaceChildren();
-
-  // Always include the "Inherit (currently: X)" option — corresponds to
-  // leaving the field unset on the sparse PUT (issue #112).
-  const inheritOpt = document.createElement('option');
-  inheritOpt.value = '';
-  inheritOpt.textContent = inheritCurrentlyLabel(paymentLabel(cachedGlobalDefaults.payment));
-  paymentSel.appendChild(inheritOpt);
-
-  // When service or term is unset, can't run the validity check yet —
-  // show the full provider payment list so the user can choose; the
-  // submit-side guard will catch any invalid combo on Save.
-  const provPayments = getCommitmentConfig(provider).payments;
-  const candidates = (service && Number.isFinite(term) && term > 0)
-    ? getValidPaymentOptions(provider, service, term).map(p => ({ value: p.value, label: p.label }))
-    : provPayments.map(p => ({ value: p.value, label: p.label }));
-
-  for (const { value, label } of candidates) {
-    const opt = document.createElement('option');
-    opt.value = value;
-    opt.textContent = label;
-    paymentSel.appendChild(opt);
-  }
-
-  // Preserve the previous selection if it's still valid; otherwise snap
-  // back to "Inherit". Snapping (rather than forcing a new value) avoids
-  // a confusing silent change.
-  const previousStillValid = previous === '' || candidates.some(c => c.value === previous);
-  paymentSel.value = previousStillValid ? previous : '';
-}
-
-export function closeOverrideModal(): void {
-  const modal = document.getElementById('override-modal');
-  if (modal) closeModal(modal);
-  // Idempotent; covers a close of a modal that was never opened via openModal.
-  resetOverrideModalState();
 }
 
 /**
