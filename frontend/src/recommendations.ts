@@ -633,10 +633,16 @@ function writeSortToUrl(sort: state.RecommendationsSort): void {
   }
 }
 
+// Request generation for loadRecommendations (#1957). A provider/account filter
+// change starts a new load while an older one may still be in flight; only the
+// latest call may touch caches, selection, the list or the error callout.
+let recsLoadGeneration = 0;
+
 /**
  * Load recommendations
  */
 export async function loadRecommendations(): Promise<void> {
+  const generation = ++recsLoadGeneration;
   // Issue #481: seed sort state from the URL before the first render so a
   // refreshed / bookmarked page renders with the user's chosen sort, not
   // the module default ("savings desc"). Idempotent on subsequent reloads.
@@ -699,6 +705,7 @@ export async function loadRecommendations(): Promise<void> {
       // block the recommendations load; we fall back to the module defaults.
       api.getConfig().catch(() => null),
     ]);
+    if (generation !== recsLoadGeneration) return;
     // Populate the module-level GlobalConfig cache (issue #223).
     if (cfgResponse?.global) {
       const g = cfgResponse.global;
@@ -764,6 +771,7 @@ export async function loadRecommendations(): Promise<void> {
     // async background refresh if the cache is cold or older than 24h.
     void triggerAutoRefreshIfStale();
   } catch (error) {
+    if (generation !== recsLoadGeneration) return;
     console.error('Failed to load recommendations:', error);
     const list = document.getElementById('recommendations-list');
     if (list) {
@@ -1358,9 +1366,11 @@ export interface PageLevelRange {
  *
  *   savingsMin       = sum of cellSummary.savingsMin
  *   savingsMax       = sum of cellSummary.savingsMax
- *   upfrontMin       = sum of cellSummary.upfrontMin (matches the variant
- *                      whose savingsMin was contributed)
- *   upfrontMax       = sum of cellSummary.upfrontMax
+ *   upfrontMin       = sum of cellSummary.upfrontMin (each cell's lowest
+ *                      upfront, which is NOT paired with the variant that
+ *                      gave savingsMin)
+ *   upfrontMax       = sum of cellSummary.upfrontMax (each cell's highest
+ *                      upfront, not paired with the savingsMax variant)
  *   paybackMonthsMin = sum of per-cell best-payback variant upfronts /
  *                      sum of their savings.  Each cell independently
  *                      picks the variant with the lowest upfront/savings
