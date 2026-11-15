@@ -164,7 +164,7 @@ func TestUpdateServiceConfig_ParallelSettingsSaveDoesNotExhaustPool(t *testing.T
 	for _, svc := range settingsAWSServices {
 		combos = append(combos, commitmentopts.Combo{Provider: "aws", Service: svc, TermYears: 1, Payment: "no-upfront"})
 	}
-	require.NoError(t, optsStore.Save(ctx, combos, "123456789012"))
+	require.NoError(t, optsStore.Save(ctx, "aws", combos, "123456789012"))
 
 	store := config.NewPostgresStore(db)
 	mockAuth := new(MockAuthService)
