@@ -202,7 +202,8 @@ func (h *Handler) checkAdminAPIKey(apiKey string) bool {
 	return false
 }
 
-// extractBearerToken extracts the token from the Authorization or X-Authorization header
+// extractBearerToken extracts the token from the Authorization or X-Authorization header,
+// falling back to the session cookie when no bearer token is present.
 // Note: X-Authorization is used by the frontend because CloudFront OAC signs requests
 // with SigV4, which overwrites the standard Authorization header.
 func (h *Handler) extractBearerToken(req *events.LambdaFunctionURLRequest) string {
@@ -223,7 +224,12 @@ func (h *Handler) extractBearerToken(req *events.LambdaFunctionURLRequest) strin
 		return authHdr[len("bearer "):]
 	}
 
-	return ""
+	// API-key requests never read cookies; a browser cookie riding along
+	// must not attach a session to them.
+	if extractAPIKey(req) != "" {
+		return ""
+	}
+	return readSessionCookie(req)
 }
 
 // requiresCSRFValidation returns true for state-changing requests that need CSRF protection.

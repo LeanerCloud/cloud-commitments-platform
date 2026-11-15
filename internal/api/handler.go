@@ -186,6 +186,8 @@ func NewHandler(cfg HandlerConfig) *Handler {
 		// This effectively disables CORS for browser-based clients
 	}
 
+	warnIfCookieCannotWork(corsOrigin)
+
 	h := &Handler{
 		config:              cfg.ConfigStore,
 		credStore:           cfg.CredentialStore,
@@ -823,7 +825,7 @@ func (h *Handler) validateSecurityContext(ctx context.Context, req *events.Lambd
 
 	principal, err := h.authenticatePrincipal(ctx, req)
 	if err != nil {
-		return ctx, h.buildResponse(401, corsHeaders, map[string]string{"error": "Unauthorized"}, nil)
+		return ctx, h.buildResponse(401, corsHeaders, h.clearCookieOn401(req, map[string]string{"error": "Unauthorized"}), nil)
 	}
 	ctx = contextWithPrincipal(ctx, principal)
 
@@ -851,12 +853,25 @@ func (h *Handler) validateSecurityContext(ctx context.Context, req *events.Lambd
 
 // executeRequest routes and executes the API request.
 func (h *Handler) executeRequest(ctx context.Context, method, path string, req *events.LambdaFunctionURLRequest, corsHeaders map[string]string) (*events.LambdaFunctionURLResponse, error) {
-	response, err := h.routeRequest(ctx, method, path, req)
+	err := requireJSONBody(path, req)
+	var response any
+	if err == nil {
+		response, err = h.routeRequest(ctx, method, path, req)
+	}
+	if err == nil {
+		response, err = attachLoginCookie(path, response)
+	}
 
 	statusCode := 200
 	if err != nil {
 		statusCode, response = h.handleRequestError(err)
 		corsHeaders = errorResponseHeaders(err, corsHeaders)
+	}
+	// POST is CSRF-checked before this point, so a logout ends the cookie
+	// even when the server-side session was already gone. GET and HEAD skip
+	// the CSRF check and must never clear it.
+	if method == "POST" && path == logoutPath {
+		response = &cookieResponse{body: response, cookies: []string{clearSessionCookie()}}
 	}
 
 	return h.buildResponse(statusCode, corsHeaders, response, nil), nil
@@ -933,6 +948,12 @@ func (h *Handler) buildResponse(statusCode int, headers map[string]string, body 
 			Headers:    headers,
 			Body:       `{"error": "internal server error"}`,
 		}
+	}
+
+	if cr, ok := body.(*cookieResponse); ok {
+		resp := h.buildResponse(statusCode, headers, cr.body, nil)
+		resp.Cookies = cr.cookies
+		return resp
 	}
 
 	// Handle raw (non-JSON) responses
