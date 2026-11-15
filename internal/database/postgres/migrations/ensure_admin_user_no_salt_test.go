@@ -3,10 +3,8 @@
 package migrations_test
 
 // Issue #313: the bootstrap admin INSERTs run after every migration on each
-// boot, so they must not name users.salt, a leftover column that a later
-// migration is meant to drop. This drops the column from a migrated database,
-// then reruns RunMigrations (the migrations are already applied, so only the
-// bootstrap runs) on both bootstrap paths.
+// boot, so they must not name users.salt, a column migration 000175 dropped. This reruns RunMigrations (the migrations are already
+// applied, so only the bootstrap runs) on both bootstrap paths.
 
 import (
 	"context"
@@ -30,9 +28,6 @@ func TestEnsureAdminUser_WithoutSaltColumn(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			pool := testhelpers.RequireMigratedDatabase(ctx, t, migrationsPath).DB.Pool()
-			_, err := pool.Exec(ctx, "ALTER TABLE users DROP COLUMN salt")
-			require.NoError(t, err)
-
 			require.NoError(t, migrations.RunMigrations(ctx, pool, migrationsPath, tc.email, tc.password))
 
 			assert.Equal(t, []string{defaultAdminGroupIDTest}, queryAdminGroupIDs(t, ctx, pool, tc.email))

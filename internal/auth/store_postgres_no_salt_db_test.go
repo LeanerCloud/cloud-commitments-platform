@@ -3,11 +3,10 @@
 package auth
 
 // Issue #313: users.salt is a leftover from before bcrypt and nothing needs
-// it. This test drops the column from a fully migrated database and drives
-// every store statement that used to read or write it. If any of them still
+// it. Migration 000175 dropped the column, so this test drives every store
+// statement that used to read or write it on a fully migrated database. If any of them still
 // names the column, Postgres fails it with `column "salt" does not exist`,
-// so a pass shows the code no longer depends on the column and a later
-// migration can drop it without breaking this code.
+// so a pass shows the code no longer depends on the column.
 
 import (
 	"testing"
@@ -21,8 +20,6 @@ func TestIntegration_UserStoreWorksWithoutSaltColumn(t *testing.T) {
 	t.Parallel()
 	db := setupAuthTestDB(t)
 	ctx := t.Context()
-	_, err := db.Exec(ctx, "ALTER TABLE users DROP COLUMN salt")
-	require.NoError(t, err)
 	store := NewPostgresStore(db)
 
 	// CreateAdminIfNone: the conditional bootstrap INSERT.
