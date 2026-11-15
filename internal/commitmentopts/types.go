@@ -54,21 +54,22 @@ type Prober interface {
 // as idempotent (ON CONFLICT DO NOTHING) so concurrent writers don't trip
 // each other.
 type Store interface {
-	// Get returns the cached Options and a boolean indicating whether a
-	// probe run row exists. The boolean is the authoritative "cache warm"
+	// Get returns the cached Options of every provider with a probe run
+	// row, and a boolean indicating whether any probe run row exists. The boolean is the authoritative "cache warm"
 	// signal — an empty combos slice plus a present run row means "we
 	// probed, AWS returned nothing matching our normalizer", and callers
 	// should NOT re-probe.
 	Get(ctx context.Context) (Options, bool, error)
 
-	// Save writes the probe run row and all combos atomically. If a run
-	// row already exists (concurrent writer won the race), Save is a
-	// no-op rather than an error.
-	Save(ctx context.Context, combos []Combo, sourceAccountID string) error
+	// Save writes provider's probe run row and combos atomically. If the
+	// provider's run row already exists (concurrent writer won the race),
+	// the row is kept rather than raising an error. Other providers' rows
+	// and combos are left untouched.
+	Save(ctx context.Context, provider string, combos []Combo, sourceAccountID string) error
 
-	// HasData reports whether a probe run row exists. Used as a cheap
-	// pre-check before acquiring the prober lock.
-	HasData(ctx context.Context) (bool, error)
+	// HasData reports whether a probe run row exists for provider. Used as
+	// the per-provider "cache warm" check before acquiring the prober lock.
+	HasData(ctx context.Context, provider string) (bool, error)
 }
 
 // AccountLister is the narrow subset of config.StoreInterface that Service

@@ -28,7 +28,7 @@ type PostgresStore struct {
 }
 
 // NewPostgresStore returns a store backed by the given connection. The
-// connection must already have the 000039 migration applied.
+// connection must already have the 000176 migration applied.
 func NewPostgresStore(db *database.Connection) *PostgresStore {
 	return &PostgresStore{db: db}
 }
@@ -36,21 +36,25 @@ func NewPostgresStore(db *database.Connection) *PostgresStore {
 // Verify PostgresStore implements Store.
 var _ Store = (*PostgresStore)(nil)
 
-// Get returns every persisted combo grouped by provider and service,
-// plus a boolean that is true iff a probe run row exists. The combos map
-// may be empty even when the boolean is true — that legitimately means
-// "we probed and nothing matched our normalizer".
+// Get returns the persisted combos grouped by provider and service, limited
+// to providers that have a probe run row, plus a boolean that is true iff any
+// run row exists. The combos map may be empty even when the boolean is true —
+// that legitimately means "we probed and nothing matched our normalizer".
 func (s *PostgresStore) Get(ctx context.Context) (Options, bool, error) {
-	hasData, err := s.HasData(ctx)
-	if err != nil {
-		return nil, false, err
+	var hasData bool
+	if err := s.db.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM commitment_options_probe_runs)`,
+	).Scan(&hasData); err != nil {
+		return nil, false, fmt.Errorf("check commitment_options_probe_runs: %w", err)
 	}
 	if !hasData {
 		return nil, false, nil
 	}
 
 	rows, err := s.db.Query(ctx,
-		`SELECT provider, service, term_years, payment_option FROM commitment_options_combos`,
+		`SELECT c.provider, c.service, c.term_years, c.payment_option
+		   FROM commitment_options_combos c
+		   JOIN commitment_options_probe_runs r ON r.provider = c.provider`,
 	)
 	if err != nil {
 		return nil, false, fmt.Errorf("query commitment_options_combos: %w", err)
@@ -76,23 +80,30 @@ func (s *PostgresStore) Get(ctx context.Context) (Options, bool, error) {
 	return opts, true, nil
 }
 
-// HasData reports whether a probe run row exists.
-func (s *PostgresStore) HasData(ctx context.Context) (bool, error) {
+// HasData reports whether a probe run row exists for provider.
+func (s *PostgresStore) HasData(ctx context.Context, provider string) (bool, error) {
 	var exists bool
 	if err := s.db.QueryRow(ctx,
-		`SELECT EXISTS(SELECT 1 FROM commitment_options_probe_runs)`,
+		`SELECT EXISTS(SELECT 1 FROM commitment_options_probe_runs WHERE provider = $1)`,
+		provider,
 	).Scan(&exists); err != nil {
 		return false, fmt.Errorf("check commitment_options_probe_runs: %w", err)
 	}
 	return exists, nil
 }
 
-// Save persists the probe run row and every combo transactionally. If a
-// run row already exists (a second process raced us to persist), Save is
-// a no-op — the singleton PK means only the first writer wins. Combo
+// Save persists provider's probe run row and every combo transactionally.
+// If the provider's run row already exists (a second process raced us to
+// persist), the row is left alone — the provider PK means only the first
+// writer wins. Other providers' rows and combos are never touched. Combo
 // inserts use ON CONFLICT DO NOTHING so re-running the probe after a
 // manual row clear and partial repopulation doesn't fail.
-func (s *PostgresStore) Save(ctx context.Context, combos []Combo, sourceAccountID string) error {
+func (s *PostgresStore) Save(ctx context.Context, provider string, combos []Combo, sourceAccountID string) error {
+	for _, c := range combos {
+		if c.Provider != provider {
+			return fmt.Errorf("combo provider %q does not match saved provider %q", c.Provider, provider)
+		}
+	}
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
@@ -107,10 +118,10 @@ func (s *PostgresStore) Save(ctx context.Context, combos []Combo, sourceAccountI
 	}()
 
 	if _, err := tx.Exec(ctx,
-		`INSERT INTO commitment_options_probe_runs (singleton, probed_at, source_account_id)
-		 VALUES (TRUE, NOW(), $1)
-		 ON CONFLICT (singleton) DO NOTHING`,
-		sourceAccountID,
+		`INSERT INTO commitment_options_probe_runs (provider, probed_at, source_account_id)
+		 VALUES ($1, NOW(), $2)
+		 ON CONFLICT (provider) DO NOTHING`,
+		provider, sourceAccountID,
 	); err != nil {
 		return fmt.Errorf("insert commitment_options_probe_runs: %w", err)
 	}
@@ -120,7 +131,7 @@ func (s *PostgresStore) Save(ctx context.Context, combos []Combo, sourceAccountI
 			`INSERT INTO commitment_options_combos (provider, service, term_years, payment_option)
 			 VALUES ($1, $2, $3, $4)
 			 ON CONFLICT DO NOTHING`,
-			c.Provider, c.Service, c.TermYears, c.Payment,
+			provider, c.Service, c.TermYears, c.Payment,
 		); err != nil {
 			return fmt.Errorf("insert commitment_options_combos: %w", err)
 		}

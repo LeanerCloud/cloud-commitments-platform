@@ -23,7 +23,7 @@ type BuildConfigFn func(ctx context.Context, account *config.CloudAccount) (aws.
 //   - Get is DB-first. The DB lookup is lock-free.
 //   - On a cache miss, Get acquires mu, re-checks the DB under the lock
 //     (to absorb a concurrent writer), then probes. The lock is per-
-//     process; the singleton PK on commitment_options_probe_runs handles
+//     process ; the provider PK on commitment_options_probe_runs handles
 //     cross-process races.
 //   - Probes run concurrently under errgroup. Any probe error aborts the
 //     whole attempt and NOTHING is persisted — we never want a partial
@@ -34,6 +34,25 @@ type Service struct {
 	buildConfig BuildConfigFn
 	probers     []Prober
 	mu          sync.Mutex
+}
+
+// providerAWS is the only provider probed today.
+const providerAWS = "aws"
+
+// cached returns the stored Options iff provider's probe run row exists.
+func (s *Service) cached(ctx context.Context, provider string) (Options, bool, error) {
+	has, err := s.store.HasData(ctx, provider)
+	if err != nil {
+		return nil, false, fmt.Errorf("read commitmentopts store: %w", err)
+	}
+	if !has {
+		return nil, false, nil
+	}
+	opts, ok, err := s.store.Get(ctx)
+	if err != nil {
+		return nil, false, fmt.Errorf("read commitmentopts store: %w", err)
+	}
+	return opts, ok, nil
 }
 
 // New returns a Service wired to the given dependencies. Pass
@@ -51,9 +70,9 @@ func New(store Store, accounts AccountLister, buildConfig BuildConfigFn, probers
 // failure (no AWS account connected, probe error) it returns ErrNoData
 // without persisting; callers map that to the unavailable status.
 func (s *Service) Get(ctx context.Context) (Options, error) {
-	// Fast path: probe run already persisted.
-	if opts, ok, err := s.store.Get(ctx); err != nil {
-		return nil, fmt.Errorf("read commitmentopts store: %w", err)
+	// Fast path: the AWS probe run is already persisted.
+	if opts, ok, err := s.cached(ctx, providerAWS); err != nil {
+		return nil, err
 	} else if ok {
 		return opts, nil
 	}
@@ -62,8 +81,8 @@ func (s *Service) Get(ctx context.Context) (Options, error) {
 	defer s.mu.Unlock()
 
 	// Re-check under the lock — a peer goroutine may have just persisted.
-	if opts, ok, err := s.store.Get(ctx); err != nil {
-		return nil, fmt.Errorf("read commitmentopts store: %w", err)
+	if opts, ok, err := s.cached(ctx, providerAWS); err != nil {
+		return nil, err
 	} else if ok {
 		return opts, nil
 	}
@@ -116,7 +135,7 @@ func (s *Service) probeAndPersist(ctx context.Context) (Options, error) {
 		all = append(all, r...)
 	}
 
-	if err := s.store.Save(ctx, all, account.ExternalID); err != nil {
+	if err := s.store.Save(ctx, providerAWS, all, account.ExternalID); err != nil {
 		return nil, fmt.Errorf("persist commitment options: %w", err)
 	}
 
@@ -133,7 +152,7 @@ func (s *Service) probeAndPersist(ctx context.Context) (Options, error) {
 // (issue #243). The loop re-checks both fields so an AccountLister that
 // ignores the filter cannot reintroduce that.
 func (s *Service) findAWSAccount(ctx context.Context) (*config.CloudAccount, error) {
-	provider := "aws"
+	provider := providerAWS
 	enabled := true
 	accounts, err := s.accounts.ListCloudAccounts(ctx, config.CloudAccountFilter{Provider: &provider, Enabled: &enabled})
 	if err != nil {

@@ -36,7 +36,7 @@ func TestPostgresStore_HasData_EmptyIsFalse(t *testing.T) {
 	ctx := context.Background()
 	store := setupStore(ctx, t)
 
-	has, err := store.HasData(ctx)
+	has, err := store.HasData(ctx, "aws")
 	require.NoError(t, err)
 	assert.False(t, has)
 }
@@ -63,9 +63,9 @@ func TestPostgresStore_SaveAndGet(t *testing.T) {
 		{Provider: "aws", Service: "rds", TermYears: 3, Payment: "all-upfront"},
 		{Provider: "aws", Service: "elasticache", TermYears: 1, Payment: "partial-upfront"},
 	}
-	require.NoError(t, store.Save(ctx, combos, "123456789012"))
+	require.NoError(t, store.Save(ctx, "aws", combos, "123456789012"))
 
-	has, err := store.HasData(ctx)
+	has, err := store.HasData(ctx, "aws")
 	require.NoError(t, err)
 	assert.True(t, has)
 
@@ -102,10 +102,10 @@ func TestPostgresStore_Save_IdempotentOnRerun(t *testing.T) {
 	combos := []commitmentopts.Combo{
 		{Provider: "aws", Service: "rds", TermYears: 1, Payment: "all-upfront"},
 	}
-	require.NoError(t, store.Save(ctx, combos, "111111111111"))
+	require.NoError(t, store.Save(ctx, "aws", combos, "111111111111"))
 	// Second call must not fail (singleton PK conflict on the run row,
 	// compound PK conflict on the combos row).
-	require.NoError(t, store.Save(ctx, combos, "222222222222"))
+	require.NoError(t, store.Save(ctx, "aws", combos, "222222222222"))
 
 	opts, has, err := store.Get(ctx)
 	require.NoError(t, err)
@@ -120,9 +120,9 @@ func TestPostgresStore_Save_EmptyCombosStillMarksRun(t *testing.T) {
 
 	// A legitimate "AWS returned no matching offerings" scenario — we
 	// persist the run row so the next Get short-circuits via the bool.
-	require.NoError(t, store.Save(ctx, nil, "333333333333"))
+	require.NoError(t, store.Save(ctx, "aws", nil, "333333333333"))
 
-	has, err := store.HasData(ctx)
+	has, err := store.HasData(ctx, "aws")
 	require.NoError(t, err)
 	assert.True(t, has)
 
@@ -130,4 +130,38 @@ func TestPostgresStore_Save_EmptyCombosStillMarksRun(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, has)
 	assert.Empty(t, opts)
+}
+
+func TestPostgresStore_PerProviderRows(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	db := testhelpers.RequireMigratedDatabase(ctx, t, getMigrationsPath()).DB
+	store := commitmentopts.NewPostgresStore(db)
+
+	aws := []commitmentopts.Combo{{Provider: "aws", Service: "rds", TermYears: 1, Payment: "all-upfront"}}
+	azure := []commitmentopts.Combo{{Provider: "azure", Service: "compute", TermYears: 3, Payment: "no-upfront"}}
+
+	require.NoError(t, store.Save(ctx, "aws", aws, "111111111111"))
+	has, err := store.HasData(ctx, "azure")
+	require.NoError(t, err)
+	assert.False(t, has, "an aws row does not warm azure")
+
+	require.NoError(t, store.Save(ctx, "azure", azure, "sub-1"))
+	for _, p := range []string{"aws", "azure"} {
+		has, err = store.HasData(ctx, p)
+		require.NoError(t, err)
+		assert.True(t, has, p)
+	}
+	opts, has, err := store.Get(ctx)
+	require.NoError(t, err)
+	assert.True(t, has)
+	assert.Equal(t, aws, opts["aws"]["rds"], "saving azure leaves the aws combos alone")
+	assert.Equal(t, azure, opts["azure"]["compute"])
+
+	// A provider with no run row is hidden even if combos linger for it.
+	_, err = db.Pool().Exec(ctx, `INSERT INTO commitment_options_combos VALUES ('gcp','compute',1,'no-upfront')`)
+	require.NoError(t, err)
+	opts, _, err = store.Get(ctx)
+	require.NoError(t, err)
+	assert.NotContains(t, opts, "gcp")
 }

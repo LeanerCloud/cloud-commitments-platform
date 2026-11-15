@@ -18,16 +18,17 @@ import (
 // fakeStore is a memory-backed Store used throughout service_test.go. It
 // tracks call counts so tests can assert the Save-once invariant.
 type fakeStore struct {
-	saveErr  error
-	getErr   error
-	hasErr   error
-	opts     Options
-	saveHook func([]Combo, string)
-	savedID  string
-	savedCnt int
-	mu       sync.Mutex
-	saves    int32
-	has      bool
+	saveErr   error
+	getErr    error
+	hasErr    error
+	opts      Options
+	saveHook  func([]Combo, string)
+	savedProv string
+	savedID   string
+	savedCnt  int
+	mu        sync.Mutex
+	saves     int32
+	has       bool
 }
 
 func (f *fakeStore) Get(ctx context.Context) (Options, bool, error) {
@@ -42,7 +43,7 @@ func (f *fakeStore) Get(ctx context.Context) (Options, bool, error) {
 	return f.opts, true, nil
 }
 
-func (f *fakeStore) Save(ctx context.Context, combos []Combo, sourceAccountID string) error {
+func (f *fakeStore) Save(ctx context.Context, provider string, combos []Combo, sourceAccountID string) error {
 	if f.saveErr != nil {
 		return f.saveErr
 	}
@@ -52,6 +53,7 @@ func (f *fakeStore) Save(ctx context.Context, combos []Combo, sourceAccountID st
 	f.opts = buildOptions(combos)
 	f.has = true
 	f.savedID = sourceAccountID
+	f.savedProv = provider
 	f.savedCnt = len(combos)
 	if f.saveHook != nil {
 		f.saveHook(combos, sourceAccountID)
@@ -59,7 +61,7 @@ func (f *fakeStore) Save(ctx context.Context, combos []Combo, sourceAccountID st
 	return nil
 }
 
-func (f *fakeStore) HasData(ctx context.Context) (bool, error) {
+func (f *fakeStore) HasData(ctx context.Context, provider string) (bool, error) {
 	if f.hasErr != nil {
 		return false, f.hasErr
 	}
@@ -189,7 +191,7 @@ func TestService_Get_BuildConfigErrorReturnsErrNoData(t *testing.T) {
 
 func TestService_Get_StoreReadErrorBubbles(t *testing.T) {
 	boom := errors.New("db down")
-	store := &fakeStore{getErr: boom}
+	store := &fakeStore{getErr: boom, has: true}
 	accounts := &fakeAccounts{accounts: []config.CloudAccount{awsAccount("a")}}
 	svc := New(store, accounts, noopBuildConfig, []Prober{&stubProber{name: "rds"}})
 
@@ -468,4 +470,48 @@ func TestService_FindAWSAccount_SkipsDisabled(t *testing.T) {
 	got, err = svc.findAWSAccount(context.Background())
 	require.NoError(t, err)
 	assert.Nil(t, got)
+}
+
+// azureOnlyStore models a store whose only probe run row belongs to azure:
+// Get reports a warm cache overall, HasData is true for azure alone.
+type azureOnlyStore struct{ *fakeStore }
+
+func (a azureOnlyStore) Get(ctx context.Context) (Options, bool, error) {
+	return Options{"azure": {"compute": {{Provider: "azure", Service: "compute", TermYears: 1, Payment: "all-upfront"}}}}, true, nil
+}
+
+func (a azureOnlyStore) HasData(ctx context.Context, provider string) (bool, error) {
+	return provider == "azure", nil
+}
+
+func TestService_Get_AzureRowDoesNotWarmAWS(t *testing.T) {
+	store := &fakeStore{}
+	accounts := &fakeAccounts{accounts: []config.CloudAccount{awsAccount("acct")}}
+	probers := []Prober{&stubProber{name: "rds", combos: []Combo{{Provider: "aws", Service: "rds", TermYears: 1, Payment: "all-upfront"}}}}
+	svc := New(azureOnlyStore{store}, accounts, noopBuildConfig, probers)
+
+	_, err := svc.Get(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, int32(1), atomic.LoadInt32(&store.saves), "AWS must still be probed")
+	assert.Equal(t, "aws", store.savedProv)
+}
+
+func TestService_Get_HasDataErrorBubbles(t *testing.T) {
+	boom := errors.New("has data boom")
+	store := &fakeStore{hasErr: boom}
+	probed := false
+	probers := []Prober{proberFunc{name: "rds", fn: func() ([]Combo, error) { probed = true; return nil, nil }}}
+	svc := New(store, &fakeAccounts{accounts: []config.CloudAccount{awsAccount("a")}}, noopBuildConfig, probers)
+
+	_, err := svc.Get(context.Background())
+	require.ErrorIs(t, err, boom)
+	assert.False(t, probed, "a store error must not trigger a cold-cache probe")
+	assert.Zero(t, atomic.LoadInt32(&store.saves))
+}
+
+func TestPostgresStore_Save_RejectsMismatchedComboProvider(t *testing.T) {
+	// The check runs before any database access, so a zero store is enough.
+	err := (&PostgresStore{}).Save(context.Background(), "azure",
+		[]Combo{{Provider: "aws", Service: "rds", TermYears: 1, Payment: "all-upfront"}}, "sub")
+	require.ErrorContains(t, err, "does not match")
 }
