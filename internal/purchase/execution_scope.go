@@ -2,7 +2,10 @@ package purchase
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
@@ -176,4 +179,72 @@ func (m *Manager) normalizePurchaseSource(exec *config.PurchaseExecution) string
 		return ""
 	}
 	return normalized
+}
+
+// selectedIndices returns the positions of recs with Selected=true,
+// preserving slice order so the aggregator's pass over the fan-out
+// results writes back to exec.Recommendations deterministically.
+func selectedIndices(recs []config.RecommendationRecord) []int {
+	out := make([]int, 0, len(recs))
+	for i := range recs {
+		rec := recs[i]
+		if rec.Selected {
+			out = append(out, i)
+		}
+	}
+	return out
+}
+
+// indexKeys formats a slice of indices as string keys for FanOut.
+func indexKeys(idx []int) []string {
+	out := make([]string, len(idx))
+	for i, n := range idx {
+		out[i] = strconv.Itoa(n)
+	}
+	return out
+}
+
+// errAmbiguousAccountScope is returned when the selected recommendations of a
+// plan-less execution do not resolve to exactly one cloud account. The
+// single-account path cannot honor such a batch: buying it under ambient
+// credentials (the pre-#1902 behavior) purchases every commitment in the
+// CUDly host account and stamps the ambient identity on history (#646).
+var errAmbiguousAccountScope = errors.New("selected recommendations do not resolve to a single cloud account")
+
+// SingleCloudAccountIDFromRecs returns the cloud_account_id shared by every
+// SELECTED recommendation, nil when no selected recommendation carries one
+// (the ambient single-account deployment), and errAmbiguousAccountScope when
+// the selected recs span more than one account or mix attributed and
+// unattributed entries (#1902). Only selected recs count: they are the recs
+// the money moves for (processPurchaseRecommendations buys selectedIndices).
+// Exported so the API boundary (validateExecutePurchaseRecommendations)
+// applies the identical rule before an execution row exists.
+func SingleCloudAccountIDFromRecs(recs []config.RecommendationRecord) (*string, error) {
+	var ids []string
+	var found *string
+	selected, unattributed := 0, 0
+	for i := range recs {
+		rec := &recs[i]
+		if !rec.Selected {
+			continue
+		}
+		selected++
+		if rec.CloudAccountID == nil || *rec.CloudAccountID == "" {
+			unattributed++
+			continue
+		}
+		if !slices.Contains(ids, *rec.CloudAccountID) {
+			ids = append(ids, *rec.CloudAccountID)
+			found = rec.CloudAccountID
+		}
+	}
+	switch {
+	case len(ids) > 1:
+		return nil, fmt.Errorf("%w: %d selected recommendation(s) target %d cloud accounts (%s); submit one purchase per account",
+			errAmbiguousAccountScope, selected, len(ids), strings.Join(ids, ", "))
+	case len(ids) == 1 && unattributed > 0:
+		return nil, fmt.Errorf("%w: %d selected recommendation(s) carry no cloud_account_id while %d target account %s",
+			errAmbiguousAccountScope, unattributed, selected-unattributed, ids[0])
+	}
+	return found, nil
 }
