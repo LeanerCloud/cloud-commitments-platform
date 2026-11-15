@@ -17,6 +17,7 @@ import {
 import { escapeHtml, formatRelativeTime, formatDate, showSuccess, showError, validateGroupCombination } from './utils';
 import { openEditUserModal, deleteUser, refreshCurrentUserAccess } from './userActions';
 import { ADMINISTRATORS_GROUP_ID } from '../permissions';
+import { permissionLabel, permissionTitle } from './permissionMatrix';
 import { confirmDialog } from '../confirmDialog';
 import { getCurrentUser } from '../state';
 import { createIcon, iconSvg } from '../icons';
@@ -157,6 +158,13 @@ function groupName(groupId: string): string {
   return g?.name ?? groupId;
 }
 
+function permissionBadge(perm: string): string {
+  const i = perm.indexOf(':');
+  const action = perm.slice(0, i);
+  const resource = perm.slice(i + 1);
+  return `<span class="permission-badge" title="${escapeHtml(permissionTitle(action, resource))}">${escapeHtml(permissionLabel(action, resource))}</span>`;
+}
+
 /**
  * Compute the effective permissions for a user from their group
  * memberships. Returns permissions as {action}:{resource} strings.
@@ -209,7 +217,7 @@ function renderUserExpandPanel(user: APIUser): string {
         <h5>Effective Permissions</h5>
         ${perms.length === 0
           ? '<p class="text-muted">No permissions.</p>'
-          : `<div class="perm-badge-list">${perms.map(p => `<span class="permission-badge">${escapeHtml(p)}</span>`).join(' ')}</div>`}
+          : `<div class="perm-badge-list">${perms.map(permissionBadge).join(' ')}</div>`}
       </div>
     </div>
   `;

@@ -3,6 +3,7 @@
  */
 
 import './setup';
+import { ADMIN_CARVED_OUTS } from '../permissions';
 
 // Mock the api module
 jest.mock('../api', () => ({
@@ -183,9 +184,38 @@ describe('groups/groupList', () => {
       const badges = container?.querySelectorAll('.permission-badge');
       // group-1 has 2 permissions, group-2 has 1, group-3 has 0
       expect(badges?.length).toBe(3);
-      expect(badges?.item(0)?.textContent).toBe('execute:*');
-      expect(badges?.item(1)?.textContent).toBe('update:*');
-      expect(badges?.item(2)?.textContent).toBe('view:*');
+      expect(badges?.item(0)?.textContent).toBe('Execute all resources');
+      expect(badges?.item(1)?.textContent).toBe('Update all resources');
+      expect(badges?.item(2)?.textContent).toBe('View all resources');
+      expect(badges?.item(0)?.getAttribute('title')).toBe('execute:*');
+    });
+
+    it('labels admin:* as full access with a tooltip naming the raw grant', () => {
+      groupList.renderGroups([{ id: 'a', name: 'A', description: '', permissions: [{ action: 'admin', resource: '*' }] } as any]);
+      const badge = document.querySelector('#groups-list .permission-badge');
+      expect(badge?.textContent).toBe('Full access');
+      expect(badge?.getAttribute('title')).toBe(
+        `admin:*: full access to all resources, except ${[...ADMIN_CARVED_OUTS].join(', ')}, which need an explicit grant`,
+      );
+      for (const name of ['execute:purchases', 'approve-any:purchases', 'retry-any:purchases', 'execute:ri-exchange']) {
+        expect(badge?.getAttribute('title')).toContain(name);
+      }
+    });
+
+    it.each([
+      ['', 'plans'], ['view', ''], ['*', 'plans'], ['*', '*'], ['View', 'plans'], ['view', 'a b'],
+    ])('falls back to the raw grant for unlabelable %j:%j', (action, resource) => {
+      groupList.renderGroups([{ id: 'a', name: 'A', description: '', permissions: [{ action, resource }] } as any]);
+      const badge = document.querySelector('#groups-list .permission-badge');
+      expect(badge?.textContent).toBe(`${action}:${resource}`);
+      expect(badge?.getAttribute('title')).toBe(`${action}:${resource}`);
+    });
+
+    it('keeps constraints in the tooltip next to the raw grant', () => {
+      groupList.renderGroups([{ id: 'a', name: 'A', description: '', permissions: [{ action: 'approve-any', resource: 'purchase_plans', constraints: { providers: ['aws'] } }] } as any]);
+      const badge = document.querySelector('#groups-list .permission-badge');
+      expect(badge?.textContent).toBe('Approve any purchase plans');
+      expect(badge?.getAttribute('title')).toBe('approve-any:purchase_plans (providers: aws)');
     });
 
     it('should show "No permissions" for group with no permissions', () => {
@@ -201,9 +231,9 @@ describe('groups/groupList', () => {
       groupList.renderGroups(mockGroups);
 
       const container = document.getElementById('groups-list');
-      const pills = container?.querySelectorAll('.member-pill');
+      const pills = Array.from(container?.querySelectorAll('.member-pill') ?? []).map(p => p.textContent);
       // group-1: admin@test.com, both@test.com; group-2: viewer@test.com, both@test.com; group-3: none
-      expect(pills?.length).toBe(4);
+      expect(pills.filter(t => t !== 'No members').length).toBe(4);
     });
 
     it('should show "No members" for group with no members', () => {
@@ -213,6 +243,8 @@ describe('groups/groupList', () => {
 
       const container = document.getElementById('groups-list');
       expect(container?.innerHTML).toContain('No members');
+      const pill = container?.querySelector('.group-members .member-pill');
+      expect(pill?.textContent).toBe('No members');
     });
 
     it('should render edit and delete buttons with data-group-id', () => {

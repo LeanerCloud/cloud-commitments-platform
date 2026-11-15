@@ -22,6 +22,27 @@ export type PermissionMatrixCell =
   | { kind: 'admin'; except: string[] }
   | { kind: 'none' };
 
+const humanize = (s: string): string => s.replace(/[-_]+/g, ' ');
+
+/** Plain-language label for an action:resource grant, e.g. "Create plans". */
+export function permissionLabel(action: string, resource: string): string {
+  if (action === 'admin' && resource === '*') return 'Full access';
+  // Anything we cannot label cleanly stays as the raw grant instead of a garbled phrase.
+  if (!/^[a-z][a-z-]*$/.test(action) || !/^(\*|[a-z][a-z0-9_-]*)$/.test(resource)) {
+    return `${action}:${resource}`;
+  }
+  const verb = humanize(action);
+  const what = resource === '*' ? 'all resources' : humanize(resource);
+  return `${verb.charAt(0).toUpperCase()}${verb.slice(1)} ${what}`;
+}
+
+/** Tooltip carrying the raw grant string, plus what admin:* really covers. */
+export function permissionTitle(action: string, resource: string): string {
+  const raw = `${action}:${resource}`;
+  if (action !== 'admin' || resource !== '*') return raw;
+  return `${raw}: full access to all resources, except ${[...ADMIN_CARVED_OUTS].join(', ')}, which need an explicit grant`;
+}
+
 const VARIANT_RANK: Record<string, number> = { '': 0, own: 1, any: 2 };
 
 function splitVerb(action: string): { base: string; variant: string } {

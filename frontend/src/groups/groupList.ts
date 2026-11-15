@@ -8,6 +8,7 @@ import { escapeHtml } from '../users/utils';
 import { openEditGroupModal, deleteGroup } from './groupActions';
 import { openDuplicateGroupModal } from './groupModals';
 import { iconSvg } from '../icons';
+import { permissionLabel, permissionTitle } from '../users/permissionMatrix';
 import { isSystemManagedGroup, SYSTEM_GROUP_NOTE } from './systemGroups';
 
 /**
@@ -41,15 +42,16 @@ export function renderGroups(groups: APIGroup[]): void {
     const memberCount = members.length;
 
     const permissionBadges = group.permissions.map(perm => {
-      const label = escapeHtml(`${perm.action}:${perm.resource}`);
+      const label = escapeHtml(permissionLabel(perm.action, perm.resource));
       const constraintStr = formatConstraints(perm.constraints);
-      const titleAttr = constraintStr ? ` title="${escapeHtml(constraintStr)}"` : '';
+      const raw = permissionTitle(perm.action, perm.resource);
+      const titleAttr = ` title="${escapeHtml(constraintStr ? `${raw} (${constraintStr})` : raw)}"`;
       return `<span class="permission-badge"${titleAttr}>${label}</span>`;
     }).join('');
 
     const memberPills = members.length > 0
       ? members.map(m => `<span class="member-pill">${escapeHtml(m.email)}</span>`).join('')
-      : '<span class="text-muted">No members</span>';
+      : '<span class="member-pill">No members</span>';
 
     const locked = isSystemManagedGroup(group);
     const description = group.description

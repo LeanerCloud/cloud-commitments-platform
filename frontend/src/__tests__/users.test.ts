@@ -2622,6 +2622,21 @@ describe('group union permission hint (issue #1001)', () => {
     expect(panel!.textContent).toContain('combined (union) of all selected groups');
   });
 
+  it('effective permissions use readable labels with the raw string as title', () => {
+    userState.setAvailableGroups([
+      { id: 'g-admin', name: 'Admins', description: '', permissions: [{ action: 'admin', resource: '*' }, { action: 'create', resource: 'plans' }] },
+    ] as any);
+    const user = { ...(mockUsers as any[])[0], groups: ['g-admin'] };
+    userState.setAllUsers([user] as any);
+    userList.renderUsers([user] as any);
+    document.querySelector<HTMLButtonElement>('.user-expand-btn[data-user-id="1"]')!.click();
+
+    const badges = Array.from(document.querySelectorAll('.perm-badge-list .permission-badge'));
+    expect(badges.map(b => b.textContent)).toEqual(['Full access', 'Create plans']);
+    expect(badges[0]!.getAttribute('title')).toContain('admin:*: full access to all resources');
+    expect(badges[1]!.getAttribute('title')).toBe('create:plans');
+  });
+
   it('hint appears in expand-panel-groups section, before the checkbox list', () => {
     userList.renderUsers(mockUsers as any);
 
