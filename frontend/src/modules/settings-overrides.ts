@@ -1,8 +1,10 @@
 import * as api from '../api';
 import { showToast } from '../toast';
 import { getValidPaymentOptions, getValidTermOptions, getPaymentLabel, getCommitmentConfig } from '../commitmentOptions';
+import { openModal, closeModal } from '../modal';
 import { loadRecommendations } from '../recommendations';
-import { loadOverridesPanel } from '../settings';
+import { legacySettingsServiceTarget } from '../lib/settings-service-ids';
+import { closeOverrideModal, loadOverridesPanel } from '../settings';
 import { inheritCurrentlyLabel, paymentLabel, termLabel } from './settings-fields';
 import type { AccountProvider } from './settings-state';
 
@@ -508,4 +510,76 @@ async function handleEnabledOverrideChange(
   } finally {
     input.disabled = false;
   }
+}
+
+/**
+ * Load and render the service overrides panel for an account.
+ *
+ * Empty state (no overrides yet for this account) auto-opens the create
+ * modal \u2014 the previous "No service overrides set." text was a dead-end
+ * because there was no UI affordance to create one. See issue #104.
+ *
+ * Populated state: render the existing table + an "Add override" button at
+ * the top so users can add another override for a different service.
+ *
+ * Issue #109: Azure and GCP accounts now also get the "Add override" button
+ * and full inline editing (term, payment, coverage, enabled) on existing rows.
+ * Provider-specific payment options are derived via getCommitmentConfig so
+ * GCP shows "Monthly only" and Azure shows "Upfront / Monthly".
+ */
+/**
+ * Open the per-account overrides modal (issue #122). Replaces the inline
+ * expandable panel that used to render below the accounts table — the
+ * panels stacked without per-row attachment, so two open panels gave the
+ * user no way to tell which override row belonged to which account.
+ *
+ * The modal title binds explicitly to the account; the body uses the same
+ * `loadOverridesPanel` rendering function as before, so all CRUD wiring
+ * (Reset button, inline payment select, Add override button, empty-state
+ * auto-open of the create modal) carries forward unchanged.
+ */
+export function openAccountOverridesModal(account: api.CloudAccount): void {
+  const modal = document.getElementById('account-overrides-modal');
+  if (!modal) return;
+  const titleEl = document.getElementById('account-overrides-modal-title');
+  if (titleEl) {
+    titleEl.textContent = `Service overrides for ${account.name} (${account.external_id})`;
+  }
+  const body = document.getElementById('account-overrides-modal-body');
+  if (!body) return;
+  // openModal moves focus inside, traps Tab and closes on Escape (#731).
+  // onClose runs on every close path, Escape included.
+  openModal(modal, { onClose: resetAccountOverridesModal });
+  void loadOverridesPanel(account.id, body, account.provider);
+}
+
+export function closeAccountOverridesModal(): void {
+  const modal = document.getElementById('account-overrides-modal');
+  if (modal) closeModal(modal);
+  // Idempotent; covers a close of a modal that was never opened via openModal.
+  resetAccountOverridesModal();
+}
+
+function resetAccountOverridesModal(): void {
+  // Close the inner create modal too if it's still open. The user can't
+  // visually reach the outer's close affordances while the inner is up
+  // (inner backdrop covers them), but a programmatic close should leave a
+  // clean slate, not an orphaned inner modal whose Save would target a
+  // hidden parent.
+  closeOverrideModal();
+  // Drop the body content so the next open doesn't briefly flash stale
+  // data from a previous account before loadOverridesPanel populates it.
+  const body = document.getElementById('account-overrides-modal-body');
+  if (body) body.replaceChildren();
+}
+
+// Issue #613: overrides saved under an old Azure/GCP service id never match a
+// recommendation. Say so on the row and name the id to re-create it under.
+export function appendLegacyOverrideHint(cell: HTMLElement, o: api.AccountServiceOverride): void {
+  const target = legacySettingsServiceTarget(o.provider, o.service);
+  if (target === null) return;
+  const hint = document.createElement('div');
+  hint.className = 'help-text override-legacy-hint';
+  hint.textContent = `Old service id: never applied. Re-create it as ${o.provider}/${target}, then delete this row.`;
+  cell.appendChild(hint);
 }
