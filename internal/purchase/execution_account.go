@@ -13,6 +13,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/credentials"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/execution"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/providerfactory"
 )
 
 // Skip-row notes, shared with the stored-error allowlist (errnotes.go).
@@ -187,4 +188,129 @@ func (m *Manager) resolveAWSProvider(ctx context.Context, account config.CloudAc
 	logging.Infof("purchase[resolveAWSProvider]: AWS credentials resolved for account=%s in %s",
 		account.ID, time.Since(t0))
 	return &provider.Config{Name: "aws", AWSCredentialsProvider: awsCreds}, nil
+}
+
+// resolveSingleAccountProvider derives per-account credentials for the
+// single-account execution path. Returns (nil, purchaseTarget{}, nil) when no
+// account can be identified (ambient credentials are used in that case), or
+// when no recs are selected (approval-only flows where credentials are not
+// needed).
+//
+// The second return value carries the resolved target account's ExternalID —
+// the provider-appropriate account identifier (AWS account number, Azure
+// subscription, GCP project) that the caller stamps onto purchase_history
+// (#646) — and its AWS partition (issue #1194). The ExternalID is "" when no
+// target account could be identified, signaling the caller to fall back to
+// the ambient AWS STS identity.
+//
+// The account is taken from exec.CloudAccountID when set (plan-with-single-
+// account executions), or derived from the shared cloud_account_id of the
+// SELECTED recommendations (direct-execute purchases where PlanID is empty and
+// exec.CloudAccountID is nil). When the selected recs span more than one
+// account, or mix attributed and unattributed recs, this returns
+// errAmbiguousAccountScope: the single-account path cannot honor such a
+// batch and must never fall back to ambient credentials for it (#1902).
+//
+// A non-nil error means a target account was identified but could not be
+// resolved (lookup failed, the account does not exist, or credentials could
+// not be derived); the caller must NOT fall back to ambient credentials on
+// error, as that would purchase/stamp against the wrong account (#646).
+func (m *Manager) resolveSingleAccountProvider(ctx context.Context, exec *config.PurchaseExecution) (*provider.Config, purchaseTarget, error) {
+	// Skip credential resolution when nothing is selected. Approval-only
+	// flows may carry an account ID on the recs solely for the contact-email
+	// gate; attempting resolution there would fail on accounts with no
+	// provider field set and add a pointless DB round-trip.
+	if len(selectedIndices(exec.Recommendations)) == 0 {
+		return nil, purchaseTarget{}, nil
+	}
+
+	cloudAccountID := exec.CloudAccountID
+	if cloudAccountID == nil {
+		var scopeErr error
+		cloudAccountID, scopeErr = SingleCloudAccountIDFromRecs(exec.Recommendations)
+		if scopeErr != nil {
+			return nil, purchaseTarget{}, fmt.Errorf("execution %s: %w", exec.ExecutionID, scopeErr)
+		}
+	}
+	if cloudAccountID == nil {
+		return nil, purchaseTarget{}, nil
+	}
+
+	account, err := m.config.GetCloudAccount(ctx, *cloudAccountID)
+	if err != nil {
+		return nil, purchaseTarget{}, fmt.Errorf("credential resolution failed for account %s: %w", *cloudAccountID, err)
+	}
+	if account == nil {
+		// A target account was identified but does not exist in config.
+		// Returning ("") here would let the caller fall back to ambient AWS
+		// credentials and purchase/stamp against the wrong account (#646), so
+		// surface an error instead; the contract above forbids ambient
+		// fallback once a target account ID is known.
+		return nil, purchaseTarget{}, fmt.Errorf("credential resolution failed for account %s: account not found", *cloudAccountID)
+	}
+	provCfg, err := m.resolveAccountProvider(ctx, *account)
+	if err != nil {
+		return nil, purchaseTarget{}, fmt.Errorf("credential resolution failed for account %s: %w", *cloudAccountID, err)
+	}
+	return provCfg, purchaseTarget{externalID: account.ExternalID, awsPartition: account.AWSPartition()}, nil
+}
+
+func (m *Manager) resolveAzureProvider(ctx context.Context, account config.CloudAccount) (*provider.Config, error) {
+	t0 := time.Now()
+	logging.Infof("purchase[resolveAzureProvider]: resolving Azure credentials for account=%s authMode=%s",
+		account.ID, account.AzureAuthMode)
+	if account.AzureAuthMode != "managed_identity" && m.credStore == nil {
+		return nil, fmt.Errorf("credentials: credential store required for non-managed_identity Azure account %s", account.ID)
+	}
+	azCred, err := credentials.ResolveAzureTokenCredentialWithOpts(ctx, &account, m.credStore, credentials.AzureResolveOptions{
+		Signer:    m.oidcSigner,
+		IssuerURL: m.oidcIssuerURL,
+	})
+	if err != nil {
+		logging.Errorf("purchase[resolveAzureProvider]: token credential resolution failed for account=%s after %s: %v",
+			account.ID, time.Since(t0), err)
+		return nil, fmt.Errorf("credentials: resolve Azure for account %s (%s): %w", account.ID, account.Name, err)
+	}
+	azProv, err := providerfactory.NewAzure(account.AzureSubscriptionID, azCred)
+	if err != nil {
+		logging.Errorf("purchase[resolveAzureProvider]: Azure provider construction failed for account=%s after %s: %v",
+			account.ID, time.Since(t0), err)
+		return nil, fmt.Errorf("credentials: create Azure provider for account %s (%s): %w", account.ID, account.Name, err)
+	}
+	logging.Infof("purchase[resolveAzureProvider]: Azure credentials resolved for account=%s in %s",
+		account.ID, time.Since(t0))
+	return &provider.Config{ProviderOverride: azProv}, nil
+}
+
+func (m *Manager) resolveGCPProvider(ctx context.Context, account config.CloudAccount) (*provider.Config, error) {
+	t0 := time.Now()
+	logging.Infof("purchase[resolveGCPProvider]: resolving GCP credentials for account=%s authMode=%s",
+		account.ID, account.GCPAuthMode)
+	if account.GCPAuthMode != "application_default" && m.credStore == nil {
+		return nil, fmt.Errorf("credentials: credential store required for non-ADC GCP account %s", account.ID)
+	}
+	gcpTS, err := credentials.ResolveGCPTokenSourceWithOpts(ctx, &account, m.credStore, credentials.GCPResolveOptions{
+		Signer:    m.oidcSigner,
+		IssuerURL: m.oidcIssuerURL,
+	})
+	if err != nil {
+		logging.Errorf("purchase[resolveGCPProvider]: token source resolution failed for account=%s after %s: %v",
+			account.ID, time.Since(t0), err)
+		return nil, fmt.Errorf("credentials: resolve GCP for account %s (%s): %w", account.ID, account.Name, err)
+	}
+	if gcpTS == nil {
+		// ADC mode: no explicit token source -- use ambient credentials.
+		logging.Infof("purchase[resolveGCPProvider]: GCP ADC mode for account=%s (ambient credentials) in %s",
+			account.ID, time.Since(t0))
+		return nil, nil
+	}
+	gcpProv, err := providerfactory.NewGCP(account.GCPProjectID, gcpTS)
+	if err != nil {
+		logging.Errorf("purchase[resolveGCPProvider]: GCP provider construction failed for account=%s after %s: %v",
+			account.ID, time.Since(t0), err)
+		return nil, fmt.Errorf("credentials: create GCP provider for account %s (%s): %w", account.ID, account.Name, err)
+	}
+	logging.Infof("purchase[resolveGCPProvider]: GCP credentials resolved for account=%s in %s",
+		account.ID, time.Since(t0))
+	return &provider.Config{ProviderOverride: gcpProv}, nil
 }
