@@ -1409,6 +1409,11 @@ type MarketplaceListingProceedsTotal struct {
 	// with an unknown price, or ended before the poller saw them).
 	SettledListings   int
 	UnsettledListings int
+	// IsEstimate is always true: the amounts are computed from the AWS
+	// listing's sold count and price by the poller (D23), not read from an
+	// AWS payout, so every place that shows or serializes them must label
+	// them as estimates (issue #1586).
+	IsEstimate bool
 }
 
 // AWS EC2 ReservedInstancesListing status values, mirroring the

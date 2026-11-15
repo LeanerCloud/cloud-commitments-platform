@@ -14,12 +14,18 @@ package config
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/accountpredicate"
 	"github.com/jackc/pgx/v5"
 )
+
+// ErrMarketplaceTotalsScopeRequired is returned when proceeds totals are asked
+// for without an account scope, so the read never covers every account.
+var ErrMarketplaceTotalsScopeRequired = errors.New("marketplace listing proceeds totals require an account scope")
 
 // marketplaceListingsToPollSQL selects the listings the poller must read, one
 // row per (purchase_id, listing_id). $1..$4 are ListingStateActive,
@@ -316,9 +322,20 @@ func listingHeldByClaim(ctx context.Context, tx pgx.Tx, purchaseID, listingID an
 // however often the RI was relisted; purchase_history's settlement columns
 // (the latest listing only) are never added in. One total is returned per
 // purchase and currency, ordered by purchase id then currency.
-func (s *PostgresStore) GetMarketplaceListingProceedsTotals(ctx context.Context, purchaseIDs []string) ([]MarketplaceListingProceedsTotal, error) {
+//
+// Only purchases of the given accounts are summed (accountIDs are
+// cloud_accounts UUIDs, externalIDsByProvider the external account numbers
+// grouped by provider, as for GetPurchaseHistoryFiltered), so a caller cannot
+// read another account's proceeds by naming its purchase ids (issue #1586).
+// Empty scope is an error, never "all accounts". Every total is an estimate
+// (MarketplaceListingProceedsTotal.IsEstimate).
+func (s *PostgresStore) GetMarketplaceListingProceedsTotals(ctx context.Context, purchaseIDs, accountIDs []string, externalIDsByProvider map[string][]string) ([]MarketplaceListingProceedsTotal, error) {
 	if len(purchaseIDs) == 0 {
 		return nil, nil
+	}
+	accountClause, args := accountpredicate.Build([]any{purchaseIDs}, accountIDs, externalIDsByProvider, accountpredicate.ProviderCaseInsensitiveOrUnknown)
+	if accountClause == "" {
+		return nil, ErrMarketplaceTotalsScopeRequired
 	}
 	query := `
 		SELECT purchase_id, currency,
@@ -328,10 +345,11 @@ func (s *PostgresStore) GetMarketplaceListingProceedsTotals(ctx context.Context,
 		       count(*) - count(proceeds_received)
 		FROM marketplace_listing_settlements
 		WHERE purchase_id = ANY($1)
+		  AND purchase_history_id IN (SELECT id FROM purchase_history WHERE ` + accountClause + `)
 		GROUP BY purchase_id, currency
 		ORDER BY purchase_id, currency
 	`
-	rows, err := s.db.Query(ctx, query, purchaseIDs)
+	rows, err := s.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read marketplace listing proceeds totals: %w", err)
 	}
@@ -344,6 +362,7 @@ func (s *PostgresStore) GetMarketplaceListingProceedsTotals(ctx context.Context,
 			&t.SettledListings, &t.UnsettledListings); err != nil {
 			return nil, fmt.Errorf("failed to scan marketplace listing proceeds total: %w", err)
 		}
+		t.IsEstimate = true
 		out = append(out, t)
 	}
 	if err := rows.Err(); err != nil {

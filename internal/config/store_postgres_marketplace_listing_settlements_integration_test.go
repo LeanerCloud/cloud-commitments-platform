@@ -110,10 +110,13 @@ func pollListings(ctx context.Context, t *testing.T, store *PostgresStore, id st
 	return out
 }
 
+// acctScope is the external-account scope of the "acct" account seedListing uses.
+var acctScope = map[string][]string{"aws": {"acct"}}
+
 // requireTotal asserts the RI's proceeds totals across listings.
 func requireTotal(ctx context.Context, t *testing.T, store *PostgresStore, id string, proceeds, fee float64, settled, unsettled int) {
 	t.Helper()
-	totals, err := store.GetMarketplaceListingProceedsTotals(ctx, []string{id})
+	totals, err := store.GetMarketplaceListingProceedsTotals(ctx, []string{id}, nil, acctScope)
 	require.NoError(t, err)
 	require.Len(t, totals, 1)
 	got := totals[0]
@@ -123,6 +126,7 @@ func requireTotal(ctx context.Context, t *testing.T, store *PostgresStore, id st
 	assert.InDelta(t, fee, got.FeePaid, 1e-9, "fee total")
 	assert.Equal(t, settled, got.SettledListings, "settled listings")
 	assert.Equal(t, unsettled, got.UnsettledListings, "unsettled listings")
+	assert.True(t, got.IsEstimate, "proceeds totals are estimates")
 }
 
 func TestMarketplaceListingSettlements_Postgres(t *testing.T) {
@@ -140,6 +144,7 @@ func TestMarketplaceListingSettlements_Postgres(t *testing.T) {
 	t.Run("ConcurrentPollsSettleSupersededOnce", func(t *testing.T) { checkConcurrentSupersededSettles(ctx, t, store, pool) })
 	t.Run("ConcurrentRelistAndPollKeepProceedsOnce", func(t *testing.T) { checkConcurrentRelistAndPoll(ctx, t, store, pool) })
 	t.Run("TotalsOfUnknownPurchases", func(t *testing.T) { checkTotalsOfUnknownPurchases(ctx, t, store) })
+	t.Run("TotalsScopedToAccount", func(t *testing.T) { checkTotalsScopedToAccount(ctx, t, store) })
 }
 
 // The reported bug: listing A sells partially, is canceled, and the RI is
@@ -478,10 +483,31 @@ func checkConcurrentRelistAndPoll(ctx context.Context, t *testing.T, store *Post
 }
 
 func checkTotalsOfUnknownPurchases(ctx context.Context, t *testing.T, store *PostgresStore) {
-	totals, err := store.GetMarketplaceListingProceedsTotals(ctx, nil)
+	totals, err := store.GetMarketplaceListingProceedsTotals(ctx, nil, nil, acctScope)
 	require.NoError(t, err)
 	assert.Empty(t, totals)
-	totals, err = store.GetMarketplaceListingProceedsTotals(ctx, []string{"mls-never-listed"})
+	totals, err = store.GetMarketplaceListingProceedsTotals(ctx, []string{"mls-never-listed"}, nil, acctScope)
 	require.NoError(t, err)
 	assert.Empty(t, totals)
+}
+
+// checkTotalsScopedToAccount is the issue #1586 regression: naming
+// another account's purchase id must not return its proceeds, and an empty
+// scope must fail instead of reading every account.
+func checkTotalsScopedToAccount(ctx context.Context, t *testing.T, store *PostgresStore) {
+	id := "mls-scope-1"
+	seedListing(ctx, t, store, "aws", id, "lst-scope-1", ListingStateActive)
+	_, err := store.RecordMarketplaceListingActive(ctx, id, "lst-scope-1", listedAtFixture())
+	require.NoError(t, err)
+	_, err = store.SettleMarketplaceListing(ctx, closedSettlement(id, "lst-scope-1", 88, 12))
+	require.NoError(t, err)
+
+	own, err := store.GetMarketplaceListingProceedsTotals(ctx, []string{id}, nil, acctScope)
+	require.NoError(t, err)
+	require.Len(t, own, 1)
+	other, err := store.GetMarketplaceListingProceedsTotals(ctx, []string{id}, nil, map[string][]string{"aws": {"other-acct"}})
+	require.NoError(t, err)
+	assert.Empty(t, other, "another account's scope must not see the purchase")
+	_, err = store.GetMarketplaceListingProceedsTotals(ctx, []string{id}, nil, nil)
+	require.ErrorIs(t, err, ErrMarketplaceTotalsScopeRequired)
 }

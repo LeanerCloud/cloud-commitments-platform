@@ -1213,9 +1213,9 @@ func (m *MockConfigStore) SettleMarketplaceListing(ctx context.Context, settleme
 }
 
 // GetMarketplaceListingProceedsTotals mocks the per-RI marketplace proceeds totals (issue #1494).
-func (m *MockConfigStore) GetMarketplaceListingProceedsTotals(ctx context.Context, purchaseIDs []string) ([]config.MarketplaceListingProceedsTotal, error) {
-	m.record("GetMarketplaceListingProceedsTotals", ctx, purchaseIDs)
-	args := m.Called(ctx, purchaseIDs)
+func (m *MockConfigStore) GetMarketplaceListingProceedsTotals(ctx context.Context, purchaseIDs, accountIDs []string, externalIDsByProvider map[string][]string) ([]config.MarketplaceListingProceedsTotal, error) {
+	m.record("GetMarketplaceListingProceedsTotals", ctx, purchaseIDs, accountIDs, externalIDsByProvider)
+	args := m.Called(ctx, purchaseIDs, accountIDs, externalIDsByProvider)
 	var totals []config.MarketplaceListingProceedsTotal
 	if v := args.Get(0); v != nil {
 		t, ok := v.([]config.MarketplaceListingProceedsTotal)

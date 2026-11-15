@@ -580,8 +580,11 @@ type StoreInterface interface {
 
 	// GetMarketplaceListingProceedsTotals sums each RI's marketplace proceeds
 	// and fees over all of its listings (issue #1494), one total per purchase
-	// and currency. RIs with no recorded listing are left out.
-	GetMarketplaceListingProceedsTotals(ctx context.Context, purchaseIDs []string) ([]MarketplaceListingProceedsTotal, error)
+	// and currency. RIs with no recorded listing are left out. Only purchases
+	// of the given accounts count (same account arguments as
+	// GetActivePurchaseHistory; empty scope is an error), and each total is an
+	// estimate (issue #1586).
+	GetMarketplaceListingProceedsTotals(ctx context.Context, purchaseIDs, accountIDs []string, externalIDsByProvider map[string][]string) ([]MarketplaceListingProceedsTotal, error)
 
 	// ClaimRIExchangeIdempotencyKey atomically claims key for an RI exchange
 	// submit, so a client that retries a timed-out execute request cannot
