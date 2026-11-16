@@ -46,6 +46,8 @@ type LadderReconcileStore interface {
 	TransitionLadderTrancheTx(ctx context.Context, tx pgx.Tx, id string, from, to ladder.TrancheStatus, reason string) (bool, error)
 	GetGlobalConfigTx(ctx context.Context, tx pgx.Tx) (*config.GlobalConfig, error)
 	DisableLadderConfigTx(ctx context.Context, tx pgx.Tx, configID string) (bool, error)
+	CountLadderRunTrancheStatuses(ctx context.Context, runID string) (map[ladder.TrancheStatus]int, error)
+	TransitionLadderRunStatus(ctx context.Context, id string, fromStatuses []ladder.RunStatus, toStatus ladder.RunStatus) (*config.LadderRunDB, error)
 }
 
 // LadderReconcileResult counts what one sweep did. Deferred counts tranches
@@ -216,6 +218,9 @@ func reconcileOne(ctx context.Context, store LadderReconcileStore, vis Commitmen
 		return fmt.Errorf("reconcile ladder_tranche %s: %w", tr.ID, err)
 	}
 	res.record(now, tr.ID, out)
+	if out.moved && tr.RunID != nil {
+		return rollUpLadderRun(ctx, store, *tr.RunID)
+	}
 	return nil
 }
 

@@ -945,6 +945,9 @@ type StoreInterface interface {
 	LatestLadderRunStartedAt(ctx context.Context, configID string) (*time.Time, error)
 	TransitionLadderRunStatus(ctx context.Context, id string, fromStatuses []ladder.RunStatus, toStatus ladder.RunStatus) (*LadderRunDB, error)
 	CancelLadderRun(ctx context.Context, id string, fromStatuses []ladder.RunStatus, cancelledBy string) (*LadderRunDB, error)
+	// CountLadderRunTrancheStatuses returns the number of the run's tranches
+	// per stored status (raw keys, so a legacy spelling is its own key).
+	CountLadderRunTrancheStatuses(ctx context.Context, runID string) (map[ladder.TrancheStatus]int, error)
 
 	// Notification mutes (issue #297 / migration 000091).
 	// UpsertNotificationMute inserts or updates a mute row for (email, scope).

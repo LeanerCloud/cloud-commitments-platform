@@ -2892,6 +2892,24 @@ func (m *MockConfigStore) TransitionLadderRunStatus(ctx context.Context, id stri
 	return v, args.Error(1)
 }
 
+// CountLadderRunTrancheStatuses mocks the CountLadderRunTrancheStatuses operation.
+// Defaults to an empty count when no expectation is registered.
+func (m *MockConfigStore) CountLadderRunTrancheStatuses(ctx context.Context, runID string) (map[ladder.TrancheStatus]int, error) {
+	m.record("CountLadderRunTrancheStatuses", ctx, runID)
+	if !isExpected(&m.Mock, "CountLadderRunTrancheStatuses") {
+		return map[ladder.TrancheStatus]int{}, nil
+	}
+	args := m.Called(ctx, runID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	v, ok := args.Get(0).(map[ladder.TrancheStatus]int)
+	if !ok {
+		m.reporter.wrongReturnType("CountLadderRunTrancheStatuses", "map[ladder.TrancheStatus]int", args.Get(0))
+	}
+	return v, args.Error(1)
+}
+
 // UpsertNotificationMute mocks the UpsertNotificationMute operation.
 // Defaults to nil when no expectation is registered.
 func (m *MockConfigStore) UpsertNotificationMute(ctx context.Context, recipientEmail, scope, unmuteToken string) error {
