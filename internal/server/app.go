@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	pkgladder "github.com/LeanerCloud/cloud-commitments-go/pkg/ladder"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	awsladder "github.com/LeanerCloud/cloud-commitments-go/providers/aws/ladder"
@@ -962,6 +963,10 @@ func (app *Application) reinitializeAfterConnect(ctx context.Context, dbConn *da
 		app.Config,
 		newCommitmentProbeConfigBuilder(credStore, app.Config, awsCfg, sts.NewFromConfig(awsCfg)),
 		commitmentopts.DefaultProbers(),
+	).WithAzure(
+		newCommitmentProbeAzureCredential(credStore, app.signer, resolveOIDCIssuerURL(app.appConfig)),
+		azureProbeCurrency,
+		commitmentopts.DefaultAzureProbers(),
 	)
 
 	// Update API handler with new config store, scheduler, and rate limiter.
@@ -1043,6 +1048,26 @@ func newCommitmentProbeConfigBuilder(credStore credentials.CredentialStore, acco
 			awsconfig.WithRegion("us-east-1"),
 		)
 	}
+}
+
+// newCommitmentProbeAzureCredential resolves the token credential the Azure
+// commitment-options probe uses for an account, the same way the scheduler does.
+func newCommitmentProbeAzureCredential(credStore credentials.CredentialStore, signer oidc.Signer, issuerURL string) commitmentopts.AzureCredentialFn {
+	return func(ctx context.Context, acct *config.CloudAccount) (azcore.TokenCredential, error) {
+		return credentials.ResolveAzureTokenCredentialWithOpts(ctx, acct, credStore, credentials.AzureResolveOptions{
+			Signer:    signer,
+			IssuerURL: issuerURL,
+		})
+	}
+}
+
+// azureProbeCurrency is the billing currency the Azure probe validates in. The
+// cloud account has no currency field and the pinned cloud-commitments-go
+// Azure Savings Plans provider only collects and buys USD (it rejects any other
+// recommendation currency), so USD is the one currency the platform supports
+// for Azure. A per-account billing-currency lookup is the place to extend this.
+func azureProbeCurrency(context.Context, *config.CloudAccount) (string, error) {
+	return "USD", nil
 }
 
 // buildAdminPasswordSyncCallback returns a callback that syncs the admin user's

@@ -32,8 +32,10 @@ type Service struct {
 	store       Store
 	accounts    AccountLister
 	buildConfig BuildConfigFn
+	azure       *azureProbe
 	probers     []Prober
 	mu          sync.Mutex
+	azureMu     sync.Mutex
 }
 
 // providerAWS is the only provider probed today.
@@ -152,7 +154,11 @@ func (s *Service) probeAndPersist(ctx context.Context) (Options, error) {
 // (issue #243). The loop re-checks both fields so an AccountLister that
 // ignores the filter cannot reintroduce that.
 func (s *Service) findAWSAccount(ctx context.Context) (*config.CloudAccount, error) {
-	provider := providerAWS
+	return s.findEnabledAccount(ctx, providerAWS)
+}
+
+// findEnabledAccount is findAWSAccount for any provider.
+func (s *Service) findEnabledAccount(ctx context.Context, provider string) (*config.CloudAccount, error) {
 	enabled := true
 	accounts, err := s.accounts.ListCloudAccounts(ctx, config.CloudAccountFilter{Provider: &provider, Enabled: &enabled})
 	if err != nil {
