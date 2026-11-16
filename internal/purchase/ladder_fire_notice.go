@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
@@ -91,6 +92,26 @@ func sendLadderNotice(ctx context.Context, deps LadderFireDeps, plan *ladderFire
 	return SendLadderNotice(ctx, deps.Notifier, plan.global, deps.DashboardURL, exec, facts)
 }
 
+// recHourlyCommitment is the hourly spend one record commits to: a Savings Plan
+// states it, a reservation record carries its count times the offering's rate
+// as the monthly cost the builder derived from the live price.
+func recHourlyCommitment(rec *config.RecommendationRecord) (float64, error) {
+	decoded, err := common.DecodeServiceDetailsFor(rec.Service, rec.Details)
+	if err != nil {
+		return 0, fmt.Errorf("decode recommendation details: %w", err)
+	}
+	switch d := decoded.(type) {
+	case *common.SavingsPlanDetails:
+		return d.HourlyCommitment, nil
+	case *common.ComputeDetails:
+		if rec.MonthlyCost == nil || !(*rec.MonthlyCost > 0) || math.IsInf(*rec.MonthlyCost, 0) {
+			return 0, errors.New("reservation recommendation has no usable monthly cost")
+		}
+		return *rec.MonthlyCost / common.HoursPerMonth, nil
+	}
+	return 0, fmt.Errorf("recommendation is neither a Savings Plan nor a reservation (%T)", decoded)
+}
+
 // ladderNoticeFactsFor reads what the notice states from the execution's own
 // records, the amount actually bought after the builder's flooring, not from the
 // raw tranche amount. An EC2 Instance SP tranche has one record per family, so
@@ -106,15 +127,11 @@ func ladderNoticeFactsFor(tr *config.LadderTrancheDB, exec *config.PurchaseExecu
 		if rec.Term != term {
 			return LadderNoticeFacts{}, fmt.Errorf("recommendations differ in term (%d and %d years)", term, rec.Term)
 		}
-		decoded, err := common.DecodeServiceDetailsFor(rec.Service, rec.Details)
+		h, err := recHourlyCommitment(rec)
 		if err != nil {
-			return LadderNoticeFacts{}, fmt.Errorf("decode recommendation details: %w", err)
+			return LadderNoticeFacts{}, err
 		}
-		sp, ok := decoded.(*common.SavingsPlanDetails)
-		if !ok {
-			return LadderNoticeFacts{}, fmt.Errorf("recommendation is not a Savings Plan (%T)", decoded)
-		}
-		hourly += sp.HourlyCommitment
+		hourly += h
 	}
 	label := acct.ExternalID
 	if acct.Name != "" {

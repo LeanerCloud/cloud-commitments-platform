@@ -157,3 +157,17 @@ func TestLadderNoticeFacts_SumEveryFamilyRecord(t *testing.T) {
 	_, err = ladderNoticeFactsFor(&config.LadderTrancheDB{}, exec, &config.CloudAccount{})
 	require.Error(t, err)
 }
+
+func TestLadderNoticeFacts_ReservationStatesTheBoughtHourlySpend(t *testing.T) {
+	monthly := 730.0
+	rec := config.RecommendationRecord{Service: "ec2", Term: 1, MonthlyCost: &monthly, Details: []byte(`{"instance_type":"m5.large","platform":"Linux/UNIX","tenancy":"default","scope":"regional"}`)}
+	exec := &config.PurchaseExecution{Recommendations: []config.RecommendationRecord{rec}}
+	facts, err := ladderNoticeFactsFor(&config.LadderTrancheDB{ID: "T1"}, exec, &config.CloudAccount{ExternalID: "x"})
+	require.NoError(t, err)
+	assert.InDelta(t, 1.0, facts.HourlyCommitment, 1e-9)
+	for _, bad := range []*float64{nil, new(float64)} {
+		exec.Recommendations[0].MonthlyCost = bad
+		_, err = ladderNoticeFactsFor(&config.LadderTrancheDB{ID: "T1"}, exec, &config.CloudAccount{ExternalID: "x"})
+		require.Error(t, err)
+	}
+}
