@@ -5477,7 +5477,9 @@ paths:
         '400':
           description: >
             Invalid body, missing or invalid field, or the provider does not
-            match the cloud account's provider.
+            match the cloud account's provider,
+            or a new config is requested for a non-AWS provider (the ladder
+            supports AWS accounts only; existing non-AWS configs stay editable).
           content:
             application/json:
               schema:

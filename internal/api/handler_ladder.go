@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/aws/aws-lambda-go/events"
@@ -134,7 +135,29 @@ func (h *Handler) upsertLadderConfig(ctx context.Context, req *events.LambdaFunc
 		return nil, err
 	}
 
+	if err := h.requireLadderCreateIsAWS(ctx, &cfg); err != nil {
+		return nil, err
+	}
+
 	return h.writeLadderConfig(ctx, req, session, &cfg, bodyHasKey(present, "max_hourly_commit_per_sweep"))
+}
+
+// requireLadderCreateIsAWS refuses creating a non-AWS ladder config: the engine
+// plans and fires for AWS only, so a new azure/gcp row could never act. A row
+// that already exists for the (account, provider) key stays editable so an
+// operator can still disable or adjust it.
+func (h *Handler) requireLadderCreateIsAWS(ctx context.Context, cfg *config.LadderConfigDB) error {
+	if common.ProviderType(cfg.Provider) == common.ProviderAWS {
+		return nil
+	}
+	stored, err := h.config.GetLadderConfig(ctx, cfg.CloudAccountID, cfg.Provider)
+	if err != nil {
+		return fmt.Errorf("failed to load ladder config: %w", err)
+	}
+	if stored == nil {
+		return NewClientError(400, "the ladder supports AWS accounts only")
+	}
+	return nil
 }
 
 // writeLadderConfig gates, upserts and saves the ceiling. A body without the
