@@ -4423,10 +4423,33 @@ export function scaleRecForCapacity(r: LocalRecommendation, capacityPercent: num
   };
 }
 
+const SP_REFUSAL_MAX_ROWS = 5;
+let spRefusalToast: { dismiss: () => void } | null = null;
+
 function handleBulkPurchaseClick(recommendations: LocalRecommendation[]): void {
   const tb = loadBulkPurchaseState();
   if (recommendations.length === 0) {
     showToast({ message: 'No recommendations to purchase.', kind: 'warning' });
+    return;
+  }
+
+  // Savings Plans cannot be scaled (#1959): refuse the whole action instead
+  // of silently dropping them or buying only the other rows.
+  spRefusalToast?.dismiss();
+  spRefusalToast = null;
+  const spRows = tb.capacity < 100 ? recommendations.filter((r) => isSavingsPlanService(r.service)) : [];
+  if (spRows.length > 0) {
+    const label = (r: LocalRecommendation): string => {
+      const acct = r.cloud_account_id ? ` (${getAccountName(r.cloud_account_id)})` : '';
+      return `${r.service} ${r.resource_type ?? ''} ${r.region ?? ''}`.replace(/\s+/g, ' ').trim() + acct;
+    };
+    const shown = spRows.slice(0, SP_REFUSAL_MAX_ROWS).map(label).join(', ');
+    const more = spRows.length > SP_REFUSAL_MAX_ROWS ? ` +${spRows.length - SP_REFUSAL_MAX_ROWS} more` : '';
+    spRefusalToast = showToast({
+      message: `Savings Plans are bought at 100% capacity only; use a plan ramp for partial coverage. Capacity is ${tb.capacity}%; deselect these rows or set Capacity to 100%: ${shown}${more}.`,
+      kind: 'warning',
+      timeout: null,
+    });
     return;
   }
 

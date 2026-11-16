@@ -26,7 +26,9 @@ import {
   getPurchaseModalRecommendations,
   getFanOutBuckets,
   loadRecommendations,
+  scaleRecForCapacity,
 } from '../recommendations';
+import { showToast } from '../toast';
 import { formatCurrency } from '../utils';
 import type { LocalRecommendation } from '../types';
 
@@ -535,5 +537,122 @@ describe('Issue #711: purchase screens state the monthly charge and the term tot
     expect(text).toContain('Upfront on approval$0.00');
     expect(text).toContain('Monthly$300.00');
     expect(text).toContain('Total over term$3,600.00');
+  });
+});
+
+// Issue #1959: Savings Plans rows carry count 1, so the Capacity control used
+// to floor them to 0 and silently drop them. They are bought at 100% only.
+describe('Issue #1959: Savings Plans are never scaled or dropped by Capacity', () => {
+  const SP_MESSAGE = 'Savings Plans are bought at 100% capacity only; use a plan ramp for partial coverage.';
+  const sp = (id: string, service: string): LocalRecommendation => ({
+    id, provider: service === 'savingsplans' ? 'azure' : 'aws', service,
+    region: 'us-east-1', resource_type: 'ComputeSavingsPlans', term: 1, payment: 'all-upfront',
+    count: 1, upfront_cost: 1000, monthly_cost: 0, savings: 100,
+  });
+  const ec2: LocalRecommendation = {
+    id: 'ec2-1', provider: 'aws', service: 'ec2', region: 'us-east-1', resource_type: 'm5.large',
+    term: 1, payment: 'all-upfront', count: 4, upfront_cost: 4000, monthly_cost: 0, savings: 900,
+  };
+
+  async function clickBulk(rows: LocalRecommendation[], capacity: number): Promise<void> {
+    (localStorage.getItem as jest.Mock).mockReturnValue(JSON.stringify({ capacity }));
+    (api.getConfig as jest.Mock).mockResolvedValue({ global: { default_payment: 'all-upfront' } });
+    (api.getRecommendations as jest.Mock).mockResolvedValue({ summary: {}, recommendations: rows, regions: [] });
+    (state.getRecommendations as jest.Mock).mockReturnValue(rows);
+    (state.getVisibleRecommendations as jest.Mock).mockReturnValue(rows);
+    (state.getSelectedRecommendationIDs as jest.Mock).mockReturnValue(new Set(rows.map((r) => r.id)));
+    await loadRecommendations();
+    (showToast as jest.Mock).mockClear();
+    (document.getElementById('bulk-purchase-btn') as HTMLButtonElement).click();
+    await flush();
+  }
+
+  function expectRefused(rowId: string): void {
+    expect(showToast).toHaveBeenCalledTimes(1);
+    const opts = (showToast as jest.Mock).mock.calls[0]![0] as { message: string; timeout?: number | null };
+    expect(opts.message).toContain(SP_MESSAGE);
+    expect(opts.message).toContain(rowId);
+    expect(opts.timeout).toBeNull();
+    expect(getPurchaseModalRecommendations()).toHaveLength(0);
+    expect(getFanOutBuckets()).toBeNull();
+    expect(api.executePurchase).not.toHaveBeenCalled();
+  }
+
+  test.each(['savings-plans-compute', 'savings-plans-ec2instance', 'savings-plans-sagemaker', 'savings-plans-database', 'savingsplans'])(
+    'only %s rows at 50%% are refused with the message',
+    async (service) => {
+      await clickBulk([sp('sp-1', service)], 50);
+      expectRefused('ComputeSavingsPlans');
+    },
+  );
+
+  test('SP plus non-SP rows at 50% are refused as a whole', async () => {
+    await clickBulk([sp('sp-1', 'savings-plans-compute'), ec2], 50);
+    expectRefused('ComputeSavingsPlans');
+  });
+
+  test('capacity 99 still refuses, 100 opens the modal unchanged', async () => {
+    await clickBulk([sp('sp-1', 'savings-plans-compute')], 99);
+    expectRefused('ComputeSavingsPlans');
+    await clickBulk([sp('sp-1', 'savings-plans-compute')], 100);
+    expect(showToast).not.toHaveBeenCalled();
+    expect(getPurchaseModalRecommendations().map((r) => r.id)).toEqual(['sp-1']);
+    expect(getPurchaseModalRecommendations()[0]!.count).toBe(1);
+  });
+
+  test('non-SP rows at 50% are scaled as before', async () => {
+    await clickBulk([ec2], 50);
+    expect(showToast).not.toHaveBeenCalled();
+    expect(getPurchaseModalRecommendations().map((r) => r.count)).toEqual([2]);
+  });
+
+  test('scaleRecForCapacity keeps carrying recommended_count for SP rows (backend equation backstop)', () => {
+    const row = sp('sp-1', 'savings-plans-compute');
+    expect(scaleRecForCapacity(row, 100)).toMatchObject({ count: 1, recommended_count: 1 });
+    expect(scaleRecForCapacity(row, 50)).toBeNull();
+  });
+
+  test('storage says 100 but the input says 50: the POST still carries recommended_count', async () => {
+    await clickBulk([sp('sp-1', 'savings-plans-compute')], 100);
+    (document.getElementById('bulk-purchase-capacity') as HTMLInputElement).value = '50';
+    (document.getElementById('execute-purchase-btn') as HTMLButtonElement).click();
+    await flush();
+    expect(api.executePurchase).toHaveBeenCalledTimes(1);
+    const body = (api.executePurchase as jest.Mock).mock.calls[0]![0] as Array<{ recommended_count?: number }>;
+    expect(body[0]!.recommended_count).toBe(1);
+  });
+
+  test('lists at most 5 rows then +M more, naming the account', async () => {
+    const rows = Array.from({ length: 7 }, (_, i) => ({
+      ...sp(`sp-${i}`, 'savings-plans-compute'), resource_type: `Plan${i}`, cloud_account_id: 'acct-9',
+    }));
+    await clickBulk(rows, 50);
+    const msg = ((showToast as jest.Mock).mock.calls[0]![0] as { message: string }).message;
+    expect(msg).toContain('Plan4 us-east-1 (acct-9)');
+    expect(msg).not.toContain('Plan5');
+    expect(msg).toContain(' +2 more.');
+  });
+
+  test('a repeated refusal and a passing click dismiss the previous refusal toast', async () => {
+    const rows = [sp('sp-1', 'savings-plans-compute')];
+    const first = { dismiss: jest.fn() };
+    const second = { dismiss: jest.fn() };
+    (showToast as jest.Mock).mockReturnValueOnce(first).mockReturnValueOnce(second);
+    await clickBulk(rows, 50);
+    expect(first.dismiss).not.toHaveBeenCalled();
+    (localStorage.getItem as jest.Mock).mockReturnValue(JSON.stringify({ capacity: 50 }));
+    (document.getElementById('bulk-purchase-btn') as HTMLButtonElement).click();
+    expect(first.dismiss).toHaveBeenCalledTimes(1);
+    expect(second.dismiss).not.toHaveBeenCalled();
+    (localStorage.getItem as jest.Mock).mockReturnValue(JSON.stringify({ capacity: 100 }));
+    (document.getElementById('bulk-purchase-btn') as HTMLButtonElement).click();
+    expect(second.dismiss).toHaveBeenCalledTimes(1);
+  });
+
+  test('the real toast renders the message as text, not markup', () => {
+    const { showToast: realToast } = jest.requireActual('../toast') as typeof import('../toast');
+    realToast({ message: '<img src=x onerror=alert(1)> savings-plans-compute', kind: 'warning', timeout: null });
+    expect(document.querySelector('img')).toBeNull();
+    expect(document.body.textContent).toContain('<img src=x');
   });
 });

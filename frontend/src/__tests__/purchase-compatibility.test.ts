@@ -88,6 +88,13 @@ describe('isSavingsPlanService (issue #132)', () => {
     expect(isSavingsPlanService('savingsplans')).toBe(true);
   });
 
+  test.each(['savingsplans-compute', 'savingsplans-ec2instance', 'savingsplans-sagemaker', 'savingsplans-database'])(
+    'matches the hyphenless per-type slug %s accepted by the backend (#1959)',
+    (slug) => {
+      expect(isSavingsPlanService(slug)).toBe(true);
+    },
+  );
+
   test('rejects non-SP slugs', () => {
     expect(isSavingsPlanService('ec2')).toBe(false);
     expect(isSavingsPlanService('rds')).toBe(false);

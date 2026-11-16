@@ -88,7 +88,7 @@ export function paymentOptionsFor(provider: Provider, service: string, term: Ter
 // (`string(s) == "savingsplans"`); we mirror that here so Azure SP rows
 // are grouped correctly in the filter popover and bulk-buy bucketing.
 export function isSavingsPlanService(service: string): boolean {
-  return service.startsWith('savings-plans') || service === 'savingsplans';
+  return service.startsWith('savings-plans') || service.startsWith('savingsplans');
 }
 
 // SAVINGS_PLANS_BUCKET_KEY is the canonical service slug used in the
