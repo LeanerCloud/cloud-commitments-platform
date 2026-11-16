@@ -39,7 +39,9 @@ export interface User {
 }
 
 export interface LoginResponse {
+  // Kept for CLI/MCP clients; the browser session rides the httpOnly cookie.
   token: string;
+  csrf_token?: string;
   user?: User;
 }
 

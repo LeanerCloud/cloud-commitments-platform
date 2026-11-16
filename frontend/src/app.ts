@@ -3,6 +3,7 @@
  */
 
 import * as api from './api';
+import type { User } from './api';
 import * as state from './state';
 import { showLoginModal, showAdminSetupModal, showResetPasswordModal, updateUserUI } from './auth';
 import { loadDashboard, setupDashboardHandlers } from './dashboard';
@@ -112,7 +113,20 @@ async function initApp(): Promise<void> {
   // now instead of after the async fetches below.
   setActiveNav(applyTabFromPath());
 
-  if (!api.isAuthenticated()) {
+  let restored: User | null;
+  try {
+    restored = await api.getCurrentUser();
+  } catch (error) {
+    const err = error as { status?: number; message?: string };
+    if (err.status !== 401 && !err.message?.includes('Unauthorized')) {
+      console.error('Init error:', error);
+      renderInitError(error);
+      return;
+    }
+    restored = null;
+  }
+
+  if (!restored) {
     let notice: string | undefined;
     try {
       const publicInfo = await api.getPublicInfo();
@@ -135,7 +149,7 @@ async function initApp(): Promise<void> {
   }
 
   try {
-    const user = await api.getCurrentUser();
+    const user = restored;
     state.setCurrentUser(user);
 
     // Fetch the effective permission set from /api/auth/me/permissions

@@ -350,7 +350,8 @@ describe('API Requests', () => {
         expect.objectContaining({
           headers: expect.objectContaining({
             'X-Authorization': 'Bearer test-token'
-          })
+          }),
+          credentials: 'same-origin'
         })
       );
     });
@@ -546,7 +547,7 @@ describe('API Requests', () => {
 
       expect(fetchMock).toHaveBeenCalledWith(
         '/api/auth/logout',
-        expect.objectContaining({ method: 'POST' })
+        expect.objectContaining({ method: 'POST', credentials: 'same-origin' })
       );
       expect(isAuthenticated()).toBe(false);
       // An intentional sign-out must not resurrect a plan draft (#1735).
@@ -590,6 +591,42 @@ describe('API Requests', () => {
       const user = await getCurrentUser();
       expect(user.email).toBe('test@example.com');
       expect(fetchMock).toHaveBeenCalledWith('/api/auth/me', expect.anything());
+    });
+
+    test('restores the CSRF token from /auth/me without leaking it onto the user', async () => {
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ id: 'u1', email: 'a@b.c', groups: [], csrf_token: 'csrf-restored' })
+      });
+
+      const user = await getCurrentUser();
+
+      expect(getAuthHeaders()['X-CSRF-Token']).toBe('csrf-restored');
+      expect(user).not.toHaveProperty('csrf_token');
+    });
+
+    test('a response without csrf_token warns and sends no CSRF header', async () => {
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ id: 'u1', email: 'a@b.c', groups: [] })
+      });
+
+      await getCurrentUser();
+
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('csrf_token'));
+      expect(getAuthHeaders()['X-CSRF-Token']).toBeUndefined();
+      warn.mockRestore();
+    });
+
+    test('a 401 rejects', async () => {
+      fetchMock.mockResolvedValue({
+        ok: false,
+        status: 401,
+        json: () => Promise.resolve({ error: 'unauthorized' })
+      });
+
+      await expect(getCurrentUser()).rejects.toMatchObject({ status: 401 });
     });
   });
 
