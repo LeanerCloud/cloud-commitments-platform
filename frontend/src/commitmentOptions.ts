@@ -243,6 +243,28 @@ export function getPaymentLabel(value: string): string {
 interface ServerCommitmentOptions {
   status: 'ok' | 'unavailable';
   aws?: Record<string, Array<{ term: number; payment: string }>>;
+  azure?: Record<string, Array<{ term: number; payment: string }>>;
+}
+
+type ProbedCombos = Array<{ term: number; payment: string }>;
+
+// Combos of the hardcoded terms x payments product that the probe did not
+// report. Always diffed against the canonical product, never a prior overlay,
+// so a later wider response re-widens.
+function unsupportedCombos(
+  supportedCombos: ProbedCombos,
+  payments: PaymentOption[],
+): Array<{ term: number; payment: string }> {
+  const supportedKeys = new Set(supportedCombos.map(c => `${c.term}:${c.payment}`));
+  const invalid: Array<{ term: number; payment: string }> = [];
+  for (const term of STANDARD_TERMS) {
+    for (const payment of payments) {
+      if (!supportedKeys.has(`${term.value}:${payment.value}`)) {
+        invalid.push({ term: term.value, payment: payment.value });
+      }
+    }
+  }
+  return invalid;
 }
 
 // FetchLike is a subset of fetch's signature that tests can stub without
@@ -274,28 +296,18 @@ export async function fetchAndPopulateCommitmentOptions(fetchFn?: FetchLike): Pr
     return;
   }
 
-  if (body.status !== 'ok' || !body.aws) return;
+  if (body.status !== 'ok') return;
 
+  if (body.aws) overlayAws(body.aws);
+  overlayAzureSavingsPlans(body.azure);
+}
+
+function overlayAws(aws: NonNullable<ServerCommitmentOptions['aws']>): void {
   const awsConfigs = commitmentConfigs.aws ?? (commitmentConfigs.aws = {});
-  for (const [service, supportedCombos] of Object.entries(body.aws)) {
+  for (const [service, supportedCombos] of Object.entries(aws)) {
     // A "__proto__" key would replace the config object's prototype (#320).
     if (UNSAFE_KEYS.has(service)) continue;
-    // Always diff against the canonical STANDARD_TERMS × AWS_PAYMENTS
-    // product, not against the existing (possibly-narrowed-from-a-prior-
-    // overlay) entry. Otherwise, when the server widens its supported set
-    // on a later fetch, we'd be computing the intersection against a
-    // stale narrow base and the UI would stay restrictive.
-    const supportedKeys = new Set(
-      supportedCombos.map(c => `${c.term}:${c.payment}`)
-    );
-    const invalid: Array<{ term: number; payment: string }> = [];
-    for (const term of STANDARD_TERMS) {
-      for (const payment of AWS_PAYMENTS) {
-        if (!supportedKeys.has(`${term.value}:${payment.value}`)) {
-          invalid.push({ term: term.value, payment: payment.value });
-        }
-      }
-    }
+    const invalid = unsupportedCombos(supportedCombos, AWS_PAYMENTS);
 
     awsConfigs[service] = {
       terms: STANDARD_TERMS,
@@ -303,6 +315,29 @@ export async function fetchAndPopulateCommitmentOptions(fetchFn?: FetchLike): Pr
       invalidCombinations: invalid.length > 0 ? invalid : undefined,
     };
   }
+}
+
+// The Azure probe covers Savings Plans only, so only that entry is overlaid
+// (never `_default`: VM reservations stay hardcoded). The overlay only
+// narrows the hardcoded terms x payments; it never adds an option, and it
+// does not make 'monthly' purchasable. No UI consumer reads this yet; the
+// Azure Savings Plan selector will use it. A later response without
+// savingsplans keeps an earlier narrowing: it resets only on page reload.
+function overlayAzureSavingsPlans(azure: ServerCommitmentOptions['azure']): void {
+  if (!azure || typeof azure !== 'object' || Array.isArray(azure)) return;
+  const combos = own(azure, 'savingsplans');
+  if (!Array.isArray(combos)) return;
+  const valid = combos.filter(
+    c => c !== null && typeof c === 'object' && typeof c.term === 'number' && typeof c.payment === 'string',
+  );
+  if (valid.length === 0) return;
+  const invalid = unsupportedCombos(valid, AZURE_PAYMENTS);
+  const azureConfigs = commitmentConfigs.azure ?? (commitmentConfigs.azure = {});
+  azureConfigs.savingsplans = {
+    terms: STANDARD_TERMS,
+    payments: AZURE_PAYMENTS,
+    invalidCombinations: invalid.length > 0 ? invalid : undefined,
+  };
 }
 
 /**
