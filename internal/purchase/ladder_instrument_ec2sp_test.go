@@ -189,14 +189,14 @@ func TestLadderInstrument_EC2SPExecutionVisibleThroughPrefetch(t *testing.T) {
 		assert.Equal(t, "us-west-2", region)
 		return f, nil
 	}
-	vis := PrefetchLadderVisibility(context.Background(), f, factory, []config.LadderTrancheDB{fired})
+	vis := PrefetchLadderVisibility(context.Background(), f, factory, nil, []config.LadderTrancheDB{fired})
 	ok, err := vis.CommitmentVisible(context.Background(), config.LadderTrancheDB{}, execID)
 	require.NoError(t, err)
 	assert.True(t, ok)
 	assert.Equal(t, 1, calls)
 	// One plan missing from the account: not visible, the netting stays pending.
 	f.plans = f.plans[:1]
-	vis = PrefetchLadderVisibility(context.Background(), f, factory, []config.LadderTrancheDB{fired})
+	vis = PrefetchLadderVisibility(context.Background(), f, factory, nil, []config.LadderTrancheDB{fired})
 	ok, _ = vis.CommitmentVisible(context.Background(), config.LadderTrancheDB{}, execID)
 	assert.False(t, ok)
 }

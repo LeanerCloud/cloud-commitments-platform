@@ -42,7 +42,7 @@ func TestLadderInstrument_ComputeSPThroughPrefetchVisibility(t *testing.T) {
 			calls = append(calls, call{account, region})
 			return f, nil
 		}
-		return PrefetchLadderVisibility(context.Background(), f, factory, []config.LadderTrancheDB{fired}), calls
+		return PrefetchLadderVisibility(context.Background(), f, factory, nil, []config.LadderTrancheDB{fired}), calls
 	}
 
 	t.Run("active plan is visible in the built account and region", func(t *testing.T) {

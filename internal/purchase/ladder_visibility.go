@@ -103,8 +103,14 @@ func spCountsAsExisting(sp sptypes.SavingsPlan, e expectedPlan) bool {
 		(sp.SavingsPlanType != sptypes.SavingsPlanTypeEc2Instance || aws.ToString(sp.Region) == e.region)
 }
 
+// visibilityLookup fetches the commitments with the given IDs for one group and
+// returns the predicate deciding whether an expected commitment counts as
+// existing. Any error fails every execution in the group closed.
+type visibilityLookup func(ctx context.Context, account, region string, ids []string) (func(expectedPlan) bool, error)
+
 type ladderFetchGroup struct {
 	execs           map[string][]expectedPlan // execution ID -> its plans
+	lookup          visibilityLookup
 	account, region string
 }
 
@@ -115,8 +121,9 @@ type ladderFetchGroup struct {
 // logged; nothing is ever reported visible on an error.
 func PrefetchLadderVisibility(ctx context.Context, store interface {
 	GetExecutionByID(ctx context.Context, id string) (*config.PurchaseExecution, error)
-}, factory LadderSPDescriberFactory, fired []config.LadderTrancheDB) prefetchedVisibility {
+}, spFactory LadderSPDescriberFactory, riFactory LadderRIDescriberFactory, fired []config.LadderTrancheDB) prefetchedVisibility {
 	out := prefetchedVisibility{}
+	lookups := ladderLookups{sp: spLookup(spFactory), ri: riLookup(riFactory)}
 	groups := map[string]*ladderFetchGroup{}
 	for i := range fired {
 		tr := fired[i]
@@ -125,7 +132,7 @@ func PrefetchLadderVisibility(ctx context.Context, store interface {
 		}
 		exec, err := chainTail(ctx, store, *tr.ExecutionID)
 		if err == nil && exec != nil && exec.Status == config.StatusCompleted {
-			err = addExpected(groups, exec, tr)
+			err = addExpected(groups, lookups, exec, tr)
 		}
 		if err != nil {
 			logging.Errorf("ladder tranche %s: visibility prefetch failed: %v", tr.ID, err)
@@ -135,7 +142,7 @@ func PrefetchLadderVisibility(ctx context.Context, store interface {
 		}
 	}
 	for _, g := range groups {
-		fetchGroup(ctx, factory, g, out)
+		fetchGroup(ctx, g, out)
 	}
 	return out
 }
@@ -160,8 +167,27 @@ func chainTail(ctx context.Context, store interface {
 	return exec, fmt.Errorf("retry chain longer than %d", config.LadderChainMaxDepth)
 }
 
-func addExpected(groups map[string]*ladderFetchGroup, exec *config.PurchaseExecution, tr config.LadderTrancheDB) error {
-	planType, err := spPlanTypeForLayer(tr.LayerType)
+func ladderGroupKind(layer ladder.LayerType) string {
+	if layer == ladder.LayerConvertibleRI {
+		return "ri"
+	}
+	return "sp"
+}
+
+type ladderLookups struct{ sp, ri visibilityLookup }
+
+// lookupForLayer dispatches by layer: the convertible RI layer is looked up as
+// reservations, the Savings Plan layers as plans, any other layer fails closed.
+func (l ladderLookups) lookupForLayer(layer ladder.LayerType) (lookup visibilityLookup, planType string, err error) {
+	if layer == ladder.LayerConvertibleRI {
+		return l.ri, "", nil
+	}
+	t, err := spPlanTypeForLayer(layer)
+	return l.sp, string(t), err
+}
+
+func addExpected(groups map[string]*ladderFetchGroup, lookups ladderLookups, exec *config.PurchaseExecution, tr config.LadderTrancheDB) error {
+	lookup, planType, err := lookups.lookupForLayer(tr.LayerType)
 	if err != nil {
 		return err
 	}
@@ -182,32 +208,26 @@ func addExpected(groups map[string]*ladderFetchGroup, exec *config.PurchaseExecu
 		if r.PurchaseID == "" {
 			return fmt.Errorf("completed execution %s has a selected recommendation without a commitment ID", exec.ExecutionID)
 		}
-		plans = append(plans, expectedPlan{id: r.PurchaseID, planType: string(planType), region: r.Region})
+		plans = append(plans, expectedPlan{id: r.PurchaseID, planType: planType, region: r.Region})
 		region = r.Region
 	}
 	if account == nil || len(plans) == 0 {
 		return fmt.Errorf("completed execution %s has no account or commitment to look up", exec.ExecutionID)
 	}
-	key := *account + "/" + region
+	key := ladderGroupKind(tr.LayerType) + "/" + *account + "/" + region
 	g := groups[key]
 	if g == nil {
-		g = &ladderFetchGroup{account: *account, region: region, execs: map[string][]expectedPlan{}}
+		g = &ladderFetchGroup{lookup: lookup, account: *account, region: region, execs: map[string][]expectedPlan{}}
 		groups[key] = g
 	}
 	g.execs[exec.ExecutionID] = plans
 	return nil
 }
 
-// fetchGroup issues one batched per-ID describe per (account, region) and
-// marks an execution visible only when every one of its plans is returned and
-// satisfies spCountsAsExisting.
-func fetchGroup(ctx context.Context, factory LadderSPDescriberFactory, g *ladderFetchGroup, out prefetchedVisibility) {
-	fail := func(err error) {
-		logging.Errorf("ladder visibility lookup for account %s region %s failed: %v", g.account, g.region, err)
-		for id := range g.execs {
-			out[id] = ladderVisibility{err: err}
-		}
-	}
+// fetchGroup issues one batched per-ID lookup per (kind, account, region) and
+// marks an execution visible only when every one of its commitments is
+// returned and satisfies the lookup's predicate.
+func fetchGroup(ctx context.Context, g *ladderFetchGroup, out prefetchedVisibility) {
 	var ids []string
 	for _, plans := range g.execs {
 		for _, p := range plans {
@@ -216,31 +236,38 @@ func fetchGroup(ctx context.Context, factory LadderSPDescriberFactory, g *ladder
 			}
 		}
 	}
-	desc, err := factory(ctx, g.account, g.region)
+	counts, err := g.lookup(ctx, g.account, g.region, ids)
 	if err != nil {
-		fail(err)
+		logging.Errorf("ladder visibility lookup for account %s region %s failed: %v", g.account, g.region, err)
+		for id := range g.execs {
+			out[id] = ladderVisibility{err: err}
+		}
 		return
 	}
-	found := map[string]sptypes.SavingsPlan{}
-	for chunk := range slices.Chunk(ids, ladderDescribeBatch) {
-		if err := describeIDs(ctx, desc, chunk, found); err != nil {
-			fail(err)
-			return
-		}
-	}
 	for id, plans := range g.execs {
-		out[id] = ladderVisibility{visible: allCountAsExisting(plans, found)}
+		out[id] = ladderVisibility{visible: !slices.ContainsFunc(plans, func(p expectedPlan) bool { return !counts(p) })}
 	}
 }
 
-func allCountAsExisting(plans []expectedPlan, found map[string]sptypes.SavingsPlan) bool {
-	for _, p := range plans {
-		sp, ok := found[p.id]
-		if !ok || !spCountsAsExisting(sp, p) {
-			return false
+// spLookup is the Savings Plans lookup: per-ID DescribeSavingsPlans, matched
+// against spCountsAsExisting.
+func spLookup(factory LadderSPDescriberFactory) visibilityLookup {
+	return func(ctx context.Context, account, region string, ids []string) (func(expectedPlan) bool, error) {
+		desc, err := factory(ctx, account, region)
+		if err != nil {
+			return nil, err
 		}
+		found := map[string]sptypes.SavingsPlan{}
+		for chunk := range slices.Chunk(ids, ladderDescribeBatch) {
+			if err := describeIDs(ctx, desc, chunk, found); err != nil {
+				return nil, err
+			}
+		}
+		return func(p expectedPlan) bool {
+			sp, ok := found[p.id]
+			return ok && spCountsAsExisting(sp, p)
+		}, nil
 	}
-	return true
 }
 
 func describeIDs(ctx context.Context, desc SPDescriber, ids []string, found map[string]sptypes.SavingsPlan) error {
@@ -272,6 +299,7 @@ func describeIDs(ctx context.Context, desc SPDescriber, ids []string, found map[
 type LadderReconcileDeps struct {
 	Store LadderReconcileRunStore
 	SP    LadderSPDescriberFactory
+	RI    LadderRIDescriberFactory
 	Now   func() time.Time
 }
 
@@ -295,6 +323,6 @@ func RunLadderReconcile(ctx context.Context, d LadderReconcileDeps) (LadderRecon
 	if len(fired) == 0 {
 		return LadderReconcileResult{}, nil
 	}
-	vis := PrefetchLadderVisibility(ctx, d.Store, d.SP, fired)
+	vis := PrefetchLadderVisibility(ctx, d.Store, d.SP, d.RI, fired)
 	return ReconcileLadderTranches(ctx, d.Store, vis, d.Now())
 }
