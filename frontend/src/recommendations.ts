@@ -4713,6 +4713,31 @@ function resolveBucketPaymentSeed(
   return { payment: toolbar.payment, source: 'toolbar' };
 }
 
+const OVERRIDE_WARN_MAX_IDS = 5;
+let overrideWarningToast: { dismiss: () => void } | null = null;
+
+// Sticky (timeout: null): a payment mismatch on a purchase path must not
+// vanish after 30s. Both modals dismiss it from their onClose (every close
+// path); the next modal open also replaces it so warnings never stack.
+function dismissOverrideWarning(): void {
+  overrideWarningToast?.dismiss();
+  overrideWarningToast = null;
+}
+
+function warnOverrideFetchFailed(failedIds: readonly string[]): void {
+  dismissOverrideWarning();
+  if (failedIds.length === 0) return;
+  const shown = failedIds.slice(0, OVERRIDE_WARN_MAX_IDS).map(getAccountName).join(', ');
+  const more = failedIds.length > OVERRIDE_WARN_MAX_IDS
+    ? ` +${failedIds.length - OVERRIDE_WARN_MAX_IDS} more`
+    : '';
+  overrideWarningToast = showToast({
+    message: `Account payment overrides could not be loaded for ${failedIds.length} account(s) (${shown}${more}); check each row's payment before buying.`,
+    kind: 'warning',
+    timeout: null,
+  });
+}
+
 async function openFanOutModal(
   bucketEntries: Array<[string, LocalRecommendation[]]>,
   toolbar: BulkPurchaseToolbarState,
@@ -4722,16 +4747,18 @@ async function openFanOutModal(
   // Pre-fetch service-overrides for every distinct account referenced by
   // any rec in any bucket; overridesByAccount seeds the bucket-level
   // payment (issue #111). One fetch per distinct accountID; cached for the lifetime of this
-  // openFanOutModal call. Errors are swallowed: the toolbar-seed fallback
-  // always works, so a transient API failure shouldn't block the modal.
+  // openFanOutModal call. A failed fetch does not block the modal: the
+  // bucket seeds from the first rec's payment or the toolbar, and one sticky
+  // warning toast tells the user.
   const allAccountIDs = new Set<string>();
   for (const [, recs] of bucketEntries) {
     for (const r of recs) {
       if (r.cloud_account_id) allAccountIDs.add(r.cloud_account_id);
     }
   }
-  const overridesByAccount = await fetchOverridesForAccounts(allAccountIDs);
+  const { byAccount: overridesByAccount, failedIds } = await fetchOverridesForAccounts(allAccountIDs);
   if (openToken !== purchaseModalOpenToken) return;
+  warnOverrideFetchFailed(failedIds);
 
   const buckets: FanOutBucket[] = bucketEntries
     .filter(([_key, recs]) => recs.length > 0)
@@ -4814,6 +4841,7 @@ async function openFanOutModal(
       clearPurchaseModalRecommendations();
       clearFanOutBuckets();
       resetExecuteModeAndLabel();
+      dismissOverrideWarning();
     },
   });
 }
@@ -5557,8 +5585,9 @@ function renderDirectExecuteWarning(): void {
  * (replacing the historical hardcoded `'all-upfront'` on that path).
  *
  * Async because it pre-fetches per-account overrides — same pattern as
- * `openFanOutModal`. A failed override fetch still permits valid own
- * payments and loaded priced alternatives.
+ * `openFanOutModal`. A failed override fetch shows one warning toast and
+ * seeds from the rec's own valid payment or a loaded priced alternative, so
+ * the account's configured override is not applied in that case.
  */
 export async function openPurchaseModal(recommendations: LocalRecommendation[], capacityPercent = 100): Promise<void> {
   const openToken = ++purchaseModalOpenToken;
@@ -5579,9 +5608,10 @@ export async function openPurchaseModal(recommendations: LocalRecommendation[], 
   for (const r of recommendations) {
     if (r.cloud_account_id) accountIDs.add(r.cloud_account_id);
   }
-  const overridesByAccount = await fetchOverridesForAccounts(accountIDs);
+  const { byAccount: overridesByAccount, failedIds } = await fetchOverridesForAccounts(accountIDs);
 
   if (openToken !== purchaseModalOpenToken || currentPurchaseRecommendations !== pendingRows) return;
+  warnOverrideFetchFailed(failedIds);
 
   const seeds = recommendations.map((r) => resolvePerRecPaymentSeed(r, overridesByAccount, capacityPercent));
   const resolvedSeeds = seeds.filter((seed) => seed !== null);
@@ -5778,6 +5808,7 @@ export async function openPurchaseModal(recommendations: LocalRecommendation[], 
         clearPurchaseModalRecommendations();
         clearFanOutBuckets();
         resetExecuteModeAndLabel();
+        dismissOverrideWarning();
       },
     });
   }

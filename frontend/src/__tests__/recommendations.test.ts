@@ -2,6 +2,7 @@
  * Recommendations module tests
  */
 import { loadRecommendations, startRecommendationsRefresh, openPurchaseModal, getPurchaseModalRecommendations, clearPurchaseModalRecommendations, refreshRecommendations, setupRecommendationsHandlers, pickBestVariantPerCell, seedGlobalDefaults, effectiveMonthlySavings, effectiveSavingsPct, displaySavingsPct, onDemandMonthly, groupRecsByCell, cellSummary, pageLevelRange, resetExpandedCells, resetAutoRefreshInFlight, scaleCost, formatCostForPeriod, periodSuffix, loadColumnVisibility, saveColumnVisibility, resetColumnVisibilityState, TOGGLEABLE_COLUMNS, COLUMN_DEFS, renderUsageSparkline, loadColumnFilters, saveColumnFilters, resetColumnFiltersState, spGroupKey, groupSpCellKeys, formatCapacity, scaleRecForCapacity, weightedDisplaySavingsPct } from '../recommendations';
+import { closeModal } from '../modal';
 import type { CostPeriod } from '../state';
 import { HOURS_PER_MONTH } from '../lib/hours-per-month';
 
@@ -4145,6 +4146,97 @@ describe('Issue #111: per-bucket Payment seed from per-account service override'
     );
   };
 
+  test('failed override fetch: exactly one warning toast, toolbar-seeded buckets (#1957)', async () => {
+    const recs = [
+      { id: 'a', provider: 'aws', cloud_account_id: 'test-account-a', service: 'ec2', resource_type: 't3.medium', region: 'us-east-1', count: 1, term: 1, savings: 100, upfront_cost: 500 },
+      { id: 'b', provider: 'aws', cloud_account_id: 'test-account-b', service: 'ec2', resource_type: 'm5.large', region: 'us-east-1', count: 1, term: 3, savings: 200, upfront_cost: 800 },
+    ];
+    setupMixedTermRecs(recs);
+    (api.listAccountServiceOverrides as jest.Mock).mockRejectedValue(new Error('boom'));
+    mockShowToast.mockClear();
+
+    await loadRecommendations();
+    (document.getElementById('bulk-purchase-btn') as HTMLButtonElement).click();
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+
+    const { getFanOutBuckets } = await import('../recommendations');
+    const buckets = getFanOutBuckets();
+    expect(buckets).not.toBeNull();
+    for (const b of buckets!) expect(b.paymentSource).toBe('toolbar');
+    const warnings = mockShowToast.mock.calls.filter(
+      ([o]) => String((o as { message?: string }).message).startsWith('Account payment overrides could not be loaded for 2 account(s) (test-account-a, test-account-b)'),
+    );
+    expect(warnings).toHaveLength(1);
+  });
+
+  test('superseded fan-out open with a failed override fetch shows no toast (#1957)', async () => {
+    const recs = [
+      { id: 'a', provider: 'aws', cloud_account_id: 'test-account-a', service: 'ec2', resource_type: 't3.medium', region: 'us-east-1', count: 1, term: 1, savings: 100, upfront_cost: 500 },
+      { id: 'b', provider: 'aws', cloud_account_id: 'test-account-a', service: 'ec2', resource_type: 'm5.large', region: 'us-east-1', count: 1, term: 3, savings: 200, upfront_cost: 800 },
+    ];
+    setupMixedTermRecs(recs);
+    let rejectFirst!: (e: Error) => void;
+    (api.listAccountServiceOverrides as jest.Mock)
+      .mockImplementationOnce(() => new Promise((_, rej) => { rejectFirst = rej; }))
+      .mockResolvedValue([]);
+    mockShowToast.mockClear();
+
+    await loadRecommendations();
+    const btn = document.getElementById('bulk-purchase-btn') as HTMLButtonElement;
+    btn.click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(api.listAccountServiceOverrides).toHaveBeenCalledTimes(1);
+    // A newer open (shared token) supersedes the pending fan-out open.
+    await openPurchaseModal([recs[0] as never]);
+    rejectFirst(new Error('late'));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(mockShowToast.mock.calls.filter(
+      ([o]) => String((o as { message?: string }).message).includes('overrides could not be loaded'),
+    )).toHaveLength(0);
+  });
+
+  test('closing the fan-out modal dismisses the warning toast (#1957)', async () => {
+    const recs = [
+      { id: 'a', provider: 'aws', cloud_account_id: 'test-account-a', service: 'ec2', resource_type: 't3.medium', region: 'us-east-1', count: 1, term: 1, savings: 100, upfront_cost: 500 },
+      { id: 'b', provider: 'aws', cloud_account_id: 'test-account-a', service: 'ec2', resource_type: 'm5.large', region: 'us-east-1', count: 1, term: 3, savings: 200, upfront_cost: 800 },
+    ];
+    setupMixedTermRecs(recs);
+    (api.listAccountServiceOverrides as jest.Mock).mockRejectedValue(new Error('boom'));
+    mockShowToast.mockClear();
+    await loadRecommendations();
+    (document.getElementById('bulk-purchase-btn') as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+    const { getFanOutBuckets } = await import('../recommendations');
+    expect(getFanOutBuckets()).not.toBeNull();
+    const call = mockShowToast.mock.calls.findIndex(
+      ([o]) => String((o as { message?: string }).message).includes('overrides could not be loaded'),
+    );
+    expect(call).toBeGreaterThanOrEqual(0);
+    const dismiss = mockShowToast.mock.results[call]!.value.dismiss as jest.Mock;
+    expect(dismiss).not.toHaveBeenCalled();
+    closeModal(document.getElementById('purchase-modal') as HTMLElement);
+    expect(dismiss).toHaveBeenCalledTimes(1);
+  });
+
+  test('no override warning toast when every override fetch succeeds (#1957)', async () => {
+    const recs = [
+      { id: 'a', provider: 'aws', cloud_account_id: 'test-account-a', service: 'ec2', resource_type: 't3.medium', region: 'us-east-1', count: 1, term: 1, savings: 100, upfront_cost: 500 },
+      { id: 'b', provider: 'aws', cloud_account_id: 'test-account-a', service: 'ec2', resource_type: 'm5.large', region: 'us-east-1', count: 1, term: 3, savings: 200, upfront_cost: 800 },
+    ];
+    setupMixedTermRecs(recs);
+    (api.listAccountServiceOverrides as jest.Mock).mockResolvedValue([]);
+    mockShowToast.mockClear();
+
+    await loadRecommendations();
+    (document.getElementById('bulk-purchase-btn') as HTMLButtonElement).click();
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+
+    expect(mockShowToast.mock.calls.filter(
+      ([o]) => String((o as { message?: string }).message).includes('overrides could not be loaded'),
+    )).toHaveLength(0);
+  });
+
   test('(a) single-account bucket with matching override → bucket payment seeded from override', async () => {
     // issues #225/#226: resolvePurchaseTarget uses pickBestVariantPerCell for the
     // default path. Use different resource_type values so each rec is its own cell,
@@ -4444,6 +4536,137 @@ describe('Issue #111 (iii): per-row Payment seed in openPurchaseModal', () => {
     // leak into sibling describe blocks (clearAllMocks does not reset return
     // values — see the note above at the #288 execute-mode-toggle suite).
     (state.getRecommendations as jest.Mock).mockReturnValue([]);
+  });
+
+  const OVERRIDE_FAIL_MSG = "Account payment overrides could not be loaded for 2 account(s) (test-account-a, test-account-b); check each row's payment before buying.";
+  const overrideWarnings = () => mockShowToast.mock.calls.filter(
+    ([o]) => (o as { message?: string }).message === OVERRIDE_FAIL_MSG,
+  );
+
+  test('failed override fetch: one warning toast, row seeded from rec payment (#1957)', async () => {
+    (api.listAccountServiceOverrides as jest.Mock).mockRejectedValue(new Error('boom'));
+    const rec = {
+      id: 'rec-f', provider: 'aws' as const, cloud_account_id: 'test-account-a',
+      service: 'ec2', resource_type: 't3.medium', region: 'us-east-1',
+      count: 1, term: 1, payment: 'all-upfront', savings: 100, upfront_cost: 500,
+    };
+    (state.getRecommendations as jest.Mock).mockReturnValue([rec]);
+    await openPurchaseModal([rec, { ...rec, id: 'rec-g', cloud_account_id: 'test-account-b' }]);
+    expect(overrideWarnings()).toHaveLength(1);
+    expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({ kind: 'warning', timeout: null }));
+    expect(getPurchaseModalRecommendations()[0]!.payment).toBe('all-upfront');
+  });
+
+  test('superseded open with a failed override fetch shows no toast (#1957)', async () => {
+    let rejectFirst!: (e: Error) => void;
+    (api.listAccountServiceOverrides as jest.Mock)
+      .mockImplementationOnce(() => new Promise((_, rej) => { rejectFirst = rej; }))
+      .mockResolvedValue([]);
+    const rec = {
+      id: 'rec-x', provider: 'aws' as const, cloud_account_id: 'test-account-a',
+      service: 'ec2', resource_type: 't3.medium', region: 'us-east-1',
+      count: 1, term: 1, payment: 'all-upfront', savings: 100, upfront_cost: 500,
+    };
+    (state.getRecommendations as jest.Mock).mockReturnValue([rec]);
+    mockShowToast.mockClear();
+    const first = openPurchaseModal([rec]);
+    await openPurchaseModal([rec]);
+    rejectFirst(new Error('late'));
+    await first;
+    expect(mockShowToast.mock.calls.filter(
+      ([o]) => String((o as { message?: string }).message).includes('overrides could not be loaded'),
+    )).toHaveLength(0);
+  });
+
+  const failingRecs = (n: number) => Array.from({ length: n }, (_, i) => ({
+    id: `rec-n${i}`, provider: 'aws' as const, cloud_account_id: `acct-${i + 1}`,
+    service: 'ec2', resource_type: 't3.medium', region: 'us-east-1',
+    count: 1, term: 1, payment: 'all-upfront', savings: 100, upfront_cost: 500,
+  }));
+  const warningMessages = () => mockShowToast.mock.calls
+    .map(([o]) => String((o as { message?: string }).message))
+    .filter((m) => m.includes('overrides could not be loaded'));
+
+  test.each([
+    [5, '5 account(s) (acct-1, acct-2, acct-3, acct-4, acct-5); check'],
+    [6, '6 account(s) (acct-1, acct-2, acct-3, acct-4, acct-5 +1 more); check'],
+    [7, '7 account(s) (acct-1, acct-2, acct-3, acct-4, acct-5 +2 more); check'],
+  ])('%i failed accounts: count is the total, ids capped at 5 (#1957)', async (n, expected) => {
+    (api.listAccountServiceOverrides as jest.Mock).mockRejectedValue(new Error('boom'));
+    const recs = failingRecs(n);
+    (state.getRecommendations as jest.Mock).mockReturnValue(recs);
+    mockShowToast.mockClear();
+    await openPurchaseModal(recs);
+    const msgs = warningMessages();
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]).toContain(`for ${expected}`);
+  });
+
+  test('cached account names replace raw ids in the warning (#1957)', async () => {
+    (api.listAccountsMinimal as jest.Mock).mockResolvedValue([{ id: 'acct-1', name: 'Prod Account' }]);
+    try {
+      await loadRecommendations();
+      (api.listAccountServiceOverrides as jest.Mock).mockRejectedValue(new Error('boom'));
+      const recs = failingRecs(2);
+      (state.getRecommendations as jest.Mock).mockReturnValue(recs);
+      mockShowToast.mockClear();
+      await openPurchaseModal(recs);
+      expect(warningMessages()[0]).toContain('(Prod Account, acct-2)');
+    } finally {
+      (api.listAccountsMinimal as jest.Mock).mockResolvedValue([]);
+      await loadRecommendations();
+    }
+  });
+
+  const openFailingModal = async () => {
+    (api.listAccountServiceOverrides as jest.Mock).mockRejectedValue(new Error('boom'));
+    const recs = failingRecs(1);
+    (state.getRecommendations as jest.Mock).mockReturnValue(recs);
+    mockShowToast.mockClear();
+    await openPurchaseModal(recs);
+    const dismiss = mockShowToast.mock.results[0]!.value.dismiss as jest.Mock;
+    expect(dismiss).not.toHaveBeenCalled();
+    return dismiss;
+  };
+
+  test('closing the modal dismisses the warning toast (#1957)', async () => {
+    const dismiss = await openFailingModal();
+    closeModal(document.getElementById('purchase-modal') as HTMLElement);
+    expect(dismiss).toHaveBeenCalledTimes(1);
+  });
+
+  test('Escape on the modal dismisses the warning toast (#1957)', async () => {
+    const dismiss = await openFailingModal();
+    document.getElementById('purchase-modal')!.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    );
+    expect(dismiss).toHaveBeenCalledTimes(1);
+  });
+
+  test('a new open replaces the previous warning instead of stacking (#1957)', async () => {
+    const dismiss = await openFailingModal();
+    await openPurchaseModal(failingRecs(1));
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    expect(warningMessages()).toHaveLength(2);
+  });
+
+  test('an open with no failures clears the previous warning (#1957)', async () => {
+    const dismiss = await openFailingModal();
+    (api.listAccountServiceOverrides as jest.Mock).mockResolvedValue([]);
+    await openPurchaseModal(failingRecs(1));
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    expect(warningMessages()).toHaveLength(1);
+  });
+
+  test('successful override fetch: no override warning toast (#1957)', async () => {
+    const rec = {
+      id: 'rec-s', provider: 'aws' as const, cloud_account_id: 'test-account-a',
+      service: 'ec2', resource_type: 't3.medium', region: 'us-east-1',
+      count: 1, term: 1, payment: 'all-upfront', savings: 100, upfront_cost: 500,
+    };
+    (state.getRecommendations as jest.Mock).mockReturnValue([rec]);
+    await openPurchaseModal([rec]);
+    expect(overrideWarnings()).toHaveLength(0);
   });
 
   test('(a) single rec with matching override → row Payment seeded from override; source-note rendered', async () => {

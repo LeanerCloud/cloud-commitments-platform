@@ -1,23 +1,31 @@
 import * as api from '../api';
 import type { AccountServiceOverride } from '../api/accounts';
 
+export interface FetchedOverrides {
+  byAccount: Map<string, AccountServiceOverride[]>;
+  /** Account IDs whose override fetch rejected; absent from byAccount. */
+  failedIds: string[];
+}
+
 /**
  * Fetches AccountServiceOverride arrays for a set of account IDs in parallel.
- * Returns a Map keyed by account ID. Per-account fetch errors are silently
- * swallowed so callers can always fall back to their default seed.
+ * Never rejects: a per-account failure is recorded in failedIds so callers
+ * can warn the user before falling back to their default seed.
  */
 export async function fetchOverridesForAccounts(
   ids: Iterable<string>,
-): Promise<Map<string, AccountServiceOverride[]>> {
-  const out = new Map<string, AccountServiceOverride[]>();
+): Promise<FetchedOverrides> {
+  const byAccount = new Map<string, AccountServiceOverride[]>();
+  const failedIds: string[] = [];
   await Promise.all(
     Array.from(ids).map(async (id) => {
       try {
-        out.set(id, await api.listAccountServiceOverrides(id));
-      } catch {
-        // Silent fallback -- callers handle missing entries gracefully.
+        byAccount.set(id, await api.listAccountServiceOverrides(id));
+      } catch (err) {
+        console.warn(`Failed to load payment overrides for account ${id}`, err);
+        failedIds.push(id);
       }
     }),
   );
-  return out;
+  return { byAccount, failedIds };
 }
