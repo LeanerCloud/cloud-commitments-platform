@@ -25,6 +25,13 @@ const azureSpProvider = "azure"
 // savingsplans maps its "Compute" plan type to this value before purchase).
 const azureSKUComputeSavingsPlan = "Compute_Savings_Plan"
 
+// azureOptionalTermYears is the one term Azure does not sell everywhere. A
+// client 4xx on a combo of this term drops just that combo; the same answer
+// for a term Azure really sells (1 and 3 years) is a transient or wrong-scope
+// failure and aborts the probe, because a persisted success row never expires
+// and would keep the sold combo missing for good.
+const azureOptionalTermYears = 5
+
 // azureProbeHourlyCommitment is the minimum non-zero hourly commitment used
 // in ValidatePurchase probe requests. The value itself is irrelevant for
 // structural validation (the API checks term + payment shape, not the dollar
@@ -104,10 +111,10 @@ type AzureSPValidateAPI interface {
 //   - The probe validates against the caller's real subscription with the
 //     minimum non-zero hourly commitment; ValidatePurchase never creates a
 //     purchase, so no billing impact occurs.
-//   - A 4xx answer for a combo (other than 401, 403, 404, 408 and 429) means Azure
-//     does not sell it: the combo is dropped and the probe continues, but a
+//   - A 4xx answer (other than 401, 403, 404, 408 and 429) for a 5-year combo means
+//     Azure does not sell it: the combo is dropped and the probe continues, but a
 //     probe that ends with no accepted combo at all is an error. Any
-//     other error (auth, throttling, 5xx, network, canceled context) is a
+//     other error (a 4xx on a 1- or 3-year combo, auth, throttling, 5xx, network, canceled context) is a
 //     probe failure and is bubbled up so the Service can apply its
 //     all-or-nothing policy.
 type AzureSPProber struct {
@@ -153,7 +160,7 @@ func (p *AzureSPProber) ProbeAzure(ctx context.Context, cred azcore.TokenCredent
 
 	var combos []Combo
 	for _, c := range azureCandidateCombos {
-		ok, err := p.probeCombo(ctx, client, subscriptionID, c.azureTerm, c.azurePlan, currency)
+		ok, err := p.probeCombo(ctx, client, subscriptionID, c.azureTerm, c.azurePlan, currency, c.termYears == azureOptionalTermYears)
 		if err != nil {
 			// Treat non-validation errors (auth, network, 5xx) as probe
 			// failures — they prevent us from knowing whether the combo
@@ -211,7 +218,7 @@ func isComboRejection(err error) bool {
 //
 // A response where any benefit has Valid=false, or where no benefit carries
 // Valid=true, is treated as "not offered" (returns false, nil). Any other API
-// error is returned as-is so the caller can decide whether it is a transient
+// error, including a client 4xx when rejectionDrops is false, is returned as-is so the caller can decide whether it is a transient
 // failure or a configuration problem.
 func (p *AzureSPProber) probeCombo(
 	ctx context.Context,
@@ -220,6 +227,7 @@ func (p *AzureSPProber) probeCombo(
 	term armbillingbenefits.Term,
 	billingPlan *armbillingbenefits.BillingPlan,
 	currencyCode string,
+	rejectionDrops bool,
 ) (bool, error) {
 	billingScopeID := fmt.Sprintf("/subscriptions/%s", subscriptionID)
 	grain := armbillingbenefits.CommitmentGrainHourly
@@ -254,7 +262,7 @@ func (p *AzureSPProber) probeCombo(
 
 	resp, err := client.ValidatePurchase(ctx, body, nil)
 	if err != nil {
-		if isComboRejection(err) {
+		if rejectionDrops && isComboRejection(err) {
 			return false, nil
 		}
 		return false, err

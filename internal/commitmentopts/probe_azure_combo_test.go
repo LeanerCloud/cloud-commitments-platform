@@ -216,7 +216,47 @@ func TestAzureSPProber_AllRejectedIsAnError(t *testing.T) {
 	}
 }
 
-func TestAzureSPProber_MixedAcceptedAndRejected(t *testing.T) {
+func rejectTerm(term armbillingbenefits.Term, status int) func(armbillingbenefits.SavingsPlanPurchaseValidateRequest) (armbillingbenefits.RPClientValidatePurchaseResponse, error) {
+	return func(body armbillingbenefits.SavingsPlanPurchaseValidateRequest) (armbillingbenefits.RPClientValidatePurchaseResponse, error) {
+		if *body.Benefits[0].Properties.Term == term {
+			return armbillingbenefits.RPClientValidatePurchaseResponse{}, respError(status)
+		}
+		return validTrue(), nil
+	}
+}
+
+func TestAzureSPProber_4xxOnSoldTermAborts(t *testing.T) {
+	// Azure really sells 1-year and 3-year plans, so a 4xx on one of them is a
+	// transient or wrong-scope answer: dropping it would persist a snapshot
+	// missing a sold combo for good. The probe aborts instead.
+	for _, term := range []armbillingbenefits.Term{armbillingbenefits.TermP1Y, armbillingbenefits.TermP3Y} {
+		for _, status := range []int{http.StatusBadRequest, http.StatusConflict, http.StatusUnprocessableEntity} {
+			t.Run(string(term)+"/"+http.StatusText(status), func(t *testing.T) {
+				p := newFakeProber(rejectTerm(term, status))
+				got, err := p.ProbeAzure(context.Background(), nil, testAzureSub, "USD")
+				require.Error(t, err)
+				assert.Nil(t, got)
+			})
+		}
+	}
+}
+
+func TestAzureSPProber_4xxOnFiveYearDropsOnlyFiveYear(t *testing.T) {
+	for _, status := range []int{http.StatusBadRequest, http.StatusConflict, http.StatusUnprocessableEntity} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			p := newFakeProber(rejectTerm(armbillingbenefits.TermP5Y, status))
+			got, err := p.ProbeAzure(context.Background(), nil, testAzureSub, "USD")
+			require.NoError(t, err)
+			require.Len(t, got, 4)
+			for _, c := range got {
+				assert.NotEqual(t, 5, c.TermYears)
+			}
+		})
+	}
+}
+
+func TestAzureSPProber_MixedFiveYearRejectedSoldTermRejected(t *testing.T) {
+	// A droppable 5-year rejection does not excuse a 3-year one.
 	p := newFakeProber(func(body armbillingbenefits.SavingsPlanPurchaseValidateRequest) (armbillingbenefits.RPClientValidatePurchaseResponse, error) {
 		switch *body.Benefits[0].Properties.Term {
 		case armbillingbenefits.TermP5Y:
@@ -227,11 +267,8 @@ func TestAzureSPProber_MixedAcceptedAndRejected(t *testing.T) {
 		return validTrue(), nil
 	})
 	got, err := p.ProbeAzure(context.Background(), nil, testAzureSub, "USD")
-	require.NoError(t, err)
-	require.Len(t, got, 2)
-	for _, c := range got {
-		assert.Equal(t, 1, c.TermYears)
-	}
+	require.Error(t, err)
+	assert.Nil(t, got)
 }
 
 func TestAzureSPProber_404OnOneComboAborts(t *testing.T) {

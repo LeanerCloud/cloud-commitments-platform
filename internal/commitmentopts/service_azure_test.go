@@ -65,11 +65,12 @@ func azureAccount() config.CloudAccount {
 }
 
 type azureHarness struct {
-	validateErr error
-	seen        []armbillingbenefits.SavingsPlanPurchaseValidateRequest
-	credCalls   int32
-	validations int32
-	mu          sync.Mutex
+	validateErr    error
+	validateErrFor func(armbillingbenefits.Term) error
+	seen           []armbillingbenefits.SavingsPlanPurchaseValidateRequest
+	credCalls      int32
+	validations    int32
+	mu             sync.Mutex
 }
 
 func (h *azureHarness) service(store Store, accounts []config.CloudAccount, awsProbers []Prober, currency AzureCurrencyFn) *Service {
@@ -86,6 +87,11 @@ func (h *azureHarness) service(store Store, accounts []config.CloudAccount, awsP
 			h.mu.Lock()
 			h.seen = append(h.seen, body)
 			h.mu.Unlock()
+			if h.validateErrFor != nil {
+				if err := h.validateErrFor(*body.Benefits[0].Properties.Term); err != nil {
+					return armbillingbenefits.RPClientValidatePurchaseResponse{}, err
+				}
+			}
 			if h.validateErr != nil {
 				return armbillingbenefits.RPClientValidatePurchaseResponse{}, h.validateErr
 			}
@@ -379,4 +385,39 @@ func TestService_RefreshAzure_AllRejectedPersistsNothingThenRecovers(t *testing.
 	clock = clock.Add(azureFailureTTL + time.Second)
 	require.NoError(t, svc.RefreshAzure(context.Background()))
 	assert.NotEmpty(t, store.rows["azure"])
+}
+
+func TestService_RefreshAzure_SoldTermRejectionPersistsNothingAndIsRemembered(t *testing.T) {
+	store := newProviderStore()
+	h := &azureHarness{validateErrFor: func(term armbillingbenefits.Term) error {
+		if term == armbillingbenefits.TermP3Y {
+			return &azcore.ResponseError{StatusCode: 400}
+		}
+		return nil
+	}}
+	svc := h.service(store, []config.CloudAccount{azureAccount()}, awsRDSProber(), nil)
+	clock := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	svc.azure.now = func() time.Time { return clock }
+
+	first := svc.RefreshAzure(context.Background())
+	require.Error(t, first)
+	assert.False(t, store.has("azure"), "a snapshot missing a sold term must not be persisted")
+	calls := atomic.LoadInt32(&h.validations)
+
+	assert.Equal(t, first, svc.RefreshAzure(context.Background()), "the failure memory applies")
+	assert.Equal(t, calls, atomic.LoadInt32(&h.validations), "no Azure call inside the TTL")
+}
+
+func TestService_RefreshAzure_FiveYearRejectionPersistsTheRest(t *testing.T) {
+	store := newProviderStore()
+	h := &azureHarness{validateErrFor: func(term armbillingbenefits.Term) error {
+		if term == armbillingbenefits.TermP5Y {
+			return &azcore.ResponseError{StatusCode: 422}
+		}
+		return nil
+	}}
+	svc := h.service(store, []config.CloudAccount{azureAccount()}, awsRDSProber(), nil)
+
+	require.NoError(t, svc.RefreshAzure(context.Background()))
+	assert.Len(t, store.rows["azure"], 4)
 }
