@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 )
 
@@ -53,8 +52,7 @@ func (s *Service) WithAzure(credential AzureCredentialFn, currency AzureCurrency
 // RefreshAzure probes Azure and persists the azure probe run row unless one
 // exists already. It is a no-op without WithAzure or without an enabled Azure
 // account. It is deliberately not part of Get, so AWS requests never wait on
-// Azure; nothing calls it yet. The API handler or background trigger that
-// consumes Azure options (slice 4 of #17) is its caller.
+// Azure. The scheduler calls it, best effort, after a collection run.
 //
 // The run is bounded by azureRefreshTimeout. A failure is remembered for
 // azureFailureTTL and returned again, without any Azure call, until it
@@ -87,7 +85,6 @@ func (s *Service) RefreshAzure(ctx context.Context) error {
 	probeCtx, cancel := context.WithTimeout(ctx, s.azure.timeout)
 	defer cancel()
 	if err := s.probeAndPersistAzure(probeCtx); err != nil {
-		logging.Warnf("commitmentopts: azure probe failed: %v", err)
 		if ctx.Err() != nil {
 			// The caller gave up; that says nothing about Azure, so the next
 			// caller must not inherit it. Our own timeout expiring is recorded.

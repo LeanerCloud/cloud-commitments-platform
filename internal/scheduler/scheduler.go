@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -52,6 +53,9 @@ type SchedulerConfig struct { //nolint:revive // exported: doc comment style int
 	OIDCSigner      oidc.Signer
 	AssumeRoleSTS   credentials.STSClient
 	STSClient       STSClient
+	// AzureOptions, when set, is refreshed after a collection run in which
+	// Azure succeeded, so the Azure commitment-options probe row gets filled.
+	AzureOptions azureOptionsRefresher
 	// BastionSTSFactory builds the STS client a bastion-mode account's target
 	// role is assumed with, signed with the bastion account's credentials.
 	// Without it bastion accounts fail to resolve (issue #263).
@@ -97,6 +101,7 @@ type Scheduler struct {
 	oidcSigner      oidc.Signer
 	assumeRoleSTS   credentials.STSClient
 	stsClient       STSClient
+	azureOptions    azureOptionsRefresher
 	purchase        ManagerInterface
 	bastionSTS      credentials.STSClientFactory
 	alertRetry      map[string]bool
@@ -133,6 +138,7 @@ func NewScheduler(cfg SchedulerConfig) *Scheduler {
 		bastionSTS:      cfg.BastionSTSFactory,
 		ambientAWSCreds: cfg.AmbientAWSCreds,
 		stsClient:       cfg.STSClient,
+		azureOptions:    cfg.AzureOptions,
 		isLambda:        cfg.IsLambda,
 		cacheTTL:        cacheTTLFromEnv(),
 	}
@@ -254,7 +260,6 @@ func (s *Scheduler) CollectRecommendations(ctx context.Context, ownerToken strin
 	}
 	s.persistCollection(ctx, allRecommendations, successfulCollects, failedProviders, partial)
 	s.alertNewlyExpiredHolds(ctx, heldBefore)
-
 	// Send notification if we have recommendations
 	if len(allRecommendations) > 0 && totalSavings > 0 {
 		// Sort by savings descending to show top recommendations in email
@@ -286,12 +291,48 @@ func (s *Scheduler) CollectRecommendations(ctx context.Context, ownerToken strin
 		}
 	}
 
+	s.refreshAzureOptionsBestEffort(ctx, successfulProviders)
+
 	return &CollectResult{
 		Recommendations:     len(allRecommendations),
 		TotalSavings:        totalSavings,
 		SuccessfulProviders: successfulProviders,
 		FailedProviders:     failedProviders,
 	}, nil
+}
+
+// azureOptionsRefresher fills the Azure commitment-options probe row
+// (commitmentopts.Service.RefreshAzure, bounded and a cheap no-op when the
+// row exists).
+type azureOptionsRefresher interface {
+	RefreshAzure(ctx context.Context) error
+}
+
+// azureOptionsDeadlineMargin is left unused at the end of the run's deadline
+// so a slow Azure probe cannot consume the time the caller still needs.
+const azureOptionsDeadlineMargin = 5 * time.Second
+
+// refreshAzureOptionsBestEffort runs the injected refresher only when Azure
+// was among the successful providers of this run, last, so a slow probe never
+// delays persistence or the notification email. A failure is logged once, as
+// its Go error type only: Azure SDK errors can carry the subscription ID in
+// the request URL. It never fails the collection.
+func (s *Scheduler) refreshAzureOptionsBestEffort(ctx context.Context, successfulProviders []string) {
+	if s.azureOptions == nil || !slices.Contains(successfulProviders, "azure") {
+		return
+	}
+	if dl, ok := ctx.Deadline(); ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, dl.Add(-azureOptionsDeadlineMargin))
+		defer cancel()
+	}
+	if err := s.azureOptions.RefreshAzure(ctx); err != nil {
+		root := err
+		for u := errors.Unwrap(root); u != nil; u = errors.Unwrap(root) {
+			root = u
+		}
+		logging.Warnf("Azure commitment options refresh failed (best effort, root cause %T)", root)
+	}
 }
 
 // providerOutcome bundles a single provider's collection outcome for the

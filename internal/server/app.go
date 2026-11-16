@@ -935,6 +935,24 @@ func (app *Application) reinitializeAfterConnect(ctx context.Context, dbConn *da
 	app.Purchase = reinitPurchase
 	logging.Infof("Re-initialized purchase manager with credential store and cross-account STS")
 
+	// Build the commitment-options probe/cache service. It lazily probes
+	// AWS reserved-offerings APIs through the first enabled AWS account and
+	// persists the result so subsequent calls come from the DB. Failures
+	// anywhere along the chain (no account connected, probe denied) collapse
+	// to ErrNoData; the API handler and save-side validator both degrade
+	// gracefully, so this is wired unconditionally. It is built before the scheduler,
+	// which refreshes its Azure part after a collection run.
+	commitmentOpts := commitmentopts.New(
+		commitmentopts.NewPostgresStore(dbConn),
+		app.Config,
+		newCommitmentProbeConfigBuilder(credStore, app.Config, awsCfg, sts.NewFromConfig(awsCfg)),
+		commitmentopts.DefaultProbers(),
+	).WithAzure(
+		newCommitmentProbeAzureCredential(credStore, app.signer, resolveOIDCIssuerURL(app.appConfig)),
+		azureProbeCurrency,
+		commitmentopts.DefaultAzureProbers(),
+	)
+
 	// Re-initialize scheduler with per-account credential resolution.
 	reinitScheduler := scheduler.NewScheduler(scheduler.SchedulerConfig{
 		ConfigStore:       app.Config,
@@ -947,27 +965,11 @@ func (app *Application) reinitializeAfterConnect(ctx context.Context, dbConn *da
 		BastionSTSFactory: credentials.NewSTSClientFactory(awsCfg),
 		AmbientAWSCreds:   awsCfg.Credentials,
 		STSClient:         sts.NewFromConfig(awsCfg),
+		AzureOptions:      commitmentOpts,
 		IsLambda:          app.appConfig.IsLambda,
 	})
 	app.Scheduler = reinitScheduler
 	reinitPurchase.SetRecommendationSource(reinitScheduler)
-
-	// Build the commitment-options probe/cache service. It lazily probes
-	// AWS reserved-offerings APIs through the first enabled AWS account and
-	// persists the result so subsequent calls come from the DB. Failures
-	// anywhere along the chain (no account connected, probe denied) collapse
-	// to ErrNoData; the API handler and save-side validator both degrade
-	// gracefully, so this is wired unconditionally.
-	commitmentOpts := commitmentopts.New(
-		commitmentopts.NewPostgresStore(dbConn),
-		app.Config,
-		newCommitmentProbeConfigBuilder(credStore, app.Config, awsCfg, sts.NewFromConfig(awsCfg)),
-		commitmentopts.DefaultProbers(),
-	).WithAzure(
-		newCommitmentProbeAzureCredential(credStore, app.signer, resolveOIDCIssuerURL(app.appConfig)),
-		azureProbeCurrency,
-		commitmentopts.DefaultAzureProbers(),
-	)
 
 	// Update API handler with new config store, scheduler, and rate limiter.
 	// AnalyticsClient is Postgres-backed (see api.NewPostgresAnalyticsClient) —
