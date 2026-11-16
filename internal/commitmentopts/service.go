@@ -57,6 +57,18 @@ func (s *Service) cached(ctx context.Context, provider string) (Options, bool, e
 	return opts, ok, nil
 }
 
+// CachedOptions returns provider's stored combos grouped by service, reading
+// the store only: it never lists accounts, resolves credentials or probes, so
+// it is safe on a request path. ok is false when provider has no probe run
+// row. Options are global to the deployment (the store has no tenant key).
+func (s *Service) CachedOptions(ctx context.Context, provider string) (byService map[string][]Combo, ok bool, err error) {
+	opts, ok, err := s.cached(ctx, provider)
+	if err != nil || !ok {
+		return nil, false, err
+	}
+	return opts[provider], true, nil
+}
+
 // New returns a Service wired to the given dependencies. Pass
 // DefaultProbers() for the real probe set; tests inject stubs.
 func New(store Store, accounts AccountLister, buildConfig BuildConfigFn, probers []Prober) *Service {
