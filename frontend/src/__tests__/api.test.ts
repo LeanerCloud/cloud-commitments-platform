@@ -41,6 +41,13 @@ import {
 import { base64Encode } from '../api/client';
 import type { CreatePlanRequest, Config, Recommendation, UpcomingPurchasesResponse } from '../api';
 
+// A successful login or setup is followed by a /auth/me check of the session cookie.
+function mockSessionStart(body: unknown, me: { status: number; body: unknown } = { status: 200, body: { id: 'u', email: 'a@b.c', groups: [], csrf_token: 'csrf-me' } }): void {
+  fetchMock.mockImplementation((url: string) => Promise.resolve(url.endsWith('/auth/me')
+    ? { ok: me.status < 400, status: me.status, json: () => Promise.resolve(me.body) }
+    : { ok: true, status: 200, json: () => Promise.resolve(body) }));
+}
+
 describe('Authentication', () => {
   beforeEach(() => {
     localStorageMock.getItem.mockReturnValue(null);
@@ -492,10 +499,7 @@ describe('API Requests', () => {
 
   describe('login', () => {
     test('sends credentials and stores token', async () => {
-      fetchMock.mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ token: 'new-token' })
-      });
+      mockSessionStart({ token: 'new-token' });
 
       await login('test@example.com', 'password');
 
@@ -512,11 +516,30 @@ describe('API Requests', () => {
       expect(localStorageMock.setItem).toHaveBeenCalledWith('authToken', 'new-token');
     });
 
+    test('a login whose cookie /auth/me rejects fails with the HTTPS hint and stays signed out', async () => {
+      mockSessionStart({ token: 'new-token', csrf_token: 'csrf-new' }, { status: 401, body: { error: 'unauthorized' } });
+
+      await expect(login('test@example.com', 'password')).rejects.toThrow('Serve CUDly over HTTPS');
+      expect(isAuthenticated()).toBe(false);
+      expect(getAuthHeaders()['X-CSRF-Token']).toBeUndefined();
+    });
+
+    test('a login whose /auth/me fails otherwise surfaces that error', async () => {
+      mockSessionStart({ token: 'new-token', csrf_token: 'csrf-new' }, { status: 503, body: { error: 'down' } });
+
+      await expect(login('test@example.com', 'password')).rejects.toMatchObject({ status: 503 });
+      expect(isAuthenticated()).toBe(false);
+    });
+
+    test('setupAdmin whose cookie /auth/me rejects fails with the HTTPS hint', async () => {
+      mockSessionStart({ token: 't' }, { status: 401, body: { error: 'unauthorized' } });
+
+      await expect(setupAdmin('k', 'a@b.c', 'password')).rejects.toThrow('Serve CUDly over HTTPS');
+      expect(isAuthenticated()).toBe(false);
+    });
+
     test('includes x-amz-content-sha256 header for CloudFront OAC', async () => {
-      fetchMock.mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ token: 'new-token' })
-      });
+      mockSessionStart({ token: 'new-token' });
 
       await login('test@example.com', 'password');
 
@@ -767,10 +790,7 @@ describe('API Requests', () => {
 
   describe('setupAdmin', () => {
     test('creates admin and stores token', async () => {
-      fetchMock.mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ token: 'admin-token' })
-      });
+      mockSessionStart({ token: 'admin-token' });
 
       await setupAdmin('api-key', 'admin@example.com', 'password');
 
@@ -831,9 +851,9 @@ describe('API Requests', () => {
     });
 
     test('login with a non-Latin-1 password reaches the network', async () => {
-      fetchMock.mockResolvedValue({ ok: true, json: () => Promise.resolve({ token: 't' }) });
+      mockSessionStart({ token: 't' });
       await login('user@example.com', 'p\u00e4ss\u2014w\u00f6rd \u{1F600}');
-      const body = JSON.parse(fetchMock.mock.calls[fetchMock.mock.calls.length - 1][1].body as string) as { password: string };
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string) as { password: string };
       expect(Buffer.from(body.password, 'base64').toString('utf8')).toBe('p\u00e4ss\u2014w\u00f6rd \u{1F600}');
     });
   });
