@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -68,6 +69,19 @@ func (f *fakeStore) HasData(ctx context.Context, provider string) (bool, error) 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.has, nil
+}
+
+func (f *fakeStore) ProbedAt(ctx context.Context, provider string) (time.Time, bool, error) {
+	if f.hasErr != nil {
+		return time.Time{}, false, f.hasErr
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return time.Now(), f.has, nil
+}
+
+func (f *fakeStore) Replace(ctx context.Context, provider string, combos []Combo, sourceAccountID string) error {
+	return f.Save(ctx, provider, combos, sourceAccountID)
 }
 
 // fakeAccounts returns a fixed list.

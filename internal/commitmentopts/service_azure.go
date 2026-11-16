@@ -27,6 +27,9 @@ const (
 	// azureFailureTTL is how long a failed RefreshAzure is remembered, so
 	// repeated triggers cannot hammer Azure with a probe that keeps failing.
 	azureFailureTTL = 10 * time.Minute
+	// azureOptionsTTL is how long the persisted Azure options count as fresh
+	// before RefreshAzure probes again, since Azure changes what it sells.
+	azureOptionsTTL = 7 * 24 * time.Hour
 )
 
 // azureProbe is the optional Azure half of a Service. A Service without it
@@ -49,8 +52,9 @@ func (s *Service) WithAzure(credential AzureCredentialFn, currency AzureCurrency
 	return s
 }
 
-// RefreshAzure probes Azure and persists the azure probe run row unless one
-// exists already. It is a no-op without WithAzure or without an enabled Azure
+// RefreshAzure probes Azure and persists the azure probe run row unless a fresh one
+// (younger than azureOptionsTTL) exists already; a stale row is replaced only
+// by a successful probe. It is a no-op without WithAzure or without an enabled Azure
 // account. It is deliberately not part of Get, so AWS requests never wait on
 // Azure. The scheduler calls it, best effort, after a collection run.
 //
@@ -62,20 +66,18 @@ func (s *Service) RefreshAzure(ctx context.Context) error {
 	if s.azure == nil {
 		return nil
 	}
-	has, err := s.store.HasData(ctx, providerAzure)
-	if err != nil {
-		return fmt.Errorf("read commitmentopts store: %w", err)
-	}
-	if has {
+	if fresh, err := s.azureFresh(ctx); err != nil {
+		return err
+	} else if fresh {
 		return nil
 	}
 
 	s.azureMu.Lock()
 	defer s.azureMu.Unlock()
 
-	if has, err = s.store.HasData(ctx, providerAzure); err != nil {
-		return fmt.Errorf("read commitmentopts store: %w", err)
-	} else if has {
+	if fresh, err := s.azureFresh(ctx); err != nil {
+		return err
+	} else if fresh {
 		return nil
 	}
 	if s.azure.lastErr != nil && s.azure.now().Before(s.azure.failedUntil) {
@@ -97,9 +99,21 @@ func (s *Service) RefreshAzure(ctx context.Context) error {
 	return nil
 }
 
+// azureFresh reports whether the azure row exists and is younger than
+// azureOptionsTTL. A row exactly azureOptionsTTL old, or dated in the future, is stale.
+func (s *Service) azureFresh(ctx context.Context) (bool, error) {
+	at, ok, err := s.store.ProbedAt(ctx, providerAzure)
+	if err != nil {
+		return false, fmt.Errorf("read commitmentopts store: %w", err)
+	}
+	age := s.azure.now().Sub(at)
+	// A probed_at in the future (clock skew) is not trusted as fresh.
+	return ok && age >= 0 && age < azureOptionsTTL, nil
+}
+
 // probeAndPersistAzure probes the first enabled Azure account and saves the
 // result under the azure provider row. No enabled account is a clean no-op.
-// Any failure persists nothing, so the next call retries.
+// Any failure persists nothing and keeps the previous row, so the next call retries.
 func (s *Service) probeAndPersistAzure(ctx context.Context) error {
 	account, err := s.findEnabledAccount(ctx, providerAzure)
 	if err != nil {
@@ -130,7 +144,7 @@ func (s *Service) probeAndPersistAzure(ctx context.Context) error {
 		all = append(all, combos...)
 	}
 
-	if err := s.store.Save(ctx, providerAzure, all, account.ExternalID); err != nil {
+	if err := s.store.Replace(ctx, providerAzure, all, account.ExternalID); err != nil {
 		return fmt.Errorf("persist azure commitment options: %w", err)
 	}
 	return nil

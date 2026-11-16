@@ -17,13 +17,16 @@ import (
 
 // providerStore keeps one combo set per provider, like the real store.
 type providerStore struct {
-	saveErr map[string]error
-	rows    map[string][]Combo
-	mu      sync.Mutex
+	saveErr  map[string]error
+	rows     map[string][]Combo
+	probedAt map[string]time.Time
+	// stamp is the probed_at a write records; zero means time.Now().
+	stamp time.Time
+	mu    sync.Mutex
 }
 
 func newProviderStore() *providerStore {
-	return &providerStore{rows: map[string][]Combo{}, saveErr: map[string]error{}}
+	return &providerStore{rows: map[string][]Combo{}, saveErr: map[string]error{}, probedAt: map[string]time.Time{}}
 }
 
 func (p *providerStore) Get(context.Context) (Options, bool, error) {
@@ -44,6 +47,33 @@ func (p *providerStore) Save(_ context.Context, provider string, combos []Combo,
 	}
 	p.rows[provider] = combos
 	return nil
+}
+
+func (p *providerStore) Replace(ctx context.Context, provider string, combos []Combo, id string) error {
+	if err := p.Save(ctx, provider, combos, id); err != nil {
+		return err
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	at := p.stamp
+	if at.IsZero() {
+		at = time.Now()
+	}
+	p.probedAt[provider] = at
+	return nil
+}
+
+func (p *providerStore) ProbedAt(_ context.Context, provider string) (time.Time, bool, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if _, ok := p.rows[provider]; !ok {
+		return time.Time{}, false, nil
+	}
+	at, ok := p.probedAt[provider]
+	if !ok {
+		at = time.Now()
+	}
+	return at, true, nil
 }
 
 func (p *providerStore) HasData(_ context.Context, provider string) (bool, error) {
@@ -420,4 +450,97 @@ func TestService_RefreshAzure_FiveYearRejectionPersistsTheRest(t *testing.T) {
 
 	require.NoError(t, svc.RefreshAzure(context.Background()))
 	assert.Len(t, store.rows["azure"], 4)
+}
+
+// seedAzureRow stores an azure row probed age before clock.
+func seedAzureRow(store *providerStore, clock time.Time, age time.Duration) []Combo {
+	old := []Combo{{Provider: "azure", Service: "savingsplans", TermYears: 1, Payment: "upfront"}}
+	store.rows["azure"] = old
+	store.probedAt["azure"] = clock.Add(-age)
+	return old
+}
+
+func ttlService(store *providerStore, h *azureHarness, clock *time.Time) *Service {
+	svc := h.service(store, []config.CloudAccount{azureAccount()}, awsRDSProber(), nil)
+	svc.azure.now = func() time.Time { return *clock }
+	store.stamp = *clock
+	return svc
+}
+
+func TestService_RefreshAzure_FreshRowIsNotReprobed(t *testing.T) {
+	store := newProviderStore()
+	h := &azureHarness{}
+	clock := time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC)
+	seedAzureRow(store, clock, azureOptionsTTL-time.Second)
+	svc := ttlService(store, h, &clock)
+
+	require.NoError(t, svc.RefreshAzure(context.Background()))
+	assert.Zero(t, atomic.LoadInt32(&h.credCalls))
+}
+
+func TestService_RefreshAzure_StaleRowIsReplaced(t *testing.T) {
+	for name, age := range map[string]time.Duration{"older": azureOptionsTTL + time.Hour, "exactly the TTL": azureOptionsTTL} {
+		t.Run(name, func(t *testing.T) {
+			store := newProviderStore()
+			h := &azureHarness{}
+			clock := time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC)
+			old := seedAzureRow(store, clock, age)
+			svc := ttlService(store, h, &clock)
+
+			require.NoError(t, svc.RefreshAzure(context.Background()))
+			assert.Positive(t, atomic.LoadInt32(&h.credCalls))
+			assert.NotEqual(t, old, store.rows["azure"], "the probe result replaced the old combos")
+			assert.Equal(t, clock, store.probedAt["azure"])
+
+			credCalls := atomic.LoadInt32(&h.credCalls)
+			require.NoError(t, svc.RefreshAzure(context.Background()))
+			assert.Equal(t, credCalls, atomic.LoadInt32(&h.credCalls), "the replaced row is fresh")
+		})
+	}
+}
+
+func TestService_RefreshAzure_StaleRowSurvivesFailedProbe(t *testing.T) {
+	store := newProviderStore()
+	h := &azureHarness{validateErr: errors.New("azure 503")}
+	clock := time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC)
+	old := seedAzureRow(store, clock, azureOptionsTTL+time.Hour)
+	staleAt := store.probedAt["azure"]
+	svc := ttlService(store, h, &clock)
+
+	first := svc.RefreshAzure(context.Background())
+	require.Error(t, first)
+	assert.Equal(t, old, store.rows["azure"])
+	assert.Equal(t, staleAt, store.probedAt["azure"])
+	opts, ok, err := svc.CachedOptions(context.Background(), "azure")
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, old, opts["savingsplans"], "the stale combos are still served")
+
+	calls := atomic.LoadInt32(&h.credCalls)
+	clock = clock.Add(azureFailureTTL - time.Second)
+	assert.Equal(t, first, svc.RefreshAzure(context.Background()))
+	assert.Equal(t, calls, atomic.LoadInt32(&h.credCalls), "no re-probe inside the failure TTL")
+}
+
+func TestService_RefreshAzure_TTLIsSevenDays(t *testing.T) {
+	cases := map[string]struct {
+		age   time.Duration
+		probe bool
+	}{
+		"6 days is fresh":           {6 * 24 * time.Hour, false},
+		"8 days is stale":           {8 * 24 * time.Hour, true},
+		"future probed_at is stale": {-time.Hour, true},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			store := newProviderStore()
+			h := &azureHarness{}
+			clock := time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC)
+			seedAzureRow(store, clock, c.age)
+			svc := ttlService(store, h, &clock)
+
+			require.NoError(t, svc.RefreshAzure(context.Background()))
+			assert.Equal(t, c.probe, atomic.LoadInt32(&h.credCalls) > 0)
+		})
+	}
 }

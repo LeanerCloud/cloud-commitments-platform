@@ -11,6 +11,7 @@ package commitmentopts
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -70,6 +71,15 @@ type Store interface {
 	// HasData reports whether a probe run row exists for provider. Used as
 	// the per-provider "cache warm" check before acquiring the prober lock.
 	HasData(ctx context.Context, provider string) (bool, error)
+
+	// ProbedAt returns when provider's probe run row was written, and false
+	// when no row exists.
+	ProbedAt(ctx context.Context, provider string) (time.Time, bool, error)
+
+	// Replace atomically swaps provider's probe run row and combos for the
+	// given ones, stamping probed_at with the current time. Unlike Save it
+	// overwrites an existing row. Other providers are left untouched.
+	Replace(ctx context.Context, provider string, combos []Combo, sourceAccountID string) error
 }
 
 // AccountLister is the narrow subset of config.StoreInterface that Service

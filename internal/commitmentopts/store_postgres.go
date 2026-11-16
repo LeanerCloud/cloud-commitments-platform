@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/database"
@@ -92,13 +93,40 @@ func (s *PostgresStore) HasData(ctx context.Context, provider string) (bool, err
 	return exists, nil
 }
 
+// ProbedAt returns provider's probe run time; the bool is false without a row.
+func (s *PostgresStore) ProbedAt(ctx context.Context, provider string) (time.Time, bool, error) {
+	var at time.Time
+	err := s.db.QueryRow(ctx,
+		`SELECT probed_at FROM commitment_options_probe_runs WHERE provider = $1`,
+		provider,
+	).Scan(&at)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return time.Time{}, false, nil
+	}
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("read commitment_options_probe_runs.probed_at: %w", err)
+	}
+	return at, true, nil
+}
+
 // Save persists provider's probe run row and every combo transactionally.
 // If the provider's run row already exists (a second process raced us to
-// persist), the row is left alone — the provider PK means only the first
-// writer wins. Other providers' rows and combos are never touched. Combo
-// inserts use ON CONFLICT DO NOTHING so re-running the probe after a
-// manual row clear and partial repopulation doesn't fail.
+// persist), the first row's probed_at and source win, but this call's combos
+// are still added next to the existing ones (ON CONFLICT DO NOTHING). Replace
+// is the path that overwrites the row and swaps the combos. Other providers'
+// rows and combos are never touched.
 func (s *PostgresStore) Save(ctx context.Context, provider string, combos []Combo, sourceAccountID string) error {
+	return s.write(ctx, provider, combos, sourceAccountID, false)
+}
+
+// Replace overwrites provider's run row (new probed_at and source) and swaps
+// its combos for the given ones in one transaction, so a reader never sees the
+// provider with no combos and a failed write keeps the previous snapshot.
+func (s *PostgresStore) Replace(ctx context.Context, provider string, combos []Combo, sourceAccountID string) error {
+	return s.write(ctx, provider, combos, sourceAccountID, true)
+}
+
+func (s *PostgresStore) write(ctx context.Context, provider string, combos []Combo, sourceAccountID string, replace bool) error {
 	for _, c := range combos {
 		if c.Provider != provider {
 			return fmt.Errorf("combo provider %q does not match saved provider %q", c.Provider, provider)
@@ -117,13 +145,8 @@ func (s *PostgresStore) Save(ctx context.Context, provider string, combos []Comb
 		}
 	}()
 
-	if _, err := tx.Exec(ctx,
-		`INSERT INTO commitment_options_probe_runs (provider, probed_at, source_account_id)
-		 VALUES ($1, NOW(), $2)
-		 ON CONFLICT (provider) DO NOTHING`,
-		provider, sourceAccountID,
-	); err != nil {
-		return fmt.Errorf("insert commitment_options_probe_runs: %w", err)
+	if err := writeRunRow(ctx, tx, provider, sourceAccountID, replace); err != nil {
+		return err
 	}
 
 	for _, c := range combos {
@@ -139,6 +162,32 @@ func (s *PostgresStore) Save(ctx context.Context, provider string, combos []Comb
 
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit tx: %w", err)
+	}
+	return nil
+}
+
+// writeRunRow upserts provider's run row; replace also overwrites the existing
+// row and clears its combos. The upsert comes first on purpose: it takes the
+// row lock, so a concurrent Replace waits here and its DELETE then runs on a
+// fresh snapshot that sees the winner's combos. Deleting first would let the
+// two writers' combos mix.
+func writeRunRow(ctx context.Context, tx pgx.Tx, provider, sourceAccountID string, replace bool) error {
+	onConflict := "DO NOTHING"
+	if replace {
+		onConflict = "DO UPDATE SET probed_at = EXCLUDED.probed_at, source_account_id = EXCLUDED.source_account_id"
+	}
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO commitment_options_probe_runs (provider, probed_at, source_account_id)
+		 VALUES ($1, NOW(), $2)
+		 ON CONFLICT (provider) `+onConflict,
+		provider, sourceAccountID,
+	); err != nil {
+		return fmt.Errorf("insert commitment_options_probe_runs: %w", err)
+	}
+	if replace {
+		if _, err := tx.Exec(ctx, `DELETE FROM commitment_options_combos WHERE provider = $1`, provider); err != nil {
+			return fmt.Errorf("delete commitment_options_combos: %w", err)
+		}
 	}
 	return nil
 }
