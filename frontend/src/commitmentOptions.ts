@@ -320,8 +320,11 @@ function overlayAws(aws: NonNullable<ServerCommitmentOptions['aws']>): void {
 // The Azure probe covers Savings Plans only, so only that entry is overlaid
 // (never `_default`: VM reservations stay hardcoded). The overlay only
 // narrows the hardcoded terms x payments; it never adds an option, and it
-// does not make 'monthly' purchasable. No UI consumer reads this yet; the
-// Azure Savings Plan selector will use it. A later response without
+// does not make 'monthly' purchasable. No UI consumer reads this yet and none
+// is planned: Azure Savings Plan recommendations are not emitted (the pinned
+// library returns none and its purchase body sets no BillingPlan), so a
+// selector would offer a capability that does not exist. Kept for a future
+// consumer once the library emits them. A later response without
 // savingsplans keeps an earlier narrowing: it resets only on page reload.
 function overlayAzureSavingsPlans(azure: ServerCommitmentOptions['azure']): void {
   if (!azure || typeof azure !== 'object' || Array.isArray(azure)) return;
