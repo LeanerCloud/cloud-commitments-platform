@@ -267,6 +267,7 @@ export async function apiRequest<T>(endpoint: string, options: RequestOptions = 
     response = await fetch(url, {
       ...options,
       headers,
+      credentials: 'same-origin',
       signal,
     });
   } catch (err) {

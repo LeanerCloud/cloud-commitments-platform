@@ -5,7 +5,6 @@
 // Mock dependencies before imports
 jest.mock('../api', () => ({
   initAuth: jest.fn(),
-  isAuthenticated: jest.fn(),
   getCurrentUser: jest.fn(),
   getPublicInfo: jest.fn(),
 }));
@@ -85,7 +84,7 @@ describe('App Module', () => {
 
   describe('init', () => {
     test('calls initAuth on startup', async () => {
-      (api.isAuthenticated as jest.Mock).mockReturnValue(false);
+      (api.getCurrentUser as jest.Mock).mockRejectedValue({ status: 401 });
 
       await init();
 
@@ -93,16 +92,16 @@ describe('App Module', () => {
     });
 
     test('shows login modal when not authenticated', async () => {
-      (api.isAuthenticated as jest.Mock).mockReturnValue(false);
+      (api.getCurrentUser as jest.Mock).mockRejectedValue({ status: 401 });
 
       await init();
 
       expect(auth.showLoginModal).toHaveBeenCalled();
-      expect(api.getCurrentUser).not.toHaveBeenCalled();
+      expect(api.getPublicInfo).toHaveBeenCalled();
     });
 
     test('shows admin setup only when /api/info says no admin exists', async () => {
-      (api.isAuthenticated as jest.Mock).mockReturnValue(false);
+      (api.getCurrentUser as jest.Mock).mockRejectedValue({ status: 401 });
       (api.getPublicInfo as jest.Mock).mockResolvedValue({ version: '1', admin_exists: false });
 
       await init();
@@ -112,7 +111,7 @@ describe('App Module', () => {
     });
 
     test('a failed /api/info lands on login with the failure named, not on admin setup', async () => {
-      (api.isAuthenticated as jest.Mock).mockReturnValue(false);
+      (api.getCurrentUser as jest.Mock).mockRejectedValue({ status: 401 });
       (api.getPublicInfo as jest.Mock).mockRejectedValue(Object.assign(new Error('HTTP 503'), { status: 503 }));
       console.error = jest.fn();
 
@@ -123,7 +122,7 @@ describe('App Module', () => {
     });
 
     test('a network failure on /api/info names no status', async () => {
-      (api.isAuthenticated as jest.Mock).mockReturnValue(false);
+      (api.getCurrentUser as jest.Mock).mockRejectedValue({ status: 401 });
       (api.getPublicInfo as jest.Mock).mockRejectedValue(new TypeError('Failed to fetch'));
       console.error = jest.fn();
 
@@ -135,7 +134,6 @@ describe('App Module', () => {
     });
 
     test('loads user and routes to dashboard when authenticated', async () => {
-      (api.isAuthenticated as jest.Mock).mockReturnValue(true);
       (api.getCurrentUser as jest.Mock).mockResolvedValue({ id: 'user-1', email: 'test@example.com' });
       (navigation.applyTabFromPath as jest.Mock).mockReturnValue('dashboard');
 
@@ -150,7 +148,6 @@ describe('App Module', () => {
     });
 
     test('highlights the nav from the URL before any async fetch resolves (#187)', async () => {
-      (api.isAuthenticated as jest.Mock).mockReturnValue(true);
       (api.getCurrentUser as jest.Mock).mockReturnValue(new Promise(() => {}));
       (navigation.applyTabFromPath as jest.Mock).mockReturnValue('opportunities');
 
@@ -161,7 +158,6 @@ describe('App Module', () => {
     });
 
     test('seeds the URL from canonicalTabPath before routing', async () => {
-      (api.isAuthenticated as jest.Mock).mockReturnValue(true);
       (api.getCurrentUser as jest.Mock).mockResolvedValue({ id: 'user-1', email: 'test@example.com' });
       (navigation.applyTabFromPath as jest.Mock).mockReturnValue('inventory');
       const replaceState = jest.spyOn(window.history, 'replaceState').mockImplementation(() => {});
@@ -178,7 +174,6 @@ describe('App Module', () => {
     });
 
     test('shows login modal on 401 error', async () => {
-      (api.isAuthenticated as jest.Mock).mockReturnValue(true);
       (api.getCurrentUser as jest.Mock).mockRejectedValue({ status: 401 });
       console.error = jest.fn();
 
@@ -188,7 +183,6 @@ describe('App Module', () => {
     });
 
     test('shows login modal on Unauthorized error message', async () => {
-      (api.isAuthenticated as jest.Mock).mockReturnValue(true);
       (api.getCurrentUser as jest.Mock).mockRejectedValue({ message: 'Unauthorized' });
       console.error = jest.fn();
 
@@ -198,7 +192,6 @@ describe('App Module', () => {
     });
 
     test('logs error but does not show login for other errors', async () => {
-      (api.isAuthenticated as jest.Mock).mockReturnValue(true);
       (api.getCurrentUser as jest.Mock).mockRejectedValue(new Error('Network error'));
       console.error = jest.fn();
 
@@ -215,7 +208,6 @@ describe('App Module', () => {
             <div id="home-tab" class="tab-content active"></div>
             <div id="plans-tab" class="tab-content"></div>
           </main>`;
-        (api.isAuthenticated as jest.Mock).mockReturnValue(true);
         console.error = jest.fn();
       });
 

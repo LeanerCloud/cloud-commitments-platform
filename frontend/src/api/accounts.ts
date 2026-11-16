@@ -263,7 +263,7 @@ export async function exportAccountServiceOverrides(): Promise<OverrideExport> {
 /** The same export as CSV text. apiRequest parses JSON only, so this fetches directly. */
 export async function exportAccountServiceOverridesCSV(): Promise<string> {
   const endpoint = '/accounts/service-overrides/export?format=csv';
-  const response = await fetch(`${getApiBase()}${endpoint}`, { headers: getAuthHeaders() });
+  const response = await fetch(`${getApiBase()}${endpoint}`, { headers: getAuthHeaders(), credentials: 'same-origin' });
   if (!response.ok) {
     throw makeApiError(httpStatusMessage(response.status), response.status, `HTTP ${response.status} from ${endpoint}`);
   }

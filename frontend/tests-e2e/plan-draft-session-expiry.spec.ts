@@ -30,7 +30,7 @@ test('plan draft returns after the session expires mid-edit and the user signs i
   });
   await page.route('**/api/auth/me', route => sessionExpired
     ? route.fulfill({ status: 401, json: { error: 'Unauthorized' } })
-    : route.fulfill({ json: { id: 'user-smoke', email: 'smoke@example.com', groups: ['00000000-0000-5000-8000-000000000001'] } }));
+    : route.fulfill({ json: { id: 'user-smoke', email: 'smoke@example.com', groups: ['00000000-0000-5000-8000-000000000001'], csrf_token: 'smoke-csrf' } }));
   await page.route('**/api/auth/login', route => {
     sessionExpired = false;
     return route.fulfill({ json: { token: 'fresh-token', csrf_token: 'fresh-csrf' } });

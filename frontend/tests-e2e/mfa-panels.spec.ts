@@ -13,7 +13,7 @@ async function startEnrollment(page: Page): Promise<void> {
   await seedAuth(page);
   await mockApi(page);
   await page.route('**/api/auth/me', (r) =>
-    r.fulfill({ json: { id: 'user-smoke', email: 'smoke@example.com', groups: [], mfa_enabled: false } }));
+    r.fulfill({ json: { id: 'user-smoke', email: 'smoke@example.com', groups: [], mfa_enabled: false, csrf_token: 'smoke-csrf' } }));
   await page.route('**/api/auth/mfa/setup', (r) =>
     r.fulfill({ json: { secret: SECRET, provisioning_uri: `otpauth://totp/CUDly:smoke@example.com?secret=${SECRET}` } }));
   await page.route('**/api/auth/mfa/enable', (r) =>

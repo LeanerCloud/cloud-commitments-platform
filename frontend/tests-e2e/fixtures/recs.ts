@@ -231,9 +231,13 @@ export async function mockApi(page: Page): Promise<MockHandle> {
     });
   });
 
-  // Auth me — returns a logged-in user so updateUserUI populates header.
+  // Auth me — a logged-in user for pages passed to seedAuth, else 401.
   await page.route('**/api/auth/me', async (route) => {
     record(route);
+    if (!signedInPages.has(page)) {
+      await jsonRoute(route, { error: 'unauthorized' }, 401);
+      return;
+    }
     await jsonRoute(route, {
       id: 'user-smoke',
       email: 'smoke@example.com',
@@ -241,6 +245,7 @@ export async function mockApi(page: Page): Promise<MockHandle> {
         '00000000-0000-5000-8000-000000000001',
         '00000000-0000-5000-8000-000000000007',
       ],
+      csrf_token: 'smoke-csrf',
     });
   });
 
@@ -406,15 +411,14 @@ export async function mockApi(page: Page): Promise<MockHandle> {
   };
 }
 
+const signedInPages = new WeakSet<Page>();
+
 /**
- * Seed sessionStorage with an auth token before page navigation so the
- * SPA's `isAuthenticated()` returns true and the login modal stays hidden.
- *
- * Must be called BEFORE `page.goto(...)`.
+ * Mark the page as holding a valid session. The SPA keeps no token in web
+ * storage (issue #34); it asks GET /api/auth/me on boot, so "signed in" means
+ * mockApi answers that route with the smoke user instead of a 401. Order
+ * relative to mockApi does not matter.
  */
 export async function seedAuth(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    sessionStorage.setItem('authToken', 'smoke-token');
-    sessionStorage.setItem('csrfToken', 'smoke-csrf');
-  });
+  signedInPages.add(page);
 }

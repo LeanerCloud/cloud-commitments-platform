@@ -25,7 +25,7 @@ async function mockAdminWithoutPurchaser(page: Page): Promise<void> {
     // Suppress the one-time "Purchaser group: separation of duties" prompt.
     localStorage.setItem('cudly:purchaser-prompt-dismissed', '1');
   });
-  await json(page, '**/api/auth/me', () => ({ id: 'user-smoke', email: 'smoke@example.com', groups: groups() }));
+  await json(page, '**/api/auth/me', () => ({ id: 'user-smoke', email: 'smoke@example.com', groups: groups(), csrf_token: 'smoke-csrf' }));
   await json(page, '**/api/auth/me/permissions', () => ({
     permissions: purchaser
       ? [{ action: 'admin', resource: '*' }, { action: 'execute', resource: 'purchases' }]
