@@ -84,8 +84,10 @@ export {
   setAuthToken,
   setCsrfToken,
   setApiKey,
+  setAuthenticated,
   isAuthenticated,
   clearAuth,
+  broadcastLogout,
   getAuthHeaders,
   apiRequest,
   base64Encode

@@ -5,6 +5,7 @@ import { localStorageMock, sessionStorageMock, fetchMock } from './setup';
 import {
   initAuth,
   setAuthToken,
+  setAuthenticated,
   setCsrfToken,
   setApiKey,
   isAuthenticated,
@@ -541,7 +542,7 @@ describe('API Requests', () => {
 
   describe('logout', () => {
     test('calls logout endpoint and clears auth', async () => {
-      setAuthToken('token');
+      setAuthenticated(true);
       fetchMock.mockResolvedValue({ ok: true });
 
       await logout();
@@ -556,8 +557,17 @@ describe('API Requests', () => {
       expect(sessionStorage.removeItem).toHaveBeenCalledWith('cudly:plan-form-draft');
     });
 
+    test('tells other tabs to sign out (jsdom has no BroadcastChannel, so the marker key)', async () => {
+      setAuthenticated(true);
+      fetchMock.mockResolvedValue({ ok: true });
+
+      await logout();
+
+      expect(localStorageMock.setItem).toHaveBeenCalledWith('cudly:logout-signal', expect.any(String));
+    });
+
     test('includes x-amz-content-sha256 header for CloudFront OAC', async () => {
-      setAuthToken('token');
+      setAuthenticated(true);
       fetchMock.mockResolvedValue({ ok: true });
 
       await logout();
@@ -575,7 +585,7 @@ describe('API Requests', () => {
     });
 
     test.each([[500], [403]])('a %i answer keeps the session, does not broadcast and throws', async (status) => {
-      setAuthToken('token');
+      setAuthenticated(true);
       setCsrfToken('csrf');
       fetchMock.mockResolvedValue({ ok: false, status });
       const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
@@ -585,27 +595,30 @@ describe('API Requests', () => {
 
       expect(isAuthenticated()).toBe(true);
       expect(getAuthHeaders()['X-CSRF-Token']).toBe('csrf');
+      expect(localStorageMock.setItem).not.toHaveBeenCalledWith('cudly:logout-signal', expect.anything());
       expect(sessionStorage.removeItem).not.toHaveBeenCalledWith('cudly:plan-form-draft');
     });
 
     test('a network error keeps the session and does not broadcast', async () => {
-      setAuthToken('token');
+      setAuthenticated(true);
       fetchMock.mockRejectedValue(new Error('Network error'));
       const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
 
       await expect(logout()).rejects.toThrow('Sign out failed');
 
       expect(isAuthenticated()).toBe(true);
+      expect(localStorageMock.setItem).not.toHaveBeenCalledWith('cudly:logout-signal', expect.anything());
       warn.mockRestore();
     });
 
     test('a 401 means the session is already gone and signs out', async () => {
-      setAuthToken('token');
+      setAuthenticated(true);
       fetchMock.mockResolvedValue({ ok: false, status: 401 });
 
       await logout();
 
       expect(isAuthenticated()).toBe(false);
+      expect(localStorageMock.setItem).toHaveBeenCalledWith('cudly:logout-signal', expect.any(String));
     });
   });
 

@@ -2,7 +2,7 @@
  * Authentication API functions
  */
 
-import { apiRequest, getAuthHeaders, setAuthToken, setCsrfToken, clearAuth, addContentHashHeader, base64Encode, getApiBase } from './client';
+import { apiRequest, getAuthHeaders, setAuthToken, setCsrfToken, clearAuth, broadcastLogout, addContentHashHeader, base64Encode, getApiBase } from './client';
 import type {
   ApiError,
   LoginResponse,
@@ -135,6 +135,7 @@ export async function logout(): Promise<void> {
   }
   clearAuth();
   clearPlanDraft();
+  broadcastLogout();
 }
 
 /**

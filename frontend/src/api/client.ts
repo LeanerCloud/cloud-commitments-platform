@@ -37,7 +37,15 @@ let csrfToken = '';
 // listener and the migration block stay in sync.
 const STORAGE_KEYS = ['authToken', 'apiKey', 'csrfToken'] as const;
 
-let storageListenerInstalled = false;
+// Cross-tab sign-out: logout() in one tab tells the others to drop state.
+const LOGOUT_CHANNEL = 'cudly-auth';
+// Non-secret marker written when BroadcastChannel is unavailable; the
+// `storage` event it fires is the only signal, its value is never read.
+const LOGOUT_SIGNAL_KEY = 'cudly:logout-signal';
+
+let authenticated = false;
+let logoutListenerInstalled = false;
+let logoutChannel: BroadcastChannel | undefined;
 
 /**
  * Calculate SHA256 hash of a string using Web Crypto API
@@ -89,39 +97,51 @@ export function initAuth(): void {
   apiKey = localStorage.getItem('apiKey') || '';
   csrfToken = localStorage.getItem('csrfToken') || '';
 
-  installStorageListener();
+  installLogoutListener();
 }
 
 /**
- * Sync sign-out across tabs (issue #462). When another tab clears the
- * auth keys (logout), reset our in-memory state and reload so the UI
- * lands on the login modal instead of leaving a stale logged-in view.
- * Idempotent; only registers once per page load.
+ * Sync sign-out across tabs (issues #462, #34).
  */
-function installStorageListener(): void {
-  if (storageListenerInstalled) return;
-  if (typeof window === 'undefined' || !window.addEventListener) return;
-  window.addEventListener('storage', (e: StorageEvent) => {
-    if (e.key === null) {
-      // localStorage.clear() in another tab (a browser privacy control,
-      // devtools, a future clear() call) fires with key === null: every
-      // key, auth included, is gone. Signed-out tabs have nothing to drop.
-      if (!authToken && !apiKey && !csrfToken) return;
-    } else {
-      if (!(STORAGE_KEYS as readonly string[]).includes(e.key)) return;
-      // Only react to a *cleared* key (newValue === null); partial
-      // updates (e.g. token refresh) propagate via the in-memory state
-      // and don't need a reload.
-      if (e.newValue !== null) return;
-    }
-    authToken = '';
-    apiKey = '';
-    csrfToken = '';
-    if (typeof window.location?.reload === 'function') {
-      reloadPage();
-    }
-  });
-  storageListenerInstalled = true;
+function handleRemoteLogout(): void {
+  // A signed-out tab has nothing to drop and must not reload in a loop.
+  if (!authenticated && !authToken && !apiKey && !csrfToken) return;
+  clearAuth();
+  reloadPage();
+}
+
+function installLogoutListener(): void {
+  if (logoutListenerInstalled) return;
+  if (typeof BroadcastChannel === 'function') {
+    logoutChannel = new BroadcastChannel(LOGOUT_CHANNEL);
+    logoutChannel.onmessage = (e: MessageEvent) => {
+      if (e.data === 'logout') handleRemoteLogout();
+    };
+  } else if (typeof window !== 'undefined' && window.addEventListener) {
+    window.addEventListener('storage', (e: StorageEvent) => {
+      if (e.key === LOGOUT_SIGNAL_KEY) handleRemoteLogout();
+    });
+  }
+  logoutListenerInstalled = true;
+}
+
+/** Tell every other tab on this origin that the session ended. */
+export function broadcastLogout(): void {
+  if (logoutChannel) {
+    logoutChannel.postMessage('logout');
+    return;
+  }
+  if (typeof BroadcastChannel === 'function') {
+    const channel = new BroadcastChannel(LOGOUT_CHANNEL);
+    channel.postMessage('logout');
+    channel.close();
+    return;
+  }
+  try {
+    localStorage.setItem(LOGOUT_SIGNAL_KEY, String(Date.now()));
+  } catch {
+    // No cross-tab channel at all: other tabs find out on their next 401.
+  }
 }
 
 /**
@@ -164,15 +184,21 @@ export function setApiKey(key: string): void {
  * Check if user is authenticated
  */
 export function isAuthenticated(): boolean {
-  return !!(authToken || apiKey);
+  return authenticated || !!(authToken || apiKey);
 }
 
 /**
- * Clear all authentication. Removing from localStorage triggers the
- * `storage` event in any other open tab on the same origin, which is
- * how cross-tab sign-out propagates (see installStorageListener).
+ * Record that the server accepted the session cookie.
+ */
+export function setAuthenticated(value: boolean): void {
+  authenticated = value;
+}
+
+/**
+ * Clear all authentication state in this tab.
  */
 export function clearAuth(): void {
+  authenticated = false;
   authToken = '';
   apiKey = '';
   csrfToken = '';
