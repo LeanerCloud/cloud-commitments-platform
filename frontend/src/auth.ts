@@ -1633,7 +1633,13 @@ async function saveProfile(e: Event): Promise<void> {
  * Logout handler
  */
 export async function logout(): Promise<void> {
-  await api.logout();
+  try {
+    await api.logout();
+  } catch (error) {
+    // The session is still alive server-side: stay signed in and say so.
+    showToast({ message: (error as Error).message, kind: 'error' });
+    return;
+  }
   state.setCurrentUser(null);
   reloadPage();
 }

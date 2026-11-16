@@ -72,6 +72,8 @@ export async function loginWithMFAToken(email: string, mfaToken: string, mfaCode
   return postLogin({ email, mfa_token: mfaToken, mfa_code: mfaCode });
 }
 
+const LOGOUT_FAILED_MESSAGE = 'Sign out failed, please try again.';
+
 async function postLogin(payload: Record<string, string>): Promise<LoginResponse> {
   const API_BASE = getApiBase();
   const body = JSON.stringify(payload);
@@ -110,19 +112,26 @@ async function postLogin(payload: Record<string, string>): Promise<LoginResponse
  */
 export async function logout(): Promise<void> {
   const API_BASE = getApiBase();
+  let response: Response;
   try {
     const headers = getAuthHeaders();
     // Add empty content hash for POST without body
     await addContentHashHeader(headers, '');
 
-    await fetch(`${API_BASE}/auth/logout`, {
+    response = await fetch(`${API_BASE}/auth/logout`, {
       method: 'POST',
       headers,
       credentials: 'same-origin'
     });
   } catch (e) {
-    // Non-critical: local logout will happen anyway
     console.warn('Server logout failed:', e);
+    throw new Error(LOGOUT_FAILED_MESSAGE);
+  }
+  // The server clears the httpOnly cookie only on success, so any other
+  // answer leaves the session alive; 401 means it was already gone.
+  if (!response.ok && response.status !== 401) {
+    console.warn('Server logout failed with HTTP', response.status);
+    throw new Error(LOGOUT_FAILED_MESSAGE);
   }
   clearAuth();
   clearPlanDraft();
