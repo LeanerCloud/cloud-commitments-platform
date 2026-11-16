@@ -16,6 +16,8 @@
  * canary if that mirror drifts.
  */
 import { loadPlans } from '../plans';
+import { canCancelUpcomingPurchase } from '../dashboard';
+import { canCancelScheduledExecution } from '../lib/purchase-cancel-permission';
 
 jest.mock('../api', () => ({
   getPlans: jest.fn(),
@@ -39,6 +41,12 @@ jest.mock('../state', () => ({
   setPlansColumnFilter: jest.fn(),
   clearAllPlansColumnFilters: jest.fn(),
 }));
+
+jest.mock('chart.js', () => {
+  const MockChart = jest.fn().mockImplementation(() => ({ destroy: jest.fn() }));
+  (MockChart as unknown as { register: jest.Mock }).register = jest.fn();
+  return { Chart: MockChart, registerables: [] };
+});
 
 jest.mock('../history', () => ({ viewPlanHistory: jest.fn() }));
 
@@ -292,5 +300,78 @@ describe('Plans page Add Purchases permission gate (issue #1406 / #1418)', () =>
     expect(html).toContain('data-action="add-purchases"');
     expect(html).toContain('data-action="edit-plan"');
     expect(html).toContain('data-action="delete-plan"');
+  });
+});
+
+describe('Disable (Plans) agrees with Cancel (Home) and the backend rule (issue #1957 A12-026)', () => {
+  const ME = 'me-1111';
+  const OTHER = 'other-2222';
+  type Held = string[];
+  const principals: Array<[string, Held]> = [
+    ['admin', ['admin:*']],
+    ['cancel-any only', ['cancel-any:purchases']],
+    ['update-any only', ['update-any:purchases']],
+    ['cancel-own only', ['cancel-own:purchases']],
+    ['delete only', ['delete:purchases']],
+    ['update only (no cancel verb)', ['update:purchases', 'update:plans']],
+    ['no permission', []],
+    ['admin + update:plans', ['admin:*', 'update:plans']],
+    ['cancel-any + update:plans', ['cancel-any:purchases', 'update:plans']],
+    ['update-any + update:plans', ['update-any:purchases', 'update:plans']],
+    ['cancel-own + update:plans', ['cancel-own:purchases', 'update:plans']],
+    ['delete + update:plans', ['delete:purchases', 'update:plans']],
+  ];
+  const planBearing: Array<[string, string]> = [['plan-bearing', 'plan-1'], ['no-plan', '']];
+  const creators: Array<[string, string | undefined]> = [
+    ['own', ME],
+    ['foreign', OTHER],
+    ['null', undefined],
+  ];
+  // Backend DELETE planned: requirePlanUpdateIfPlanBearing (update:plans when
+  // the row has a plan id), then authorizePlannedPurchaseCancel: full-scope
+  // verbs cancel any row; otherwise creator match plus delete or cancel-own.
+  const expected = (held: Held, creator: string | undefined, planId: string): boolean => {
+    const has = (v: string) => held.includes(v);
+    if (planId !== '' && !has('admin:*') && !has('update:plans')) return false;
+    if (has('admin:*') || has('update-any:purchases') || has('cancel-any:purchases')) return true;
+    return creator === ME && (has('delete:purchases') || has('cancel-own:purchases'));
+  };
+  const setHeld = (held: Held) => {
+    (state.getCurrentUser as jest.Mock).mockReturnValue({
+      id: ME,
+      email: 'me@example.com',
+      groups: [],
+      effectivePermissions: held.map((h) => {
+        const [action, resource] = h.split(':');
+        return { action, resource };
+      }),
+    });
+  };
+  const row = (creator: string | undefined, planId: string) => ({
+    id: 'pp-1', plan_id: planId, plan_name: 'Sample Plan', scheduled_date: '2026-06-01T00:00:00Z',
+    provider: 'aws', service: 'ec2', resource_type: 't3.medium', region: 'us-east-1', count: 5, term: 1,
+    payment: 'all-upfront', upfront_cost: 100, estimated_savings: 50, step_number: 1, total_steps: 4,
+    status: 'pending', created_by_user_id: creator,
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    setupDom();
+    (api.getPlans as jest.Mock).mockResolvedValue({ plans: [samplePlan] });
+  });
+
+  test.each(
+    principals.flatMap(([pName, held]) => creators.flatMap(([cName, creator]) =>
+      planBearing.map(([bName, planId]) => [pName, cName, bName, held, creator, planId] as const))),
+  )('%s on %s-creator %s row', async (_p, _c, _b, held, creator, planId) => {
+    setHeld([...held]);
+    (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [row(creator, planId)] });
+    await loadPlans();
+    const plansShowsDisable = (document.getElementById('planned-purchases-list') as HTMLElement)
+      .innerHTML.includes('data-action="disable"');
+    const homeShowsCancel = canCancelUpcomingPurchase({ created_by_user_id: creator, plan_id: planId } as never);
+    expect(canCancelScheduledExecution(creator, planId)).toBe(expected([...held], creator, planId));
+    expect(plansShowsDisable).toBe(homeShowsCancel);
+    expect(plansShowsDisable).toBe(expected([...held], creator, planId));
   });
 });

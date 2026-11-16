@@ -18,6 +18,7 @@ import { openModal, closeModal, modalCloseButtonHtml } from './modal';
 import { showSkeletonTiles, showSkeletonRows, teardownSkeleton } from './lib/skeleton';
 import { renderErrorCallout } from './lib/error-callout';
 import { canAccess } from './permissions';
+import { canCancelScheduledExecution } from './lib/purchase-cancel-permission';
 import { applyColumnFilters as applyColumnFiltersLib } from './lib/column-filters';
 import { rowMatchesProvider } from './lib/upcoming-scope';
 import { formatPaymentOption, formatTermShort } from './lib/table-format';
@@ -528,22 +529,15 @@ function renderPlannedPurchaseRow(purchase: PlannedPurchase): string {
   // a UX gate; the backend authorizePlannedPurchaseCancel is the real
   // boundary.
   //
-  // Issue #1442: the Disable button (cancel) must be shown to the creator
-  // when they hold cancel-own:purchases or cancel-any:purchases, not only
-  // when they hold delete:purchases. This mirrors the cancel-verb logic in
-  // canCancelUpcomingPurchase (dashboard.ts) and the backend
-  // requireDeleteOrCancelPurchasePermission gate introduced by PR #1421.
-  // canManagePurchase already enforces the ownership check, so accepting
-  // cancel-own here only widens the Disable button for the creator's own row.
+  // Disable (cancel) uses the shared canCancelScheduledExecution so it agrees
+  // with the Home page Cancel and the backend: cancel-any / update-any act on
+  // any row, cancel-own / delete only on the creator's own row, and a plan-bearing row
+  // also needs update:plans (#1442, #1957).
   const canManagePurchase = canManageScheduledPurchase(purchase);
   const canRunPurchase = canManagePurchase && canAccess('execute', 'purchases') && canRun;
   const canPauseOrResumePurchase = canManagePurchase && canAccess('update', 'purchases');
   const canEditPlan = canManagePurchase && canAccess('update', 'plans');
-  const canDisablePlan = canManagePurchase && (
-    canAccess('delete', 'purchases') ||
-    canAccess('cancel-any', 'purchases') ||
-    canAccess('cancel-own', 'purchases')
-  );
+  const canDisablePlan = canCancelScheduledExecution(purchase.created_by_user_id, purchase.plan_id);
 
   // #181: a pending step whose date has passed did not run; "pending" alone
   // reads as on schedule. Flag it and name the next action the user can take.

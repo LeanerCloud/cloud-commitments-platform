@@ -110,7 +110,11 @@ type StubUserOpts = {
   cancelAny?: boolean;
 };
 const setUser = (id: string, opts: StubUserOpts = {}) => {
-  const effectivePermissions: Array<{ action: string; resource: string }> = [];
+  // update:plans: the backend also requires it to cancel a plan-bearing row
+  // (these fixtures carry plan_id); the default user role holds it.
+  const effectivePermissions: Array<{ action: string; resource: string }> = [
+    { action: 'update', resource: 'plans' },
+  ];
   if (opts.admin) {
     effectivePermissions.push({ action: 'admin', resource: '*' });
   } else {

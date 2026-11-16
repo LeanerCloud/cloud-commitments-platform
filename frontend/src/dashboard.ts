@@ -11,7 +11,7 @@ import type { SavingsDataPoint } from './api';
 import { showToast } from './toast';
 import { confirmDialog } from './confirmDialog';
 import { openModal, closeModal, createModalHeader } from './modal';
-import { canAccess } from './permissions';
+import { canCancelScheduledExecution } from './lib/purchase-cancel-permission';
 import { groupRecsByCell, pageLevelRange, formatSavingsRange, triggerAutoRefreshIfStale, startRecommendationsRefresh } from './recommendations';
 import { getRecommendationsFreshness } from './api/recommendations';
 import { buildFirstRunEmptyState, isScopeFiltered } from './first-run-empty-state';
@@ -533,20 +533,7 @@ export const __test__ = { sparklinePoints, attachSparkline, computeServiceStats 
 //   no Cancel button for non-privileged users (out of reach without a
 //   full-scope verb).
 export function canCancelUpcomingPurchase(purchase: UpcomingPurchase): boolean {
-  // Full-scope: admin, cancel-any, or update-any grant unrestricted row access.
-  if (
-    canAccess('admin', '*') ||
-    canAccess('cancel-any', 'purchases') ||
-    canAccess('update-any', 'purchases')
-  ) {
-    return true;
-  }
-  // Creator-scope: delete:purchases or cancel-own:purchases + creator match.
-  const user = state.getCurrentUser();
-  if (!user) return false;
-  if (!purchase.created_by_user_id) return false;
-  if (purchase.created_by_user_id !== user.id) return false;
-  return canAccess('delete', 'purchases') || canAccess('cancel-own', 'purchases');
+  return canCancelScheduledExecution(purchase.created_by_user_id, purchase.plan_id);
 }
 
 // A failed fetch must not read as "nothing scheduled" (#713): show an inline
