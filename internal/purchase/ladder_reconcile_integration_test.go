@@ -72,13 +72,21 @@ func (r *ladderRig) link(from, to string) {
 
 // firedTranche claims a real scheduled tranche with a real execution row.
 func (r *ladderRig) firedTranche(headStatus string, headProof bool, age time.Duration) (trancheID, headExec string) {
+	return r.firedTrancheInRun("", headStatus, headProof, age)
+}
+
+// firedTrancheInRun is firedTranche on an existing run; an empty runID makes a new one.
+func (r *ladderRig) firedTrancheInRun(runID, headStatus string, headProof bool, age time.Duration) (trancheID, headExec string) {
 	basis, rate := config.LadderAmountCommitment, "1" // only commitment-dollar rows are claimable
 	tr := config.LadderTrancheDB{ID: uuid.New().String(), ConfigID: &r.cfgID, LayerType: ladder.LayerComputeSP,
 		Term: ladder.Term1Year, PaymentOption: ladder.PaymentNoUpfront, Status: ladder.TrancheStatusScheduled,
 		AmountUSDHr: 5, ScheduledDate: time.Now().Add(-time.Hour), AmountBasis: &basis, CommitmentRate: &rate}
-	run, err := r.store.SaveLadderRun(r.ctx, &config.LadderRunDB{ConfigID: &r.cfgID, StartedAt: tr.ScheduledDate, Status: ladder.RunStatusPlanned, Mode: ptr(string(ladder.ModeAutoApprove))})
-	require.NoError(r.t, err)
-	tr.RunID = &run.ID
+	if runID == "" {
+		run, err := r.store.SaveLadderRun(r.ctx, &config.LadderRunDB{ConfigID: &r.cfgID, StartedAt: tr.ScheduledDate, Status: ladder.RunStatusPlanned, Mode: ptr(string(ladder.ModeAutoApprove))})
+		require.NoError(r.t, err)
+		runID = run.ID
+	}
+	tr.RunID = &runID
 	require.NoError(r.t, r.store.SaveLadderTranches(r.ctx, []config.LadderTrancheDB{tr}))
 	claimed, err := r.store.ClaimDueLadderTranches(r.ctx, r.cfgID, time.Now(), 10,
 		config.LadderClaimFilter{Layers: []ladder.LayerType{ladder.LayerComputeSP}, TrancheIDs: []string{tr.ID}, CeilingMicros: 1_000_000_000_000},
