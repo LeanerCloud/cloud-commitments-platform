@@ -29,6 +29,15 @@ function mockFetchErr(status: number, body: unknown): void {
   });
 }
 
+// A successful login is followed by a /auth/me check of the session cookie.
+function mockLoginOk(body: unknown): void {
+  (global.fetch as jest.Mock).mockImplementation(async (url: string) => ({
+    ok: true,
+    status: 200,
+    json: async () => (url.endsWith('/auth/me') ? { id: 'u', email: 'u@x.com', groups: [], csrf_token: 'csrf' } : body),
+  }));
+}
+
 describe('login() MFA error branch', () => {
   test('mfa_required throws typed MFALoginError', async () => {
     mockFetchErr(401, { error: 'mfa_required' });
@@ -70,14 +79,14 @@ describe('login() MFA error branch', () => {
   });
 
   test('loginWithMFAToken sends email, token and code with no password', async () => {
-    mockFetchOk({ token: 'tok' });
+    mockLoginOk({ token: 'tok' });
     await loginWithMFAToken('u@x.com', 'tok-abc', '123456');
     const call = (global.fetch as jest.Mock).mock.calls[0];
     expect(JSON.parse(call[1].body)).toEqual({ email: 'u@x.com', mfa_token: 'tok-abc', mfa_code: '123456' });
   });
 
   test('mfaCode argument is sent on resubmit', async () => {
-    mockFetchOk({ token: 'tok', csrf_token: 'csrf' });
+    mockLoginOk({ token: 'tok', csrf_token: 'csrf' });
     await login('u@x.com', 'pw', '123456');
     const call = (global.fetch as jest.Mock).mock.calls[0];
     const body = JSON.parse(call[1].body) as { email: string; password: string; mfa_code?: string };
@@ -86,7 +95,7 @@ describe('login() MFA error branch', () => {
   });
 
   test('mfaCode omitted when undefined (initial submit)', async () => {
-    mockFetchOk({ token: 'tok' });
+    mockLoginOk({ token: 'tok' });
     await login('u@x.com', 'pw');
     const call = (global.fetch as jest.Mock).mock.calls[0];
     const body = JSON.parse(call[1].body) as { mfa_code?: string };

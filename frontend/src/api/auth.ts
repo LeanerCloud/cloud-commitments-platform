@@ -2,7 +2,7 @@
  * Authentication API functions
  */
 
-import { apiRequest, getAuthHeaders, setAuthToken, setCsrfToken, clearAuth, broadcastLogout, addContentHashHeader, base64Encode, getApiBase } from './client';
+import { apiRequest, getAuthHeaders, setAuthToken, setAuthenticated, setCsrfToken, clearAuth, broadcastLogout, addContentHashHeader, base64Encode, getApiBase } from './client';
 import type {
   ApiError,
   LoginResponse,
@@ -72,6 +72,30 @@ export async function loginWithMFAToken(email: string, mfaToken: string, mfaCode
   return postLogin({ email, mfa_token: mfaToken, mfa_code: mfaCode });
 }
 
+function acceptSession(csrf: string): void {
+  setAuthenticated(true);
+  setCsrfToken(csrf);
+}
+
+const COOKIE_REJECTED_MESSAGE =
+  'Signed in, but the browser did not keep the session cookie. Serve CUDly over HTTPS.';
+
+/**
+ * Right after a login the cookie must come back on /auth/me. A browser that
+ * drops it (plain HTTP, no Secure cookies) would otherwise reload into a
+ * silent login loop, so say why instead.
+ */
+async function verifySessionCookie(csrf: string | undefined): Promise<void> {
+  setAuthenticated(true);
+  if (csrf) setCsrfToken(csrf);
+  try {
+    await getCurrentUser();
+  } catch (err) {
+    clearAuth();
+    if ((err as ApiError).status === 401) throw new Error(COOKIE_REJECTED_MESSAGE);
+    throw err;
+  }
+}
 const LOGOUT_FAILED_MESSAGE = 'Sign out failed, please try again.';
 
 async function postLogin(payload: Record<string, string>): Promise<LoginResponse> {
@@ -98,12 +122,9 @@ async function postLogin(payload: Record<string, string>): Promise<LoginResponse
     throw err;
   }
 
-  const data = await readJson<LoginResponse & { csrf_token?: string }>(response);
+  const data = await readJson<LoginResponse>(response);
   setAuthToken(data.token);
-  // Store CSRF token if provided by server
-  if (data.csrf_token) {
-    setCsrfToken(data.csrf_token);
-  }
+  await verifySessionCookie(data.csrf_token);
   return data;
 }
 
@@ -145,7 +166,7 @@ export async function getCurrentUser(): Promise<User> {
   const { csrf_token: csrf, ...user } = await apiRequest<User & { csrf_token?: string }>('/auth/me');
   // A reloaded page holds no CSRF token; /auth/me re-derives it from the cookie.
   if (!csrf) throw new Error('The server returned no CSRF token for this session.');
-  setCsrfToken(csrf);
+  acceptSession(csrf);
   return user;
 }
 
@@ -334,12 +355,9 @@ export async function setupAdmin(key: string, email: string, password: string): 
     throw await responseError(response, 'Failed to create admin');
   }
 
-  const data = await readJson<LoginResponse & { csrf_token?: string }>(response);
+  const data = await readJson<LoginResponse>(response);
   setAuthToken(data.token);
-  // Store CSRF token if provided by server
-  if (data.csrf_token) {
-    setCsrfToken(data.csrf_token);
-  }
+  await verifySessionCookie(data.csrf_token);
   return data;
 }
 
