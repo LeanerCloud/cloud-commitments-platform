@@ -1,4 +1,4 @@
-import type { LadderEvent } from './api/ladder';
+import type { LadderEvent, LadderRun } from './api/ladder';
 import { formatCurrency, formatDate, formatTerm } from './utils';
 import { getPaymentLabel } from './commitmentOptions';
 
@@ -167,4 +167,19 @@ export function ladderCumulative(sorted: readonly LadderEvent[], base: bigint): 
   }
   const totals = times.map((_, i) => layers.reduce((sum, item) => sum + item.units[i]!, base));
   return { times, layers, totals, rowTotals };
+}
+
+const TRANCHE_BUCKETS = ['scheduled', 'fired', 'completed', 'failed', 'canceled'] as const;
+
+export const LADDER_DELAYED_FIRST_STEP_NOTE = 'The first tranche is scheduled later than the 24 hour fire window after the run started, so it will not be claimed and this ramp will not buy.';
+
+/** Non-zero tranche buckets in fixed order; a missing or malformed field (older server) yields none. Values are validated as counts, never trusted as text. */
+export function ladderTrancheCounts(run: Pick<LadderRun, 'tranche_counts'>): { status: typeof TRANCHE_BUCKETS[number]; count: number }[] {
+  const counts: unknown = run.tranche_counts;
+  if (typeof counts !== 'object' || counts === null) return [];
+  const record = counts as Record<string, unknown>;
+  return TRANCHE_BUCKETS.flatMap(status => {
+    const count = record[status];
+    return typeof count === 'number' && Number.isSafeInteger(count) && count > 0 ? [{ status, count }] : [];
+  });
 }

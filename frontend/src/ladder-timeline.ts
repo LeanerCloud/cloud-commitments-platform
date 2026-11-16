@@ -3,7 +3,7 @@ import { listAccountsMinimal, type AccountSummary } from './api/accounts';
 import { getLadderEvents, getLadderRuns, type LadderConfig, type LadderEvent, type LadderRun } from './api/ladder';
 import { canAccess } from './permissions';
 import { escapeHtml } from './utils';
-import { emptyLadderFilters, filterLadderEvents, ladderDimensions, ladderFilterOptions, ladderEditReason, ladderTotalOd, ladderOdAmount, ladderLabel, formatLadderAmount, formatLadderUnits, ladderNotCountedNote, LADDER_COUNTED_NOTE, formatLadderDateTime, formatLadderUtcInput, parseLadderUtcInput, type LadderFilters } from './ladder-timeline-filters';
+import { emptyLadderFilters, filterLadderEvents, ladderDimensions, ladderFilterOptions, ladderEditReason, ladderTotalOd, ladderOdAmount, ladderLabel, formatLadderAmount, formatLadderUnits, ladderNotCountedNote, LADDER_COUNTED_NOTE, ladderTrancheCounts, LADDER_DELAYED_FIRST_STEP_NOTE, formatLadderDateTime, formatLadderUtcInput, parseLadderUtcInput, type LadderFilters } from './ladder-timeline-filters';
 import { openLadderEventEditor } from './ladder-timeline-editor';
 import { onThemeChange } from './lib/chart-theme';
 import { ladderChartConfig, ladderChartModel, ladderChartSummary, LADDER_UNIT_LABEL } from './ladder-timeline-chart';
@@ -65,7 +65,7 @@ export async function initLadderTimeline(root: HTMLElement, configs: readonly La
     <button type="button" class="btn btn-tertiary" data-reset>Clear filters</button></div>
     <p class="ladder-timeline-note" id="ladder-timeline-date-hint">Enter dates in UTC as YYYY-MM-DD HH:MM (24-hour); the time is optional.</p>
     <p class="field-error hidden" id="ladder-timeline-date-error" role="alert"></p>
-    <p class="ladder-timeline-stat" data-summary aria-live="polite"></p><p class="ladder-timeline-note" data-snapshot></p>
+    <p class="ladder-timeline-stat" data-summary aria-live="polite"></p><p class="ladder-timeline-note" data-snapshot></p><p class="ladder-timeline-note ladder-run-progress" data-run-progress hidden></p>
     <div class="ladder-timeline-chart"><canvas aria-label="Cumulative planned commitment chart. The purchase table below lists the same figures." role="img"></canvas></div>
     <div data-table></div>
     <p class="ladder-timeline-note">Service, instance type, region and currency filters are unavailable because saved ladder tranches do not contain those fields.</p></div></fieldset>`;
@@ -108,6 +108,29 @@ export async function initLadderTimeline(root: HTMLElement, configs: readonly La
     const snapshot = root.querySelector<HTMLElement>('[data-snapshot]')!;
     const run = runs.find(item => item.id === filters.run_id);
     snapshot.textContent = run ? `Original run ${formatLadderDateTime(run.started_at)}: baseline ${formatLadderAmount(run.baseline_usd_hr)}, existing ${formatLadderAmount(run.existing_usd_hr)}, target ${formatLadderAmount(run.target_usd_hr)}. These snapshots are not a coverage forecast. ${run.actions.map(action => `${action.rationale}${action.data_sources?.length ? ` Sources: ${action.data_sources.join(', ')}.` : ''}`).join(' ')}` : 'Select a run to inspect its original baseline, existing commitment and target snapshots.';
+    const progress = root.querySelector<HTMLElement>('[data-run-progress]')!;
+    const buckets = run ? ladderTrancheCounts(run) : [];
+    const delayed = run?.delayed_first_step === true;
+    progress.replaceChildren();
+    progress.hidden = !buckets.length && !delayed;
+    if (buckets.length) {
+      progress.append('Tranches: ');
+      buckets.forEach(({ status, count }, index) => {
+        const item = document.createElement('span');
+        item.dataset['status'] = status;
+        item.textContent = `${count} ${status}`;
+        if (status === 'failed') item.className = 'ladder-run-failed';
+        progress.append(item, index < buckets.length - 1 ? ', ' : '.');
+      });
+    }
+    if (delayed) {
+      const flag = document.createElement('span');
+      flag.className = 'ladder-run-delayed';
+      flag.dataset['delayed'] = 'true';
+      flag.title = 'Delayed first step';
+      flag.textContent = 'Delayed first step';
+      progress.append(buckets.length ? ' ' : '', flag, `: ${LADDER_DELAYED_FIRST_STEP_NOTE}`);
+    }
     const canvas = root.querySelector<HTMLCanvasElement>('canvas')!;
     const chartBox = canvas.parentElement!;
     const model = visible.length ? ladderChartModel(visible, run) : undefined;

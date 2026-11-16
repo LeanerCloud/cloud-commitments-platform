@@ -14,7 +14,7 @@ for (const width of [1280, 390]) {
     await page.route('**/api/ri-exchange/config', route => route.fulfill({ json: { mode: 'manual', auto_exchange_enabled: false, utilization_threshold: 80, max_payment_per_exchange_usd: 0, max_payment_daily_usd: 0, lookback_days: 30 } }));
     await page.route('**/api/ladder/configs', route => route.fulfill({ json: { configs: [{ id: 'config', cloud_account_id: 'acct-001', provider: 'aws', enabled: true, mode: 'email_approval', cadence: 'daily', target_coverage: 80, buffer_fraction: 0.1, baseline_percentile: 5, lookback_days: 30, buffer_utilization_threshold: 50, max_hourly_commit_per_run: 3, max_actions_per_run: 5, ramp_schedule: { steps: [{ after_days: 0, fraction: 1 }] } }] } }));
     const events: LadderEvent[] = [1, 2, 3].map(day => ({ id: `event-${day}`, config_id: 'config', run_id: 'run', layer_type: day === 3 ? 'convertible-ri' : 'compute-sp', term: day === 3 ? '3yr' : '1yr', payment_option: day === 3 ? 'all-upfront' : 'no-upfront', status: 'scheduled', run_status: 'planned', revision: 0, amount_usd_hr: day === 2 ? '0.500000' : '1.000000', scheduled_date: `2030-01-0${day}T00:00:00Z`, created_at: '2026-01-01T00:00:00Z' }));
-    const run: LadderRun = { id: 'run', config_id: 'config', status: 'planned', started_at: '2026-01-01T00:00:00Z', created_at: '2026-01-01T00:00:00Z', baseline_usd_hr: null, existing_usd_hr: null, target_usd_hr: null, gap_usd_hr: null, total_hourly_commit: '2.500000', actions: [] };
+    const run: LadderRun = { id: 'run', config_id: 'config', status: 'planned', started_at: '2026-01-01T00:00:00Z', created_at: '2026-01-01T00:00:00Z', baseline_usd_hr: null, existing_usd_hr: null, target_usd_hr: null, gap_usd_hr: null, total_hourly_commit: '2.500000', actions: [], tranche_counts: { scheduled: 2, fired: 0, completed: 1, failed: 1, canceled: 0 }, delayed_first_step: true };
     const saves: unknown[] = [];
     let releaseSave!: () => void;
     let rejectNextSave = false;
@@ -40,6 +40,9 @@ for (const width of [1280, 390]) {
     await expect(timeline.locator('[data-table] th', { hasText: 'Cumulative (on-demand-equivalent $/hr)' })).toBeVisible();
     await timeline.getByRole('combobox', { name: 'Payment option', exact: true }).selectOption('all-upfront');
     await expect(timeline.locator('[data-summary]')).toContainText('$1.00/hr in this selection');
+    await timeline.getByRole('combobox', { name: 'Run', exact: true }).selectOption({ index: 1 });
+    await expect(timeline.locator('[data-run-progress]')).toContainText('Tranches: 2 scheduled, 1 completed, 1 failed.');
+    await expect(timeline.locator('[data-run-progress] [data-delayed]')).toBeVisible();
     await timeline.getByRole('button', { name: 'Clear filters' }).click();
     const canvas = timeline.locator('canvas');
     await canvas.scrollIntoViewIfNeeded();

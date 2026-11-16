@@ -485,3 +485,63 @@ describe('chart teardown on navigation (issue #667)', () => {
     expect(getLadderEvents).toHaveBeenCalledTimes(calls);
   });
 });
+
+describe('run progress (S13)', () => {
+  const load = async (patch: Record<string, unknown>) => {
+    jest.mocked(getLadderRuns).mockResolvedValue([{ ...run, ...patch } as LadderRun]);
+    await initLadderTimeline(document.getElementById('timeline')!, [], false);
+    const select = document.querySelector<HTMLSelectElement>('[data-filter="run_id"]')!;
+    select.value = 'run'; select.dispatchEvent(new Event('change'));
+    return document.querySelector<HTMLElement>('[data-run-progress]')!;
+  };
+  test('mixed counts omit zero buckets and highlight failed', async () => {
+    const el = await load({ tranche_counts: { scheduled: 2, fired: 1, completed: 3, failed: 1, canceled: 0 } });
+    expect(el.hidden).toBe(false);
+    expect(el.textContent).toBe('Tranches: 2 scheduled, 1 fired, 3 completed, 1 failed.');
+    expect(el.querySelector('.ladder-run-failed')!.textContent).toBe('1 failed');
+    expect(el.querySelector('[data-status="canceled"]')).toBeNull();
+  });
+  test('all zero, missing and malformed render nothing', async () => {
+    expect((await load({ tranche_counts: { scheduled: 0, fired: 0, completed: 0, failed: 0, canceled: 0 } })).hidden).toBe(true);
+    expect((await load({})).hidden).toBe(true);
+    const el = await load({ tranche_counts: { scheduled: '<img src=x onerror=alert(1)>', fired: -1, completed: 1.5, failed: NaN, evil: 5 } });
+    expect(el.hidden).toBe(true);
+    expect(el.querySelector('img')).toBeNull();
+  });
+  test('only failed is highlighted alone', async () => {
+    const el = await load({ tranche_counts: { scheduled: 0, fired: 0, completed: 0, failed: 4, canceled: 0 } });
+    expect(el.textContent).toBe('Tranches: 4 failed.');
+    expect(el.querySelectorAll('.ladder-run-failed')).toHaveLength(1);
+  });
+  test('delayed first step true, false and missing', async () => {
+    const on = await load({ delayed_first_step: true });
+    expect(on.hidden).toBe(false);
+    expect(on.querySelector('[data-delayed]')!.textContent).toBe('Delayed first step');
+    expect(on.querySelector('[data-delayed]')!.getAttribute('title')).toBe('Delayed first step');
+    expect(on.textContent).toBe('Delayed first step: The first tranche is scheduled later than the 24 hour fire window after the run started, so it will not be claimed and this ramp will not buy.');
+    expect((await load({ delayed_first_step: false })).hidden).toBe(true);
+    expect((await load({})).hidden).toBe(true);
+  });
+  test('counts and delayed flag combine', async () => {
+    const el = await load({ tranche_counts: { scheduled: 1, fired: 0, completed: 0, failed: 0, canceled: 0 }, delayed_first_step: true });
+    expect(el.textContent).toContain('Tranches: 1 scheduled. Delayed first step: ');
+  });
+  test('switching runs replaces then clears the paragraph', async () => {
+    const run2 = { ...run, id: 'run2', tranche_counts: { scheduled: 0, fired: 0, completed: 5, failed: 0, canceled: 0 } };
+    const run1 = { ...run, tranche_counts: { scheduled: 3, fired: 0, completed: 0, failed: 0, canceled: 0 }, delayed_first_step: true };
+    jest.mocked(getLadderEvents).mockResolvedValue([event, { ...event, id: 'two', run_id: 'run2' }]);
+    jest.mocked(getLadderRuns).mockResolvedValue([run1, run2] as LadderRun[]);
+    await initLadderTimeline(document.getElementById('timeline')!, [], false);
+    const select = document.querySelector<HTMLSelectElement>('[data-filter="run_id"]')!;
+    const el = document.querySelector<HTMLElement>('[data-run-progress]')!;
+    const pick = (value: string) => { select.value = value; select.dispatchEvent(new Event('change')); };
+    pick('run');
+    expect(el.textContent).toContain('3 scheduled');
+    expect(el.querySelector('[data-delayed]')).not.toBeNull();
+    pick('run2');
+    expect(el.textContent).toBe('Tranches: 5 completed.');
+    pick('');
+    expect(el.hidden).toBe(true);
+    expect(el.textContent).toBe('');
+  });
+});

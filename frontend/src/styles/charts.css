@@ -121,6 +121,8 @@
 .ladder-timeline-controls input[data-date] { width: 11.5rem; font-variant-numeric: tabular-nums; }
 .ladder-timeline-state { margin: 0 0 var(--cudly-sp-3); }
 .ladder-timeline-stat { margin: var(--cudly-sp-3) 0 var(--cudly-sp-1); font-weight: var(--cudly-fw-semibold); }
+.ladder-run-failed { color: var(--cudly-error-fg); font-weight: var(--cudly-fw-semibold); }
+.ladder-run-delayed { font-weight: var(--cudly-fw-semibold); color: var(--cudly-warn-fg); }
 .ladder-timeline-note { margin: 0 0 var(--cudly-sp-2); font-size: var(--cudly-fs-sm); color: var(--cudly-text-muted); }
 .ladder-timeline-chart { height: 320px; margin: 1rem 0; }
 #ladder-purchase-timeline [data-table] { overflow-x: auto; }
