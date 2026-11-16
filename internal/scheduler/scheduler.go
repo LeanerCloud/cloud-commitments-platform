@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/concurrency"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
@@ -314,9 +315,9 @@ const azureOptionsDeadlineMargin = 5 * time.Second
 
 // refreshAzureOptionsBestEffort runs the injected refresher only when Azure
 // was among the successful providers of this run, last, so a slow probe never
-// delays persistence or the notification email. A failure is logged once, as
-// its Go error type only: Azure SDK errors can carry the subscription ID in
-// the request URL. It never fails the collection.
+// delays persistence or the notification email. A failure is logged once
+// as a failure class only (see azureRefreshFailureClass): Azure SDK errors can
+// carry the subscription ID in the request URL. It never fails the collection.
 func (s *Scheduler) refreshAzureOptionsBestEffort(ctx context.Context, successfulProviders []string) {
 	if s.azureOptions == nil || !slices.Contains(successfulProviders, "azure") {
 		return
@@ -327,12 +328,28 @@ func (s *Scheduler) refreshAzureOptionsBestEffort(ctx context.Context, successfu
 		defer cancel()
 	}
 	if err := s.azureOptions.RefreshAzure(ctx); err != nil {
-		root := err
-		for u := errors.Unwrap(root); u != nil; u = errors.Unwrap(root) {
-			root = u
-		}
-		logging.Warnf("Azure commitment options refresh failed (best effort, root cause %T)", root)
+		logging.Warnf("Azure commitment options refresh failed (best effort, %s)", azureRefreshFailureClass(err))
 	}
+}
+
+// azureRefreshFailureClass describes err without err.Error(), which for Azure
+// SDK errors embeds the request URL and so the subscription ID. The status and
+// error code of an *azcore.ResponseError carry no URL.
+func azureRefreshFailureClass(err error) string {
+	var respErr *azcore.ResponseError
+	switch {
+	case errors.As(err, &respErr):
+		return fmt.Sprintf("status %d, error code %q", respErr.StatusCode, respErr.ErrorCode)
+	case errors.Is(err, context.DeadlineExceeded):
+		return "deadline exceeded"
+	case errors.Is(err, context.Canceled):
+		return "canceled"
+	}
+	root := err
+	for u := errors.Unwrap(root); u != nil; u = errors.Unwrap(root) {
+		root = u
+	}
+	return fmt.Sprintf("root cause %T", root)
 }
 
 // providerOutcome bundles a single provider's collection outcome for the

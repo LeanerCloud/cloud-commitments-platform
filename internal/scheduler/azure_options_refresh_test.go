@@ -1,12 +1,18 @@
 package scheduler
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/url"
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -123,4 +129,58 @@ func TestCollectRecommendations_AzureOptionsRefreshRunsAfterNotification(t *test
 	require.NoError(t, err)
 	require.Equal(t, 1, res.Recommendations)
 	assert.Equal(t, 1, r.calls)
+}
+
+const fakeSubscriptionID = "00000000-0000-0000-0000-000000000000"
+
+func azureResponseError() *azcore.ResponseError {
+	u := &url.URL{Scheme: "https", Host: "management.azure.com", Path: "/subscriptions/" + fakeSubscriptionID + "/providers/Microsoft.Capacity"}
+	return &azcore.ResponseError{
+		StatusCode: 403,
+		ErrorCode:  "AuthorizationFailed",
+		RawResponse: &http.Response{
+			StatusCode: 403,
+			Request:    &http.Request{Method: http.MethodGet, URL: u},
+		},
+	}
+}
+
+func refreshFailureLog(t *testing.T, refreshErr error) string {
+	t.Helper()
+	var out bytes.Buffer
+	prevOut := logging.SetOutput(&out)
+	prevLevel := logging.GetLevel()
+	logging.SetLevelValue(logging.LevelDebug)
+	t.Cleanup(func() {
+		logging.SetOutput(prevOut)
+		logging.SetLevelValue(prevLevel)
+	})
+	s := &Scheduler{azureOptions: &fakeAzureRefresher{err: refreshErr}}
+	s.refreshAzureOptionsBestEffort(context.Background(), []string{"azure"})
+	return out.String()
+}
+
+func TestRefreshAzureOptionsBestEffort_LogsResponseErrorStatusAndCodeWithoutURL(t *testing.T) {
+	respErr := azureResponseError()
+	require.Contains(t, respErr.Error(), fakeSubscriptionID, "fixture must carry the URL in Error()")
+	got := refreshFailureLog(t, fmt.Errorf("probe: %w", respErr))
+	assert.Contains(t, got, "403")
+	assert.Contains(t, got, "AuthorizationFailed")
+	assert.NotContains(t, got, fakeSubscriptionID)
+	assert.NotContains(t, got, "management.azure.com")
+	assert.Equal(t, 1, bytes.Count([]byte(got), []byte("refresh failed")))
+}
+
+func TestRefreshAzureOptionsBestEffort_LogsContextClass(t *testing.T) {
+	got := refreshFailureLog(t, fmt.Errorf("probe: %w", context.DeadlineExceeded))
+	assert.Contains(t, got, "deadline exceeded")
+	got = refreshFailureLog(t, fmt.Errorf("probe: %w", context.Canceled))
+	assert.Contains(t, got, "canceled")
+	assert.NotContains(t, got, "deadline exceeded")
+}
+
+func TestRefreshAzureOptionsBestEffort_PlainErrorLogsTypeOnly(t *testing.T) {
+	got := refreshFailureLog(t, fmt.Errorf("probe secret-detail: %w", errors.New("inner secret-detail")))
+	assert.Contains(t, got, "*errors.errorString")
+	assert.NotContains(t, got, "secret-detail")
 }
