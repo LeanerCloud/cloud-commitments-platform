@@ -269,6 +269,49 @@ func TestPostgresStore_LatestLadderRunStartedAt(t *testing.T) {
 	})
 }
 
+func TestPostgresStore_LatestLadderRunID(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	store := setupLadderStore(ctx, t)
+	configID := seedLadderConfigWithExtID(ctx, t, store, "111111111111")
+	otherID := seedLadderConfigWithExtID(ctx, t, store, "222222222222")
+
+	save := func(cfgID string, startedAt time.Time) string {
+		t.Helper()
+		run, err := store.SaveLadderRun(ctx, &LadderRunDB{
+			ConfigID:  &cfgID,
+			StartedAt: startedAt,
+			Status:    ladder.RunStatusPlanned,
+		})
+		require.NoError(t, err)
+		return run.ID
+	}
+
+	t.Run("not found when the config has no runs", func(t *testing.T) {
+		id, err := store.LatestLadderRunID(ctx, configID)
+		require.ErrorIs(t, err, ErrNotFound)
+		assert.Empty(t, id)
+	})
+
+	t.Run("a different config's run is ignored", func(t *testing.T) {
+		save(otherID, time.Now().UTC().Add(-time.Hour).Truncate(time.Microsecond))
+		id, err := store.LatestLadderRunID(ctx, configID)
+		require.ErrorIs(t, err, ErrNotFound)
+		assert.Empty(t, id)
+	})
+
+	t.Run("returns the run with the latest started_at, not the last inserted", func(t *testing.T) {
+		newer := save(configID, time.Now().UTC().Add(-2*time.Hour).Truncate(time.Microsecond))
+		save(configID, time.Now().UTC().Add(-48*time.Hour).Truncate(time.Microsecond))
+		// A newer run of the other config must not win.
+		save(otherID, time.Now().UTC().Truncate(time.Microsecond))
+
+		id, err := store.LatestLadderRunID(ctx, configID)
+		require.NoError(t, err)
+		assert.Equal(t, newer, id)
+	})
+}
+
 func TestPostgresStore_SaveLadderTranches_Batch(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()

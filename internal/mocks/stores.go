@@ -2856,6 +2856,17 @@ func (m *MockConfigStore) LatestLadderRunStartedAt(ctx context.Context, configID
 	return v, args.Error(1)
 }
 
+// LatestLadderRunID mocks the LatestLadderRunID operation.
+// Returns config.ErrNotFound when no expectation is registered (fail closed).
+func (m *MockConfigStore) LatestLadderRunID(ctx context.Context, configID string) (string, error) {
+	m.record("LatestLadderRunID", ctx, configID)
+	if !isExpected(&m.Mock, "LatestLadderRunID") {
+		return "", config.ErrNotFound
+	}
+	args := m.Called(ctx, configID)
+	return args.String(0), args.Error(1)
+}
+
 // CancelLadderRun mocks the CancelLadderRun operation.
 // Returns (nil, nil) when no expectation is registered (CAS race-lost path).
 func (m *MockConfigStore) CancelLadderRun(ctx context.Context, id string, fromStatuses []ladder.RunStatus, cancelledBy string) (*config.LadderRunDB, error) {

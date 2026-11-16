@@ -434,6 +434,22 @@ func (s *PostgresStore) LatestLadderRunStartedAt(ctx context.Context, configID s
 	return ts, nil
 }
 
+// LatestLadderRunID returns the id of the run with the latest started_at for
+// the config, or an error wrapping ErrNotFound when it has no run. Ties break
+// on created_at then id so the answer is deterministic.
+func (s *PostgresStore) LatestLadderRunID(ctx context.Context, configID string) (string, error) {
+	query := `SELECT id FROM ladder_runs WHERE config_id = $1
+		ORDER BY started_at DESC, created_at DESC, id DESC LIMIT 1`
+	var id string
+	if err := s.db.QueryRow(ctx, query, configID).Scan(&id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", fmt.Errorf("no ladder_run for config_id=%s: %w", configID, ErrNotFound)
+		}
+		return "", fmt.Errorf("failed to get latest ladder_run id for config_id=%s: %w", configID, err)
+	}
+	return id, nil
+}
+
 // TransitionLadderRunStatus atomically transitions a ladder_runs row from
 // one of fromStatuses to toStatus via a CAS UPDATE. Returns the updated row
 // on success, or (nil, nil) when zero rows are affected (race lost or

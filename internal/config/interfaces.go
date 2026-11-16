@@ -943,6 +943,9 @@ type StoreInterface interface {
 	GetLadderRun(ctx context.Context, id string) (*LadderRunDB, error)
 	SaveLadderTranches(ctx context.Context, tranches []LadderTrancheDB) error
 	LatestLadderRunStartedAt(ctx context.Context, configID string) (*time.Time, error)
+	// LatestLadderRunID returns the id of the config's run with the latest
+	// started_at, or an error wrapping ErrNotFound when it has none.
+	LatestLadderRunID(ctx context.Context, configID string) (string, error)
 	TransitionLadderRunStatus(ctx context.Context, id string, fromStatuses []ladder.RunStatus, toStatus ladder.RunStatus) (*LadderRunDB, error)
 	CancelLadderRun(ctx context.Context, id string, fromStatuses []ladder.RunStatus, cancelledBy string) (*LadderRunDB, error)
 	// CountLadderRunTrancheStatuses returns the number of the run's tranches
