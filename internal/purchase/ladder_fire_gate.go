@@ -40,6 +40,7 @@ type LadderFireDeps struct {
 	Store        LadderFireStore
 	Notifier     ScheduledNotifier
 	Registry     *LadderInstrumentRegistry
+	RIPricer     LadderRIPricerFactory // nil leaves RI tranches unresolved.
 	Now          func() time.Time
 	OwnAccountID string // external id of the AWS account the process runs in.
 	Region       string

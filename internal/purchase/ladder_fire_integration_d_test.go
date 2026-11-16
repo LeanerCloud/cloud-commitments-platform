@@ -77,7 +77,7 @@ func TestLadderFire_CrashBeforeTheNoticeCostsADisableNotASpend(t *testing.T) {
 	execs := map[string]*config.PurchaseExecution{}
 	_, err := f.store.ClaimDueLadderTranches(f.ctx, f.cfgID, f.now, ladderFireClaimLimit,
 		config.LadderClaimFilter{Layers: d.Registry.Layers(), TrancheIDs: []string{f.ids[0]}, CeilingMicros: 6_000_000},
-		ladderClaimCreate(f.store, d.Registry, &config.LadderConfigDB{CloudAccountID: f.acctID()}, d.Region, nil, 48*time.Hour, f.now, execs))
+		ladderClaimCreate(f.store, d.Registry, &config.LadderConfigDB{CloudAccountID: f.acctID()}, d.Region, ladderEvidence{}, 48*time.Hour, f.now, execs))
 	require.NoError(t, err)
 	f.pastWindow()
 

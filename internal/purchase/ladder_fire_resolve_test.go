@@ -23,7 +23,7 @@ func resolveCfg(capUSD float64) *config.LadderConfigDB {
 }
 
 func resolveIDs(rows []config.LadderDueRow, cfg *config.LadderConfigDB, region string) ladderResolution {
-	return resolveLadderTranches(rows, cfg, NewLadderInstrumentRegistry(), region, nil)
+	return resolveLadderTranches(rows, cfg, NewLadderInstrumentRegistry(), region, ladderEvidence{})
 }
 
 func TestResolveLadderTranches_Golden(t *testing.T) {

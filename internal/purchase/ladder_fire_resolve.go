@@ -41,7 +41,7 @@ type ladderResolution struct {
 // when its instrument cannot be built (including a corrupt stored rate). A bad
 // row never fails the config: it is returned as unresolved so the good rows
 // still go through. Amounts come from the tranche only.
-func resolveLadderTranches(rows []config.LadderDueRow, cfg *config.LadderConfigDB, registry *LadderInstrumentRegistry, region string, stored []config.RecommendationRecord) ladderResolution {
+func resolveLadderTranches(rows []config.LadderDueRow, cfg *config.LadderConfigDB, registry *LadderInstrumentRegistry, region string, ev ladderEvidence) ladderResolution {
 	res := ladderResolution{Due: len(rows), IDs: make([]string, 0, len(rows))}
 	for i := range rows {
 		tr := rows[i].Tranche
@@ -49,7 +49,7 @@ func resolveLadderTranches(rows []config.LadderDueRow, cfg *config.LadderConfigD
 			res.Capped = true
 			break
 		}
-		if reason := ladderTrancheRefusal(&rows[i], cfg, registry, region, stored); reason != "" {
+		if reason := ladderTrancheRefusal(&rows[i], cfg, registry, region, ev); reason != "" {
 			res.Unresolved = append(res.Unresolved, LadderUnresolved{TrancheID: tr.ID, Layer: tr.LayerType, Reason: reason})
 			continue
 		}
@@ -62,7 +62,7 @@ func resolveLadderTranches(rows []config.LadderDueRow, cfg *config.LadderConfigD
 }
 
 // ladderTrancheRefusal returns why one due row cannot be claimed, or "".
-func ladderTrancheRefusal(row *config.LadderDueRow, cfg *config.LadderConfigDB, registry *LadderInstrumentRegistry, region string, stored []config.RecommendationRecord) string {
+func ladderTrancheRefusal(row *config.LadderDueRow, cfg *config.LadderConfigDB, registry *LadderInstrumentRegistry, region string, ev ladderEvidence) string {
 	tr := row.Tranche
 	basisErr := config.RequireLadderCommitmentBasis(&tr)
 	switch {
@@ -77,25 +77,46 @@ func ladderTrancheRefusal(row *config.LadderDueRow, cfg *config.LadderConfigDB, 
 	case tr.AmountUSDHr > *cfg.MaxHourlyCommitPerRun:
 		return "above the per-run cap"
 	}
-	if _, err := registry.Build(LadderBuildInput{Tranche: tr, CloudAccountID: cfg.CloudAccountID, Region: region, StoredRecs: stored}); err != nil {
+	if _, err := registry.Build(ev.input(tr, cfg.CloudAccountID, region)); err != nil {
 		return fmt.Sprintf("unbuildable tranche: %v", err)
 	}
 	return ""
 }
 
-// readLadderEvidence reads the stored recommendations the EC2 Instance SP
-// builder needs, once per config and only when a due row is of that layer. It
-// runs before the claim: the claim transaction does no store reads. A read
-// error errors the config, so nothing is claimed on missing evidence.
-func readLadderEvidence(ctx context.Context, store LadderFireStore, cfg *config.LadderConfigDB, rows []config.LadderDueRow) ([]config.RecommendationRecord, error) {
-	if !slices.ContainsFunc(rows, func(r config.LadderDueRow) bool { return r.Tranche.LayerType == ladder.LayerEC2InstanceSP }) {
-		return nil, nil
+// ladderEvidence is everything read before the claim for the builders.
+type ladderEvidence struct {
+	riUnits map[string]RIUnit
+	stored  []config.RecommendationRecord
+}
+
+func (e ladderEvidence) input(tr config.LadderTrancheDB, account, region string) LadderBuildInput {
+	return LadderBuildInput{Tranche: tr, CloudAccountID: account, Region: region, StoredRecs: e.stored, RIUnits: e.riUnits}
+}
+
+// readLadderEvidence reads what the EC2 Instance SP and Convertible RI builders
+// need, once per config and only when a due row is of that layer. It runs
+// before the claim: the claim transaction does no store or provider reads. A
+// store read error errors the config, so nothing is claimed on missing evidence.
+func readLadderEvidence(ctx context.Context, deps LadderFireDeps, cfg *config.LadderConfigDB, rows []config.LadderDueRow) (ladderEvidence, error) {
+	var ev ladderEvidence
+	has := func(l ladder.LayerType) bool {
+		return slices.ContainsFunc(rows, func(r config.LadderDueRow) bool { return r.Tranche.LayerType == l })
 	}
-	recs, err := store.ListStoredRecommendations(ctx, ladderEC2SPFilter(cfg.CloudAccountID))
-	if err != nil {
-		return nil, fmt.Errorf("read stored EC2 Instance SP recommendations: %w", err)
+	if has(ladder.LayerEC2InstanceSP) {
+		recs, err := deps.Store.ListStoredRecommendations(ctx, ladderEC2SPFilter(cfg.CloudAccountID))
+		if err != nil {
+			return ev, fmt.Errorf("read stored EC2 Instance SP recommendations: %w", err)
+		}
+		ev.stored = recs
 	}
-	return recs, nil
+	if has(ladder.LayerConvertibleRI) {
+		recs, units, err := readRIEvidence(ctx, deps, cfg)
+		if err != nil {
+			return ev, err
+		}
+		ev.stored, ev.riUnits = append(ev.stored, recs...), units
+	}
+	return ev, nil
 }
 
 // logLadderResolution writes the per-config drain-guard line and one line per

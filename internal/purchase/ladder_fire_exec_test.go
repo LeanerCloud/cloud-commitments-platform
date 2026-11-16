@@ -42,7 +42,7 @@ func TestLadderClaimCreate_ExecutionFields(t *testing.T) {
 	saver := &fakeExecSaver{}
 	execs := map[string]*config.PurchaseExecution{}
 	cfg := resolveCfg(10)
-	create := ladderClaimCreate(saver, NewLadderInstrumentRegistry(), cfg, "eu-west-1", nil, 48*time.Hour, fireNow, execs)
+	create := ladderClaimCreate(saver, NewLadderInstrumentRegistry(), cfg, "eu-west-1", ladderEvidence{}, 48*time.Hour, fireNow, execs)
 
 	tr := spTranche(2.5, ladder.Term1Year)
 	id, err := create(context.Background(), nil, tr)
@@ -86,7 +86,7 @@ func TestLadderClaimCreate_ExecutionFields(t *testing.T) {
 
 func TestLadderClaimCreate_BuildsFromTheLockedRow(t *testing.T) {
 	saver := &fakeExecSaver{}
-	create := ladderClaimCreate(saver, NewLadderInstrumentRegistry(), resolveCfg(10), "us-east-1", nil, 24*time.Hour, fireNow, map[string]*config.PurchaseExecution{})
+	create := ladderClaimCreate(saver, NewLadderInstrumentRegistry(), resolveCfg(10), "us-east-1", ladderEvidence{}, 24*time.Hour, fireNow, map[string]*config.PurchaseExecution{})
 	// The resolve step saw 2.5; the locked row now says 3.1.
 	_, err := create(context.Background(), nil, spTranche(3.1, ladder.Term1Year))
 	require.NoError(t, err)
@@ -96,7 +96,7 @@ func TestLadderClaimCreate_BuildsFromTheLockedRow(t *testing.T) {
 func TestLadderClaimCreate_BuildFailureSavesNothing(t *testing.T) {
 	saver := &fakeExecSaver{}
 	execs := map[string]*config.PurchaseExecution{}
-	create := ladderClaimCreate(saver, NewLadderInstrumentRegistry(), resolveCfg(10), "", nil, 24*time.Hour, fireNow, execs)
+	create := ladderClaimCreate(saver, NewLadderInstrumentRegistry(), resolveCfg(10), "", ladderEvidence{}, 24*time.Hour, fireNow, execs)
 	id, err := create(context.Background(), nil, spTranche(2.5, ladder.Term1Year))
 	require.Error(t, err)
 	assert.Empty(t, id)
@@ -107,7 +107,7 @@ func TestLadderClaimCreate_BuildFailureSavesNothing(t *testing.T) {
 func TestLadderClaimCreate_SaveErrorIsReturned(t *testing.T) {
 	boom := errors.New("boom")
 	execs := map[string]*config.PurchaseExecution{}
-	create := ladderClaimCreate(&fakeExecSaver{err: boom}, NewLadderInstrumentRegistry(), resolveCfg(10), "us-east-1", nil, 24*time.Hour, fireNow, execs)
+	create := ladderClaimCreate(&fakeExecSaver{err: boom}, NewLadderInstrumentRegistry(), resolveCfg(10), "us-east-1", ladderEvidence{}, 24*time.Hour, fireNow, execs)
 	id, err := create(context.Background(), nil, spTranche(2.5, ladder.Term1Year))
 	require.ErrorIs(t, err, boom)
 	assert.Empty(t, id)
