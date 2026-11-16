@@ -447,7 +447,7 @@ describe('API Requests', () => {
     test('a login whose cookie /auth/me rejects fails with the HTTPS hint and stays signed out', async () => {
       mockSessionStart({ token: 'new-token', csrf_token: 'csrf-new' }, { status: 401, body: { error: 'unauthorized' } });
 
-      await expect(login('test@example.com', 'password')).rejects.toThrow('Serve CUDly over HTTPS');
+      await expect(login('test@example.com', 'password')).rejects.toThrow('Serve CUDly over HTTPS and make sure cookies are enabled.');
       expect(isAuthenticated()).toBe(false);
       expect(getAuthHeaders()['X-CSRF-Token']).toBeUndefined();
     });
@@ -462,7 +462,7 @@ describe('API Requests', () => {
     test('setupAdmin whose cookie /auth/me rejects fails with the HTTPS hint', async () => {
       mockSessionStart({ token: 't' }, { status: 401, body: { error: 'unauthorized' } });
 
-      await expect(setupAdmin('k', 'a@b.c', 'password')).rejects.toThrow('Serve CUDly over HTTPS');
+      await expect(setupAdmin('k', 'a@b.c', 'password')).rejects.toThrow('Serve CUDly over HTTPS and make sure cookies are enabled.');
       expect(isAuthenticated()).toBe(false);
     });
 
@@ -548,6 +548,98 @@ describe('API Requests', () => {
       expect(getAuthHeaders()['X-CSRF-Token']).toBe('csrf');
       expect(localStorageMock.setItem).not.toHaveBeenCalledWith('cudly:logout-signal', expect.anything());
       expect(sessionStorage.removeItem).not.toHaveBeenCalledWith('cudly:plan-form-draft');
+    });
+
+    describe('stale CSRF token', () => {
+      const csrfFail = { ok: false, status: 403, json: () => Promise.resolve({ error: 'CSRF validation failed' }) };
+      const meOk = { ok: true, status: 200, json: () => Promise.resolve({ id: 'u', email: 'a@b.c', groups: [], csrf_token: 'fresh' }) };
+      const calls = (suffix: string) => fetchMock.mock.calls.filter((c) => String(c[0]).endsWith(suffix));
+
+      beforeEach(() => {
+        setAuthenticated(true);
+        setCsrfToken('stale');
+        fetchMock.mockReset();
+      });
+
+      test('refreshes the token via /auth/me and retries logout once', async () => {
+        fetchMock.mockResolvedValueOnce(csrfFail).mockResolvedValueOnce(meOk).mockResolvedValueOnce({ ok: true, status: 200 });
+
+        await logout();
+
+        expect(calls('/auth/logout')).toHaveLength(2);
+        expect(calls('/auth/logout')[0][1].headers['X-CSRF-Token']).toBe('stale');
+        expect(calls('/auth/logout')[1][1].headers['X-CSRF-Token']).toBe('fresh');
+        expect(isAuthenticated()).toBe(false);
+        expect(localStorageMock.setItem).toHaveBeenCalledWith('cudly:logout-signal', expect.any(String));
+      });
+
+      test('a retry that still fails throws and keeps the session, never a third attempt', async () => {
+        fetchMock.mockResolvedValueOnce(csrfFail).mockResolvedValueOnce(meOk).mockResolvedValueOnce(csrfFail);
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+        await expect(logout()).rejects.toThrow('Sign out failed');
+        warn.mockRestore();
+
+        expect(calls('/auth/logout')).toHaveLength(2);
+        expect(calls('/auth/me')).toHaveLength(1);
+        expect(isAuthenticated()).toBe(true);
+        expect(localStorageMock.setItem).not.toHaveBeenCalledWith('cudly:logout-signal', expect.anything());
+        expect(sessionStorage.removeItem).not.toHaveBeenCalledWith('cudly:plan-form-draft');
+      });
+
+      test('a 401 from /auth/me means already signed out: success without a retry', async () => {
+        fetchMock.mockResolvedValueOnce(csrfFail).mockResolvedValueOnce({ ok: false, status: 401, json: () => Promise.resolve({}) });
+
+        await logout();
+
+        expect(calls('/auth/logout')).toHaveLength(1);
+        expect(isAuthenticated()).toBe(false);
+        expect(localStorageMock.setItem).toHaveBeenCalledWith('cudly:logout-signal', expect.any(String));
+      });
+
+      test('another /auth/me failure throws and does not retry', async () => {
+        fetchMock.mockResolvedValueOnce(csrfFail).mockResolvedValueOnce({ ok: false, status: 500, json: () => Promise.resolve({}) });
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+        await expect(logout()).rejects.toThrow('Sign out failed');
+        warn.mockRestore();
+
+        expect(calls('/auth/logout')).toHaveLength(1);
+        expect(isAuthenticated()).toBe(true);
+      });
+
+      test('a 403 with an unparsable body is not retried', async () => {
+        fetchMock.mockResolvedValue({ ok: false, status: 403, json: () => Promise.reject(new SyntaxError('bad json')) });
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+        await expect(logout()).rejects.toThrow('Sign out failed');
+        warn.mockRestore();
+
+        expect(calls('/auth/logout')).toHaveLength(1);
+        expect(calls('/auth/me')).toHaveLength(0);
+        expect(isAuthenticated()).toBe(true);
+      });
+
+      test.each([[200, true], [401, false]])('only a 403 is retried: a %i carrying the CSRF error body is not', async (status, ok) => {
+        fetchMock.mockResolvedValue({ ok, status, json: () => Promise.resolve({ error: 'CSRF validation failed' }) });
+
+        await logout();
+
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(calls('/auth/me')).toHaveLength(0);
+        expect(isAuthenticated()).toBe(false);
+        expect(localStorageMock.setItem).toHaveBeenCalledWith('cudly:logout-signal', expect.any(String));
+      });
+
+      test('a 403 that is not a CSRF failure is not retried', async () => {
+        fetchMock.mockResolvedValue({ ok: false, status: 403, json: () => Promise.resolve({ error: 'forbidden' }) });
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+        await expect(logout()).rejects.toThrow('Sign out failed');
+        warn.mockRestore();
+
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+      });
     });
 
     test('a network error keeps the session and does not broadcast', async () => {

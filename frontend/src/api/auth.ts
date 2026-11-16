@@ -79,7 +79,9 @@ function acceptSession(csrf: string): void {
 }
 
 const COOKIE_REJECTED_MESSAGE =
-  'Signed in, but the browser did not keep the session cookie. Serve CUDly over HTTPS.';
+  'Signed in, but the browser did not keep the session cookie. Serve CUDly over HTTPS and make sure cookies are enabled.';
+// Must match the backend's 403 body in internal/api/handler.go.
+const CSRF_FAILED_MESSAGE = 'CSRF validation failed';
 const LOGOUT_FAILED_MESSAGE = 'Sign out failed, please try again.';
 
 /**
@@ -128,22 +130,45 @@ async function postLogin(payload: Record<string, string>): Promise<LoginResponse
   return data;
 }
 
+async function postLogout(): Promise<Response> {
+  const headers = getAuthHeaders();
+  // Add empty content hash for POST without body
+  await addContentHashHeader(headers, '');
+  return fetch(`${getApiBase()}/auth/logout`, {
+    method: 'POST',
+    headers,
+    credentials: 'same-origin'
+  });
+}
+
+async function isCsrfRejection(response: Response): Promise<boolean> {
+  if (response.status !== 403) return false;
+  try {
+    const body = await response.json() as { error?: unknown };
+    return body.error === CSRF_FAILED_MESSAGE;
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Logout the current user
+ * Logout the current user. A CSRF 403 means another tab signed in again and
+ * this tab's in-memory token went stale: /auth/me re-derives it and the
+ * request is retried once (the server rejects before acting, so it is safe).
  */
 export async function logout(): Promise<void> {
-  const API_BASE = getApiBase();
   let response: Response;
   try {
-    const headers = getAuthHeaders();
-    // Add empty content hash for POST without body
-    await addContentHashHeader(headers, '');
-
-    response = await fetch(`${API_BASE}/auth/logout`, {
-      method: 'POST',
-      headers,
-      credentials: 'same-origin'
-    });
+    response = await postLogout();
+    if (await isCsrfRejection(response)) {
+      try {
+        await getCurrentUser();
+      } catch (err) {
+        if ((err as ApiError).status === 401) { finishLogout(); return; }
+        throw err;
+      }
+      response = await postLogout();
+    }
   } catch (e) {
     console.warn('Server logout failed:', e);
     throw new Error(LOGOUT_FAILED_MESSAGE);
@@ -154,6 +179,10 @@ export async function logout(): Promise<void> {
     console.warn('Server logout failed with HTTP', response.status);
     throw new Error(LOGOUT_FAILED_MESSAGE);
   }
+  finishLogout();
+}
+
+function finishLogout(): void {
   clearAuth();
   clearPlanDraft();
   broadcastLogout();
