@@ -6737,6 +6737,9 @@ components:
             type: string
         mfa_enabled:
           type: boolean
+        csrf_token:
+          type: string
+          description: HMAC token derived from the session, required for state-changing requests when authenticating by cookie.
 
     AdminExistsResponse:
       type: object
