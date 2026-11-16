@@ -19,9 +19,11 @@ import (
 type reconcileFakeStore struct {
 	config.StoreInterface
 	firedErr error
-	fired    []config.LadderTrancheDB
-	listed   int
-	global   int
+	// chainStatus is the chain tail's status; empty means "scheduled".
+	chainStatus string
+	fired       []config.LadderTrancheDB
+	listed      int
+	global      int
 }
 
 func (f *reconcileFakeStore) GetGlobalConfig(context.Context) (*config.GlobalConfig, error) {
@@ -32,9 +34,20 @@ func (f *reconcileFakeStore) ListFiredLadderTranches(context.Context, *config.La
 	f.listed++
 	return f.fired, f.firedErr
 }
+func (f *reconcileFakeStore) GetExecutionByID(_ context.Context, id string) (*config.PurchaseExecution, error) {
+	acct := "acct-a"
+	return &config.PurchaseExecution{
+		ExecutionID: id, Status: config.StatusCompleted, CloudAccountID: &acct,
+		Recommendations: []config.RecommendationRecord{{Selected: true, PurchaseID: "ri-1", Region: "us-east-1"}},
+	}, nil
+}
 func (f *reconcileFakeStore) WithTx(_ context.Context, fn func(pgx.Tx) error) error { return fn(nil) }
 func (f *reconcileFakeStore) LockLadderTrancheChainTx(context.Context, pgx.Tx, string) ([]config.LadderChainNode, error) {
-	return []config.LadderChainNode{{ExecutionID: "e1", Status: "scheduled", CreatedAt: time.Unix(0, 0)}}, nil
+	status := f.chainStatus
+	if status == "" {
+		status = "scheduled"
+	}
+	return []config.LadderChainNode{{ExecutionID: "e1", Status: status, CreatedAt: time.Unix(0, 0)}}, nil
 }
 func (f *reconcileFakeStore) TransitionLadderTrancheTx(context.Context, pgx.Tx, string, ladder.TrancheStatus, ladder.TrancheStatus, string) (bool, error) {
 	return true, nil
@@ -53,6 +66,10 @@ type reconcileFakePurchase struct {
 }
 
 func (reconcileFakePurchase) LadderSPDescriber(context.Context, string, string) (purchase.SPDescriber, error) {
+	return nil, errors.New("no provider in tests")
+}
+
+func (reconcileFakePurchase) LadderRIDescriber(context.Context, string, string) (purchase.RIDescriber, error) {
 	return nil, errors.New("no provider in tests")
 }
 
@@ -103,4 +120,39 @@ func TestLadderReconcile_FailsLoudWhenPurchaseCannotDescribeSavingsPlans(t *test
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot describe Savings Plans")
+}
+
+func TestLadderReconcile_FailsLoudWhenPurchaseCannotDescribeReservedInstances(t *testing.T) {
+	t.Parallel()
+	app := &Application{Config: &reconcileFakeStore{}, Purchase: spNoRIPurchase{}}
+
+	_, err := app.handleLadderReconcile(context.Background())
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot describe reserved instances")
+}
+
+// spNoRIPurchase has the SP describer but lacks the RI describer method.
+type spNoRIPurchase struct{ PurchaseManagerInterface }
+
+func (spNoRIPurchase) LadderSPDescriber(context.Context, string, string) (purchase.SPDescriber, error) {
+	return nil, errors.New("no provider in tests")
+}
+
+// A describer construction failure leaves the fired RI tranche fired and the
+// run reports it unresolved.
+func TestLadderReconcile_RIDescriberFailureKeepsRITrancheFired(t *testing.T) {
+	t.Parallel()
+	exec := "e1"
+	store := &reconcileFakeStore{
+		chainStatus: config.StatusCompleted, // the state in which visibility is consulted
+		fired:       []config.LadderTrancheDB{{ID: "t1", ExecutionID: &exec, LayerType: ladder.LayerConvertibleRI, Status: ladder.TrancheStatusFired}},
+	}
+	app := &Application{Config: store, Purchase: reconcileFakePurchase{}}
+
+	res, err := app.handleLadderReconcile(context.Background())
+
+	require.NoError(t, err)
+	assert.Zero(t, res.Completed)
+	assert.Equal(t, 1, res.Unresolved)
 }
