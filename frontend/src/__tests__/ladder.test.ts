@@ -300,19 +300,19 @@ describe('ladder.ts', () => {
       expect(field).not.toHaveAttribute('aria-invalid');
     });
 
-    test('blank max-hourly on a non-AWS config still serializes to null', async () => {
-      await primeValidForm('');
-      const provider = document.getElementById('ladder-cfg-provider') as HTMLSelectElement;
-      provider.value = 'gcp';
-      provider.dispatchEvent(new Event('change'));
-      (document.getElementById('ladder-cfg-account') as HTMLSelectElement).value = 'gcp-id';
-      (api.upsertLadderConfig as jest.Mock).mockResolvedValue(baseConfig({ provider: 'gcp' }));
+    test('blank max-hourly on a stored non-AWS config still serializes to null', async () => {
+      const stored = baseConfig({ id: 'existing', cloud_account_id: 'gcp-id', provider: 'gcp', max_hourly_commit_per_run: null });
+      await renderSection([stored]);
+      document.querySelector<HTMLButtonElement>('.ladder-edit-btn')!.click();
+      expect(document.getElementById('ladder-cfg-max-hourly')).toHaveValue(null);
+      (api.upsertLadderConfig as jest.Mock).mockResolvedValue(stored);
 
       await saveLadderConfig();
 
       expect(api.upsertLadderConfig).toHaveBeenCalledTimes(1);
       const sent = (api.upsertLadderConfig as jest.Mock).mock.calls[0][0] as LadderConfig;
       expect(sent.max_hourly_commit_per_run).toBeNull();
+      expect(sent.provider).toBe('gcp');
     });
 
     test('positive max-hourly passes through unchanged', async () => {
@@ -530,7 +530,6 @@ describe('ladder.ts', () => {
     const provider = (): HTMLSelectElement => document.getElementById('ladder-cfg-provider') as HTMLSelectElement;
     const status = (): HTMLElement => document.getElementById('ladder-cfg-account-status')!;
     const saveButton = (): HTMLElement => document.getElementById('ladder-config-save-btn')!;
-    const changeProvider = (value: string): void => { provider().value = value; provider().dispatchEvent(new Event('change')); };
     // pendingAccounts lets a test hold the modal's account request open. It is
     // installed after the section renders because the config table also loads
     // account names during init.
@@ -549,17 +548,61 @@ describe('ladder.ts', () => {
       expect(Array.from(account().options).map(option => option.value)).toEqual(['', 'acct-1']);
       expect(account().options[1]!.textContent).toBe('AWS account (aws-external)');
       account().value = 'acct-1';
-      changeProvider('azure');
-      expect(account()).toHaveValue('');
-      expect(Array.from(account().options).map(option => option.value)).toEqual(['', 'azure-id']);
-      changeProvider('gcp');
-      expect(Array.from(account().options).map(option => option.value)).toEqual(['', 'gcp-id']);
-      account().value = 'gcp-id';
+      (document.getElementById('ladder-cfg-max-hourly') as HTMLInputElement).value = '5';
       (api.upsertLadderConfig as jest.Mock).mockImplementation(async config => config);
       await saveLadderConfig();
-      expect(api.upsertLadderConfig).toHaveBeenCalledWith(expect.objectContaining({ cloud_account_id: 'gcp-id', provider: 'gcp' }));
+      expect(api.upsertLadderConfig).toHaveBeenCalledWith(expect.objectContaining({ cloud_account_id: 'acct-1', provider: 'aws' }));
       expect(listAccountsMinimal).toHaveBeenCalledWith();
       expect(api.updateConfig).not.toHaveBeenCalled();
+    });
+
+    test('help text says the ladder only plans and nothing is bought automatically', async () => {
+      await renderSection();
+      const help = document.querySelector('#commitment-laddering-automation-settings .settings-help')!.textContent!;
+      expect(help).toMatch(/plans a ramped schedule/);
+      expect(help).toMatch(/does not buy anything on\s+its own/);
+      expect(help).not.toMatch(/automatically ramps/);
+    });
+
+    test('a new config offers AWS only, with a reason on the disabled providers', async () => {
+      await open();
+      const byValue = (v: string): HTMLOptionElement => provider().querySelector<HTMLOptionElement>(`option[value="${v}"]`)!;
+      expect(byValue('aws').disabled).toBe(false);
+      for (const v of ['azure', 'gcp']) {
+        expect(byValue(v).disabled).toBe(true);
+        expect(byValue(v).title).toBe('Not supported yet: the ladder plans AWS commitments only');
+        expect(byValue(v).textContent).toMatch(/not supported yet/);
+      }
+    });
+
+    test('reopening the modal never accumulates the suffix and an edit shows plain labels', async () => {
+      await renderSection([baseConfig({ id: 'existing', cloud_account_id: 'saved-id', provider: 'gcp' })]);
+      const labels = (): string[] => Array.from(provider().options).map(option => option.textContent!);
+      const unsupported = ['AWS', 'Azure (not supported yet)', 'GCP (not supported yet)'];
+      document.getElementById('ladder-add-config-btn')!.click();
+      expect(labels()).toEqual(unsupported);
+      document.getElementById('ladder-modal-cancel-btn')!.click();
+      document.getElementById('ladder-add-config-btn')!.click();
+      expect(labels()).toEqual(unsupported);
+      document.getElementById('ladder-modal-cancel-btn')!.click();
+      document.querySelector<HTMLButtonElement>('.ladder-edit-btn')!.click();
+      expect(labels()).toEqual(['AWS', 'Azure', 'GCP']);
+      document.getElementById('ladder-modal-cancel-btn')!.click();
+      document.getElementById('ladder-add-config-btn')!.click();
+      expect(labels()).toEqual(unsupported);
+    });
+
+    test.each(['azure', 'gcp'] as const)('editing a stored %s row keeps its option selectable and saved', async stored => {
+      await renderSection([baseConfig({ id: 'existing', cloud_account_id: 'saved-id', provider: stored })]);
+      document.querySelector<HTMLButtonElement>('.ladder-edit-btn')!.click();
+      const option = provider().querySelector<HTMLOptionElement>(`option[value="${stored}"]`)!;
+      expect(option.disabled).toBe(false);
+      expect(option.title).toBe('');
+      expect(option.textContent).not.toMatch(/not supported/);
+      expect(provider()).toHaveValue(stored);
+      (api.upsertLadderConfig as jest.Mock).mockImplementation(async saved => saved);
+      await saveLadderConfig();
+      expect(api.upsertLadderConfig).toHaveBeenCalledWith(expect.objectContaining({ provider: stored }));
     });
 
     test.each(['invented-id', 'azure-id'])('rejects an injected option %s for AWS', async id => {
@@ -582,7 +625,7 @@ describe('ladder.ts', () => {
       expect(document.querySelector('#ladder-config-form img')).toBeNull();
     });
 
-    test('blocks save while loading and filters the provider selected before response', async () => {
+    test('blocks save while loading and lists only AWS accounts after the response', async () => {
       let resolve!: (accounts: AccountSummary[]) => void;
       await open(mock => mock.mockReturnValue(new Promise<AccountSummary[]>(done => { resolve = done; })));
       expect(account()).toBeDisabled();
@@ -590,10 +633,12 @@ describe('ladder.ts', () => {
       expect(status()).toHaveTextContent(/loading/i);
       await saveLadderConfig();
       expect(api.upsertLadderConfig).not.toHaveBeenCalled();
-      changeProvider('gcp');
-      resolve([{ id: 'gcp-late', name: 'Late', external_id: 'external', provider: 'gcp' }]);
+      resolve([
+        { id: 'gcp-late', name: 'Late', external_id: 'external', provider: 'gcp' },
+        { id: 'aws-late', name: 'Late', external_id: 'external', provider: 'aws' },
+      ]);
       await ready();
-      expect(Array.from(account().options).map(option => option.value)).toEqual(['', 'gcp-late']);
+      expect(Array.from(account().options).map(option => option.value)).toEqual(['', 'aws-late']);
     });
 
     test('a response from a closed modal cannot replace a reopened form', async () => {

@@ -78,15 +78,14 @@ for (const width of [1280, 390]) {
     await expect(account.locator('option')).toHaveText(['Select a registered account', '<img src=x onerror=alert(1)> (<external>)']);
     await expect(page.locator('#ladder-config-modal img')).toHaveCount(0);
     await account.selectOption('registered-aws');
-    await provider.selectOption('gcp');
-    await expect(account).toHaveValue('');
-    await expect(account.locator('option')).toHaveText(['Select a registered account', 'GCP fixture (project-fixture)']);
-    await expect(page.locator('#ladder-config-save-btn')).toBeDisabled();
-    await account.selectOption('registered-gcp');
+    await expect(provider.locator('option[value="azure"]')).toBeDisabled();
+    await expect(provider.locator('option[value="gcp"]')).toBeDisabled();
+    await expect(provider.locator('option[value="aws"]')).toBeEnabled();
+    await page.locator('#ladder-cfg-max-hourly').fill('5');
     await page.locator('#ladder-config-save-btn').click();
     await expect(page.locator('#ladder-config-modal')).toBeHidden();
     expect(saves).toHaveLength(1);
-    expect(saves[0]).toMatchObject({ cloud_account_id: 'registered-gcp', provider: 'gcp' });
+    expect(saves[0]).toMatchObject({ cloud_account_id: 'registered-aws', provider: 'aws' });
     expect(writes).toEqual(['/api/ladder/configs']);
     expect(errors).toEqual([]);
     expect(failures).toEqual([]);
@@ -115,16 +114,16 @@ test('a forbidden list blocks creation but preserves an unavailable edit identit
   expect(failures).toEqual(['403 /api/accounts/list', '403 /api/accounts/list']);
 });
 
-test('provider changes during loading and stale reopened responses keep the current account list', async ({ page }) => {
+test('unsupported providers stay disabled during loading and stale reopened responses keep the current account list', async ({ page }) => {
   const { saves, writes, errors, failures } = await setup(page);
   let pending!: Route;
   await page.route('**/api/accounts/list', route => { pending = route; });
   await page.locator('#ladder-add-config-btn').click();
   await expect(page.locator('#ladder-cfg-account-status')).toContainText('Loading registered accounts');
   await expect.poll(() => pending !== undefined).toBe(true);
-  await page.locator('#ladder-cfg-provider').selectOption('gcp');
+  await expect(page.locator('#ladder-cfg-provider option[value="gcp"]')).toBeDisabled();
   await pending.fulfill({ json: accounts });
-  await expect(page.locator('#ladder-cfg-account option')).toHaveText(['Select a registered account', 'GCP fixture (project-fixture)']);
+  await expect(page.locator('#ladder-cfg-account option')).toHaveText(['Select a registered account', '<img src=x onerror=alert(1)> (<external>)']);
   const completed = pending;
   await page.locator('#ladder-modal-cancel-btn').click();
   await page.locator('#ladder-add-config-btn').click();

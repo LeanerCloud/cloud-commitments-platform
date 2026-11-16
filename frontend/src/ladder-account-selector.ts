@@ -1,6 +1,9 @@
 import { listAccountsMinimal, type AccountSummary } from './api/accounts';
 import type { LadderConfig } from './api/ladder';
 
+const PROVIDER_UNSUPPORTED_REASON = 'Not supported yet: the ladder plans AWS commitments only';
+const UNSUPPORTED_SUFFIX = ' (not supported yet)';
+
 type AccountIdentity = Pick<LadderConfig, 'cloud_account_id' | 'provider'>;
 
 export function initLadderAccountSelector(form: HTMLElement, existing?: LadderConfig): () => AccountIdentity | null {
@@ -10,6 +13,13 @@ export function initLadderAccountSelector(form: HTMLElement, existing?: LadderCo
   const save = form.querySelector<HTMLButtonElement>('#ladder-config-save-btn')!;
   const identity = existing ? { cloud_account_id: existing.cloud_account_id, provider: existing.provider } : null;
   provider.disabled = !!identity;
+  // The ladder plans AWS only; a stored non-AWS row keeps its option selectable.
+  for (const option of Array.from(provider.options)) {
+    const unsupported = !identity && option.value !== 'aws';
+    option.disabled = unsupported;
+    option.title = unsupported ? PROVIDER_UNSUPPORTED_REASON : '';
+    option.textContent = (option.textContent ?? '').replace(UNSUPPORTED_SUFFIX, '') + (unsupported ? UNSUPPORTED_SUFFIX : '');
+  }
   let accounts: AccountSummary[] | undefined;
   let loadFailed = false;
   const selection = (): AccountIdentity | null => {

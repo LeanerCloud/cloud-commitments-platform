@@ -110,10 +110,12 @@ function renderLadderingSection(globalEnabled: boolean): string {
 <fieldset class="settings-category" id="commitment-laddering-automation-settings">
   <legend>Commitment Laddering</legend>
   <p class="settings-help">
-    Commitment Laddering automatically ramps up cloud commitments towards a
-    target coverage level using a configurable ramp schedule. It is feature-gated:
-    enable the global kill-switch below, then enable individual accounts via the
-    per-account configuration table.
+    Commitment Laddering plans a ramped schedule of commitment purchases towards
+    a target coverage level, for AWS accounts only. It does not buy anything on
+    its own: a purchase can only happen when a separate operator-controlled
+    execution switch is on and the account is set to Auto Approve. Enable the
+    global kill-switch below, then enable individual accounts via the per-account
+    configuration table.
   </p>
 
   <div class="setting-row">
