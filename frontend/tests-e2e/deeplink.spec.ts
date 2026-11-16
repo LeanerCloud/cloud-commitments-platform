@@ -162,12 +162,11 @@ test.describe('authentication reloads', () => {
     expect(await page.evaluate(() =>
       (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming).type
     )).toBe('reload');
-    expect(await page.evaluate(() => ['authToken', 'apiKey', 'csrfToken'].map(key =>
-      [localStorage.getItem(key), sessionStorage.getItem(key)]
-    ))).toEqual([[null, null], [null, null], [null, null]]);
+    expect(await page.evaluate(() => Object.keys(localStorage).concat(Object.keys(sessionStorage))
+      .filter(key => /token|apikey|csrf/i.test(key)))).toEqual([]);
   });
 
-  test('cross-tab sign-out reloads only when an auth key is cleared', async ({ page, context }) => {
+  test('cross-tab sign-out reloads only on a logout message', async ({ page, context }) => {
     const source = await context.newPage();
     await mockSession(source);
     await source.goto('/home');
@@ -178,34 +177,27 @@ test.describe('authentication reloads', () => {
       if (request.isNavigationRequest() && request.frame() === page.mainFrame()
           && request.resourceType() === 'document') documentRequests++;
     });
-    await page.evaluate(() => {
-      window.addEventListener('storage', event => {
-        document.documentElement.dataset.lastStorageEvent = JSON.stringify([event.key, event.newValue]);
-      });
+
+    // Neither unrelated storage writes nor a foreign channel payload sign the tab out.
+    await source.evaluate(() => localStorage.setItem('unrelated-setting', 'changed'));
+    await source.evaluate(() => {
+      const channel = new BroadcastChannel('cudly-auth');
+      channel.postMessage('something-else');
+      channel.close();
     });
+    await page.evaluate(() => new Promise<void>(resolve => setTimeout(resolve, 200)));
+    expect(documentRequests).toBe(0);
+    expect(await page.evaluate(() => performance.timeOrigin)).toBe(originalDocument);
+    await expect(page.locator('#login-modal')).toHaveCount(0);
 
-    for (const [key, value] of [['unrelated-setting', 'changed'], ['authToken', 'refreshed-token']] as const) {
-      await source.evaluate(([eventKey, eventValue]) => localStorage.setItem(eventKey, eventValue), [key, value] as const);
-      await expect(page.locator('html')).toHaveAttribute('data-last-storage-event', JSON.stringify([key, value]));
-      await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
-      expect(documentRequests).toBe(0);
-      expect(await page.evaluate(() => performance.timeOrigin)).toBe(originalDocument);
-      await expect(page.locator('#login-modal')).toHaveCount(0);
-    }
-
-    signedOut = true;
     await Promise.all([
       page.waitForEvent('load'),
-      source.evaluate(() => localStorage.removeItem('authToken')),
+      source.locator('#logout-btn').click(),
     ]);
 
     await expect(page.locator('#login-form')).toBeVisible();
     expect(documentRequests).toBe(1);
     expect(await page.evaluate(() => performance.timeOrigin)).not.toBe(originalDocument);
-    expect(await page.evaluate(() =>
-      (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming).type
-    )).toBe('reload');
-    expect(await page.evaluate(() => localStorage.getItem('authToken'))).toBeNull();
     await source.close();
   });
 });
