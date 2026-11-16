@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -23,7 +24,10 @@ func (s *timelineTestStore) ListLadderTimeline(_ context.Context, accountID, pro
 
 func (s *timelineTestStore) ListLadderTimelineRuns(_ context.Context, accountID, provider string, cursor *config.LadderTimelineCursor) (*config.LadderTimelineRunPage, error) {
 	s.called = true
-	return &config.LadderTimelineRunPage{Runs: []config.LadderTimelineRun{{ID: accountID}}, TotalCount: 1}, nil
+	return &config.LadderTimelineRunPage{Runs: []config.LadderTimelineRun{{
+		ID: accountID, DelayedFirstStep: true,
+		TrancheCounts: config.LadderTrancheCounts{Scheduled: 2, Fired: 1, Completed: 3, Failed: 4, Canceled: 5},
+	}}, TotalCount: 1}, nil
 }
 
 func TestLadderTimelineRoutedScope(t *testing.T) {
@@ -155,4 +159,18 @@ func TestLadderTimelineNonUUIDAccountIDIs400(t *testing.T) {
 			require.False(t, store.called)
 		})
 	}
+}
+
+func TestLadderTimelineRunsExposeTrancheCounts(t *testing.T) {
+	t.Parallel()
+	h, original := ladderScopedHandler(t)
+	h.config = &timelineTestStore{MockConfigStore: original}
+	req := ladderScopedReq("")
+	req.QueryStringParameters = map[string]string{"account_id": scopedInAccount, "provider": "aws"}
+	result, err := NewRouter(h).Route(context.Background(), "GET", "/api/ladder/runs", req)
+	require.NoError(t, err)
+	raw, err := json.Marshal(result)
+	require.NoError(t, err)
+	require.Contains(t, string(raw), `"tranche_counts":{"scheduled":2,"fired":1,"completed":3,"failed":4,"canceled":5}`)
+	require.Contains(t, string(raw), `"delayed_first_step":true`)
 }

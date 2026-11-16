@@ -117,6 +117,14 @@ export interface LadderRun {
   gap_usd_hr: string | null;
   total_hourly_commit: string;
   actions: { action: string; layer: string; rationale: string; data_sources?: string[] }[];
+  tranche_counts?: {
+    scheduled: number;
+    fired: number;
+    completed: number;
+    failed: number;
+    canceled: number;
+  };
+  delayed_first_step?: boolean;
 }
 
 interface TimelinePage {

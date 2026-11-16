@@ -9966,6 +9966,19 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/LadderTimelineAction'
+        tranche_counts:
+          type: object
+          description: The run's tranches per status; the legacy "cancelled" spelling counts as canceled.
+          required: [scheduled, fired, completed, failed, canceled]
+          properties:
+            scheduled: {type: integer, format: int64}
+            fired: {type: integer, format: int64}
+            completed: {type: integer, format: int64}
+            failed: {type: integer, format: int64}
+            canceled: {type: integer, format: int64}
+        delayed_first_step:
+          type: boolean
+          description: True when the run's earliest tranche is scheduled more than 24 hours after the run started, so the claim filter never lets the ramp buy. False for a run without tranches.
 
     LadderTimelineAction:
       type: object

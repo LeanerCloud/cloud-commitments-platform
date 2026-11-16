@@ -58,6 +58,21 @@ type LadderTimelineRun struct {
 	ReasonCode string                 `json:"reason_code,omitempty"`
 	Status     ladder.RunStatus       `json:"status"`
 	Actions    []LadderTimelineAction `json:"actions"`
+	// TrancheCounts is the run's tranche rows per settled status; the legacy
+	// pre-go#554 spelling is folded into Canceled.
+	TrancheCounts LadderTrancheCounts `json:"tranche_counts"`
+	// DelayedFirstStep marks a run whose earliest tranche is scheduled later
+	// than LadderFireGrace after the run started: the claim filter refuses it,
+	// so the ramp never buys (plan #70 D7(a)). False for a run without tranches.
+	DelayedFirstStep bool `json:"delayed_first_step"`
+}
+
+type LadderTrancheCounts struct {
+	Scheduled int64 `json:"scheduled"`
+	Fired     int64 `json:"fired"`
+	Completed int64 `json:"completed"`
+	Failed    int64 `json:"failed"`
+	Canceled  int64 `json:"canceled"`
 }
 
 type LadderTimelineAction struct {

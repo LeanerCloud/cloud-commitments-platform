@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 )
 
 // The timeline reads return the whole account scope from ONE statement, so
@@ -34,7 +35,9 @@ SELECT COUNT(*), COALESCE(SUM(amount_usd_hr::numeric), 0::numeric(20,6))::text,
        COALESCE(jsonb_agg(jsonb_build_array(amount_usd_hr, amount_basis, commitment_rate)), '[]'::jsonb)
 FROM scoped s`
 
-const ladderTimelineRunsQuery = `
+// ladderTimelineRunsQuery is a var only so the claim grace stays the one Go
+// constant (LadderFireGrace) instead of a second copy in the SQL text.
+var ladderTimelineRunsQuery = fmt.Sprintf(`
 WITH scoped AS (
  SELECT r.id, r.config_id, r.started_at, r.created_at, r.status,
         r.baseline_usd_hr::text AS baseline_usd_hr, r.target_usd_hr::text AS target_usd_hr,
@@ -45,7 +48,18 @@ WITH scoped AS (
           'action', action->'action', 'layer', action->'layer',
           'rationale', action->'rationale', 'data_sources', action->'data_sources'))
           FROM jsonb_array_elements(COALESCE(r.plan->'actions', '[]'::jsonb)) action),
-          '[]'::jsonb) AS actions
+          '[]'::jsonb) AS actions,
+        -- ladder_tranches.status has no CHECK (migration 000081): an unknown status
+        -- falls in no bucket, so the counts can sum to less than the tranche total.
+        (SELECT jsonb_build_object(
+          'scheduled', COUNT(*) FILTER (WHERE t.status = 'scheduled'),
+          'fired', COUNT(*) FILTER (WHERE t.status = 'fired'),
+          'completed', COUNT(*) FILTER (WHERE t.status = 'completed'),
+          'failed', COUNT(*) FILTER (WHERE t.status = 'failed'),
+          'canceled', COUNT(*) FILTER (WHERE t.status IN ('canceled', 'cancelled')))
+          FROM ladder_tranches t WHERE t.run_id = r.id AND t.config_id = r.config_id) AS tranche_counts,
+        COALESCE((SELECT MIN(t.scheduled_date) > r.started_at + make_interval(secs => %d)
+          FROM ladder_tranches t WHERE t.run_id = r.id AND t.config_id = r.config_id), false) AS delayed_first_step
  FROM ladder_runs r
  JOIN ladder_configs c ON c.id = r.config_id
  JOIN cloud_accounts a ON a.id = c.cloud_account_id AND a.provider = c.provider
@@ -54,7 +68,7 @@ WITH scoped AS (
 SELECT COUNT(*),
        COALESCE(jsonb_agg(to_jsonb(s) ORDER BY created_at, id)
          FILTER (WHERE $3::timestamptz IS NULL OR (created_at, id) > ($3, $4::uuid)), '[]'::jsonb)
-FROM scoped s`
+FROM scoped s`, int64(LadderFireGrace/time.Second))
 
 func ladderTimelineArgs(accountID, provider string, cursor *LadderTimelineCursor) []any {
 	if cursor == nil {
