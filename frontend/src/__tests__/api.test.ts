@@ -5,6 +5,7 @@ import { localStorageMock, sessionStorageMock, fetchMock } from './setup';
 import {
   initAuth,
   setAuthToken,
+  setCsrfToken,
   setApiKey,
   isAuthenticated,
   clearAuth,
@@ -547,8 +548,9 @@ describe('API Requests', () => {
 
       expect(fetchMock).toHaveBeenCalledWith(
         '/api/auth/logout',
-        expect.objectContaining({ method: 'POST', credentials: 'same-origin' })
+        expect.objectContaining({ method: 'POST' })
       );
+      expect(fetchMock.mock.calls[0][1]).toMatchObject({ credentials: 'same-origin' });
       expect(isAuthenticated()).toBe(false);
       // An intentional sign-out must not resurrect a plan draft (#1735).
       expect(sessionStorage.removeItem).toHaveBeenCalledWith('cudly:plan-form-draft');
@@ -572,11 +574,37 @@ describe('API Requests', () => {
       );
     });
 
-    test('clears auth even if server call fails', async () => {
+    test.each([[500], [403]])('a %i answer keeps the session, does not broadcast and throws', async (status) => {
+      setAuthToken('token');
+      setCsrfToken('csrf');
+      fetchMock.mockResolvedValue({ ok: false, status });
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+      await expect(logout()).rejects.toThrow('Sign out failed');
+      warn.mockRestore();
+
+      expect(isAuthenticated()).toBe(true);
+      expect(getAuthHeaders()['X-CSRF-Token']).toBe('csrf');
+      expect(sessionStorage.removeItem).not.toHaveBeenCalledWith('cudly:plan-form-draft');
+    });
+
+    test('a network error keeps the session and does not broadcast', async () => {
       setAuthToken('token');
       fetchMock.mockRejectedValue(new Error('Network error'));
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+      await expect(logout()).rejects.toThrow('Sign out failed');
+
+      expect(isAuthenticated()).toBe(true);
+      warn.mockRestore();
+    });
+
+    test('a 401 means the session is already gone and signs out', async () => {
+      setAuthToken('token');
+      fetchMock.mockResolvedValue({ ok: false, status: 401 });
 
       await logout();
+
       expect(isAuthenticated()).toBe(false);
     });
   });

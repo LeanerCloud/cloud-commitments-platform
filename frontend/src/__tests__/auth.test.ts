@@ -641,6 +641,16 @@ describe('Auth Module', () => {
       expect(state.setCurrentUser).toHaveBeenCalledWith(null);
       expect(reloadPage).toHaveBeenCalled();
     });
+
+    test('a failed API logout keeps the user signed in, toasts and does not reload', async () => {
+      (api.logout as jest.Mock).mockRejectedValue(new Error('Sign out failed, please try again.'));
+
+      await logout();
+
+      expect(state.setCurrentUser).not.toHaveBeenCalled();
+      expect(reloadPage).not.toHaveBeenCalled();
+      expect(mockShowToast).toHaveBeenCalledWith({ message: 'Sign out failed, please try again.', kind: 'error' });
+    });
   });
 
   describe('profile modal', () => {
