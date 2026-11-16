@@ -7225,8 +7225,8 @@ components:
           type: string
           enum: [ok, unavailable]
           description: |
-            `ok` means `aws` carries the probed combos. `unavailable` means
-            the probe hasn't run (no AWS account connected) or the most
+            `ok` means `aws` or `azure` (or both) carries probed combos.
+            `unavailable` means neither does: no probe has run, or the most
             recent attempt failed; the frontend should use hardcoded
             defaults.
         aws:
@@ -7239,6 +7239,29 @@ components:
             type: array
             items:
               $ref: '#/components/schemas/CommitmentOptionCombo'
+        azure:
+          type: object
+          description: |
+            Cached Azure Savings Plan (term, payment) tuples keyed by service
+            (`savingsplans`), read from the stored probe row with no live
+            probing. Payments use the Azure vocabulary (`upfront`,
+            `monthly`). Omitted when no Azure probe row exists. `status` is
+            `ok` when either `aws` or `azure` is present. Monthly combos are
+            validated by the probe, but the platform's purchase path cannot
+            produce a monthly Azure plan yet, so clients must not offer
+            monthly as purchasable on this data alone.
+          additionalProperties:
+            type: array
+            items:
+              # Inline, not CommitmentOptionCombo: Azure terms can be 5 and
+              # payments are upfront/monthly.
+              type: object
+              required: [term, payment]
+              properties:
+                term:
+                  type: integer
+                payment:
+                  type: string
 
     CommitmentOptionCombo:
       type: object

@@ -76,6 +76,8 @@ type HandlerConfig struct {
 // a stub in handler tests without pulling in the probe+store machinery.
 type CommitmentOptsInterface interface {
 	Get(ctx context.Context) (commitmentopts.Options, error)
+	// CachedOptions reads one provider's stored combos without probing.
+	CachedOptions(ctx context.Context, provider string) (map[string][]commitmentopts.Combo, bool, error)
 	Validate(ctx context.Context, provider, service string, term int, payment string) (bool, error)
 }
 
