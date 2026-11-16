@@ -32,7 +32,7 @@ test('signed in: the shell shows once auth resolves and the pending marker is go
   await seedAuth(page);
   await mockApi(page);
   await page.route('**/api/auth/me', (r) =>
-    r.fulfill({ json: { id: 'user-smoke', email: 'smoke@example.com', groups: [], mfa_enabled: false } }));
+    r.fulfill({ json: { id: 'user-smoke', email: 'smoke@example.com', groups: [], mfa_enabled: false, csrf_token: 'smoke-csrf' } }));
   await page.goto('/home');
   await expect(page.locator('.app-topbar')).toBeVisible();
   await expect(page.locator('#user-email-display')).toBeVisible();

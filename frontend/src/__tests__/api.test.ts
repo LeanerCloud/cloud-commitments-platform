@@ -350,7 +350,8 @@ describe('API Requests', () => {
         expect.objectContaining({
           headers: expect.objectContaining({
             'X-Authorization': 'Bearer test-token'
-          })
+          }),
+          credentials: 'same-origin'
         })
       );
     });
@@ -546,7 +547,7 @@ describe('API Requests', () => {
 
       expect(fetchMock).toHaveBeenCalledWith(
         '/api/auth/logout',
-        expect.objectContaining({ method: 'POST' })
+        expect.objectContaining({ method: 'POST', credentials: 'same-origin' })
       );
       expect(isAuthenticated()).toBe(false);
       // An intentional sign-out must not resurrect a plan draft (#1735).
@@ -584,12 +585,44 @@ describe('API Requests', () => {
     test('fetches current user', async () => {
       fetchMock.mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ email: 'test@example.com', groups: ['00000000-0000-5000-8000-000000000001'] })
+        json: () => Promise.resolve({ email: 'test@example.com', groups: ['00000000-0000-5000-8000-000000000001'], csrf_token: 'csrf-1' })
       });
 
       const user = await getCurrentUser();
       expect(user.email).toBe('test@example.com');
       expect(fetchMock).toHaveBeenCalledWith('/api/auth/me', expect.anything());
+    });
+
+    test('restores the CSRF token from /auth/me without leaking it onto the user', async () => {
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ id: 'u1', email: 'a@b.c', groups: [], csrf_token: 'csrf-restored' })
+      });
+
+      const user = await getCurrentUser();
+
+      expect(getAuthHeaders()['X-CSRF-Token']).toBe('csrf-restored');
+      expect(user).not.toHaveProperty('csrf_token');
+    });
+
+    test('a 200 without csrf_token fails loud', async () => {
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ id: 'u1', email: 'a@b.c', groups: [] })
+      });
+
+      await expect(getCurrentUser()).rejects.toThrow('no CSRF token');
+      expect(getAuthHeaders()['X-CSRF-Token']).toBeUndefined();
+    });
+
+    test('a 401 rejects', async () => {
+      fetchMock.mockResolvedValue({
+        ok: false,
+        status: 401,
+        json: () => Promise.resolve({ error: 'unauthorized' })
+      });
+
+      await expect(getCurrentUser()).rejects.toMatchObject({ status: 401 });
     });
   });
 

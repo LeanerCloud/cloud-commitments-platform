@@ -83,6 +83,7 @@ async function postLogin(payload: Record<string, string>): Promise<LoginResponse
   const response = await fetchOrNetworkError(`${API_BASE}/auth/login`, {
     method: 'POST',
     headers,
+    credentials: 'same-origin',
     body
   });
 
@@ -116,7 +117,8 @@ export async function logout(): Promise<void> {
 
     await fetch(`${API_BASE}/auth/logout`, {
       method: 'POST',
-      headers
+      headers,
+      credentials: 'same-origin'
     });
   } catch (e) {
     // Non-critical: local logout will happen anyway
@@ -130,7 +132,11 @@ export async function logout(): Promise<void> {
  * Get current user info
  */
 export async function getCurrentUser(): Promise<User> {
-  return apiRequest<User>('/auth/me');
+  const { csrf_token: csrf, ...user } = await apiRequest<User & { csrf_token?: string }>('/auth/me');
+  // A reloaded page holds no CSRF token; /auth/me re-derives it from the cookie.
+  if (!csrf) throw new Error('The server returned no CSRF token for this session.');
+  setCsrfToken(csrf);
+  return user;
 }
 
 /**
@@ -189,6 +195,7 @@ export async function requestPasswordReset(email: string): Promise<void> {
   const response = await fetchOrNetworkError(`${API_BASE}/auth/forgot-password`, {
     method: 'POST',
     headers,
+    credentials: 'same-origin',
     body
   });
   if (!response.ok) {
@@ -208,6 +215,7 @@ export async function resetPassword(token: string, newPassword: string): Promise
   const response = await fetchOrNetworkError(`${API_BASE}/auth/reset-password`, {
     method: 'POST',
     headers,
+    credentials: 'same-origin',
     body
   });
 
@@ -306,6 +314,7 @@ export async function setupAdmin(key: string, email: string, password: string): 
   const response = await fetchOrNetworkError(`${API_BASE}/auth/setup-admin`, {
     method: 'POST',
     headers,
+    credentials: 'same-origin',
     body
   });
 
@@ -447,6 +456,7 @@ export async function getDeploymentInfo(): Promise<DeploymentInfo> {
   const API_BASE = getApiBase();
   const response = await fetch(`${API_BASE}/info/deployment`, {
     headers: getAuthHeaders(),
+    credentials: 'same-origin',
   });
   if (!response.ok) {
     throw httpError('GET /api/info/deployment', response.status);

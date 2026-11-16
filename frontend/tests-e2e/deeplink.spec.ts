@@ -118,22 +118,29 @@ test('a deep-linked Inventory sub-tab opens that sub-section, not the default', 
 });
 
 test.describe('authentication reloads', () => {
+  // The session is a cookie the server owns: /api/auth/me answers 200 until
+  // the logout route ran, then 401, like the real backend after the cookie
+  // is cleared.
+  let signedOut: boolean;
+
+  async function mockSession(target: Page): Promise<void> {
+    await mockApi(target);
+    await seedAuth(target);
+    await target.route('**/api/auth/me', route => signedOut
+      ? route.fulfill({ status: 401, json: { error: 'unauthorized' } })
+      : route.fulfill({ json: { id: 'user-smoke', email: 'smoke@example.com', groups: [], csrf_token: 'smoke-csrf' } }));
+    await target.route('**/api/auth/logout', route => { signedOut = true; return route.fulfill({ status: 204 }); });
+  }
+
   test.beforeEach(async ({ page }) => {
-    await mockApi(page);
+    signedOut = false;
+    await mockSession(page);
     await page.route('**/api/info', route => route.fulfill({ json: { admin_exists: true } }));
-    // Unlike seedAuth, this must not restore authentication after logout reloads.
-    await page.addInitScript(() => {
-      if (!sessionStorage.getItem('reload-smoke-seeded')) {
-        localStorage.setItem('authToken', 'smoke-token');
-        sessionStorage.setItem('reload-smoke-seeded', 'true');
-      }
-    });
     await page.goto('/home');
     await expect(page.locator('#user-email-display')).toHaveText('smoke@example.com');
   });
 
   test('UI logout reloads the document and returns to login', async ({ page }) => {
-    await page.route('**/api/auth/logout', route => route.fulfill({ status: 204 }));
     const originalDocument = await page.evaluate(() => performance.timeOrigin);
     let documentRequests = 0;
     page.on('request', request => {
@@ -162,7 +169,7 @@ test.describe('authentication reloads', () => {
 
   test('cross-tab sign-out reloads only when an auth key is cleared', async ({ page, context }) => {
     const source = await context.newPage();
-    await mockApi(source);
+    await mockSession(source);
     await source.goto('/home');
     await expect(source.locator('#user-email-display')).toHaveText('smoke@example.com');
     const originalDocument = await page.evaluate(() => performance.timeOrigin);
@@ -186,6 +193,7 @@ test.describe('authentication reloads', () => {
       await expect(page.locator('#login-modal')).toHaveCount(0);
     }
 
+    signedOut = true;
     await Promise.all([
       page.waitForEvent('load'),
       source.evaluate(() => localStorage.removeItem('authToken')),
