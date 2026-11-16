@@ -10,13 +10,12 @@ import {
   revokeApiKey,
   deleteApiKey
 } from '../api/apikeys';
-import { clearAuth, setAuthToken } from '../api/client';
+import { clearAuth } from '../api/client';
 
 describe('API Keys API Module', () => {
   beforeEach(() => {
     fetchMock.mockReset();
     clearAuth();
-    setAuthToken('test-token');
   });
 
   describe('getApiKeys', () => {
@@ -38,8 +37,7 @@ describe('API Keys API Module', () => {
         '/api/api-keys',
         expect.objectContaining({
           headers: expect.objectContaining({
-            'Content-Type': 'application/json',
-            'X-Authorization': 'Bearer test-token'
+            'Content-Type': 'application/json'
           })
         })
       );
@@ -79,7 +77,7 @@ describe('API Keys API Module', () => {
         '/api/api-keys/usage-stats',
         expect.objectContaining({
           headers: expect.objectContaining({
-            'X-Authorization': 'Bearer test-token',
+            'Content-Type': 'application/json',
           }),
         })
       );

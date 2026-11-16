@@ -3,7 +3,7 @@
  * `/`, `?`, `#` or `..` cannot re-route a request to another endpoint (#134).
  */
 import { fetchMock } from './setup';
-import { clearAuth, setAuthToken } from '../api/client';
+import { clearAuth } from '../api/client';
 import { getGroup, deleteGroup } from '../api/groups';
 import { getPlan, patchPlan } from '../api/plans';
 import { getUser, deleteUser } from '../api/users';
@@ -19,7 +19,6 @@ describe('API path ids are encoded', () => {
   beforeEach(() => {
     fetchMock.mockReset();
     clearAuth();
-    setAuthToken('test-token');
     fetchMock.mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({}) });
   });
 

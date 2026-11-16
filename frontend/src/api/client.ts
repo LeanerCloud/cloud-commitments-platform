@@ -17,25 +17,16 @@ import {
 const API_BASE = '/api';
 
 // State for authentication
-// SECURITY: Tokens are stored in localStorage scoped to the dashboard origin
-// (issue #462). localStorage was chosen over sessionStorage so a second tab
-// opened on the same origin inherits the active session; admins need to
-// compare Settings vs. Opportunities side by side without re-authenticating.
-// Tradeoff: the XSS exposure window widens from "tab close" to "explicit
-// logout". Mitigations:
-//   - cross-tab logout via the `storage` event (signing out in one tab
-//     clears state and reloads the others within ~1s).
-//   - same-origin only; no third-party iframes have access.
-//   - HttpOnly session cookies remain the cleaner long-term option (see
-//     issue #462 discussion); that is a larger refactor and is tracked
-//     separately.
-let authToken = '';
-let apiKey = '';
+// SECURITY (issue #34, SUP-02): the session lives in an httpOnly cookie the
+// browser attaches by itself, so no credential is readable from script. Only
+// the CSRF token is held here, in memory, and is re-derived from GET
+// /api/auth/me after every page load. Nothing auth-related touches
+// localStorage or sessionStorage.
 let csrfToken = '';
+let authenticated = false;
 
-// Keys we mirror to/from localStorage. Listed once so the storage-event
-// listener and the migration block stay in sync.
-const STORAGE_KEYS = ['authToken', 'apiKey', 'csrfToken'] as const;
+// Keys older builds wrote tokens to; purged once on boot.
+const LEGACY_STORAGE_KEYS = ['authToken', 'apiKey', 'csrfToken'] as const;
 
 // Cross-tab sign-out: logout() in one tab tells the others to drop state.
 const LOGOUT_CHANNEL = 'cudly-auth';
@@ -43,7 +34,6 @@ const LOGOUT_CHANNEL = 'cudly-auth';
 // `storage` event it fires is the only signal, its value is never read.
 const LOGOUT_SIGNAL_KEY = 'cudly:logout-signal';
 
-let authenticated = false;
 let logoutListenerInstalled = false;
 let logoutChannel: BroadcastChannel | undefined;
 
@@ -69,43 +59,24 @@ export async function addContentHashHeader(headers: Record<string, string>, body
 }
 
 /**
- * Initialize authentication from localStorage.
- *
- * Issue #462: tokens were previously kept in sessionStorage so a fresh
- * tab on the same origin would force a re-login. We moved them to
- * localStorage to support multi-tab workflows. See the SECURITY comment
- * at the top of the module for the tradeoff and mitigations.
- *
- * Migration: any token still living in sessionStorage from the previous
- * release is copied into localStorage and then removed, so users stay
- * signed in across the upgrade.
+ * Boot-time setup: remove tokens that earlier builds left in web storage
+ * and start listening for a sign-out from another tab.
  */
 export function initAuth(): void {
-  // Migrate sessionStorage → localStorage for users upgrading from the
-  // pre-#462 build. Removes the sessionStorage entry afterwards.
-  for (const key of STORAGE_KEYS) {
-    const fromSession = sessionStorage.getItem(key);
-    if (fromSession && !localStorage.getItem(key)) {
-      localStorage.setItem(key, fromSession);
-    }
-    if (fromSession) {
+  for (const key of LEGACY_STORAGE_KEYS) {
+    try {
+      localStorage.removeItem(key);
       sessionStorage.removeItem(key);
+    } catch {
+      // Storage blocked (private mode, sandboxed iframe): nothing to purge.
     }
   }
-
-  authToken = localStorage.getItem('authToken') || '';
-  apiKey = localStorage.getItem('apiKey') || '';
-  csrfToken = localStorage.getItem('csrfToken') || '';
-
   installLogoutListener();
 }
 
-/**
- * Sync sign-out across tabs (issues #462, #34).
- */
 function handleRemoteLogout(): void {
   // A signed-out tab has nothing to drop and must not reload in a loop.
-  if (!authenticated && !authToken && !apiKey && !csrfToken) return;
+  if (!authenticated && !csrfToken) return;
   clearAuth();
   reloadPage();
 }
@@ -145,46 +116,10 @@ export function broadcastLogout(): void {
 }
 
 /**
- * Set authentication token
- */
-export function setAuthToken(token: string): void {
-  authToken = token;
-  if (token) {
-    localStorage.setItem('authToken', token);
-  } else {
-    localStorage.removeItem('authToken');
-  }
-}
-
-/**
- * Set CSRF token
+ * Set CSRF token (memory only)
  */
 export function setCsrfToken(token: string): void {
   csrfToken = token;
-  if (token) {
-    localStorage.setItem('csrfToken', token);
-  } else {
-    localStorage.removeItem('csrfToken');
-  }
-}
-
-/**
- * Set API key
- */
-export function setApiKey(key: string): void {
-  apiKey = key;
-  if (key) {
-    localStorage.setItem('apiKey', key);
-  } else {
-    localStorage.removeItem('apiKey');
-  }
-}
-
-/**
- * Check if user is authenticated
- */
-export function isAuthenticated(): boolean {
-  return authenticated || !!(authToken || apiKey);
 }
 
 /**
@@ -195,33 +130,27 @@ export function setAuthenticated(value: boolean): void {
 }
 
 /**
- * Clear all authentication state in this tab.
+ * Check if the server has accepted this page's session
  */
-export function clearAuth(): void {
-  authenticated = false;
-  authToken = '';
-  apiKey = '';
-  csrfToken = '';
-  for (const key of STORAGE_KEYS) {
-    localStorage.removeItem(key);
-    // Also clear any leftover sessionStorage entries from older builds.
-    sessionStorage.removeItem(key);
-  }
+export function isAuthenticated(): boolean {
+  return authenticated;
 }
 
 /**
- * Get auth headers for API requests
- * Note: Uses X-Authorization instead of Authorization because CloudFront OAC
- * signs requests with SigV4, which overwrites the Authorization header.
+ * Drop the in-memory session state. The cookie itself is cleared by the
+ * server on POST /api/auth/logout.
+ */
+export function clearAuth(): void {
+  csrfToken = '';
+  authenticated = false;
+}
+
+/**
+ * Headers for API requests. The session cookie is sent by the browser; only
+ * the CSRF token (needed on state-changing requests) is added here.
  */
 export function getAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (authToken) {
-    headers['X-Authorization'] = `Bearer ${authToken}`;
-  } else if (apiKey) {
-    headers['X-API-Key'] = apiKey;
-  }
-  // Include CSRF token for state-changing requests (added by caller as needed)
   if (csrfToken) {
     headers['X-CSRF-Token'] = csrfToken;
   }

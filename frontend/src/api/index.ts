@@ -81,9 +81,7 @@ export type {
 // Re-export client functions
 export {
   initAuth,
-  setAuthToken,
   setCsrfToken,
-  setApiKey,
   setAuthenticated,
   isAuthenticated,
   clearAuth,
