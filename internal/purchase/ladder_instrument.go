@@ -13,12 +13,15 @@ import (
 // LadderBuildInput is everything a builder may read. Evidence fields for
 // later instruments are added here, so builder signatures never change.
 type LadderBuildInput struct {
-	CloudAccountID string                 // cloud_accounts.id, not the 12-digit number.
-	Region         string                 // deployment region.
-	Tranche        config.LadderTrancheDB // read-only; Build never mutates it.
-	// StoredRecs is read before the claim for the EC2 Instance SP builder,
-	// which takes family identity and split weights from it, never amounts.
+	CloudAccountID string // cloud_accounts.id, not the 12-digit number.
+	Region         string // deployment region.
+	// RIUnits is the live per-reservation price of each stored RI shape, looked
+	// up before the claim (the claim does no I/O). Missing means fail closed.
+	RIUnits map[string]RIUnit
+	// StoredRecs is read before the claim for the EC2 Instance SP and RI
+	// builders, which take identity and split weights from it, never amounts.
 	StoredRecs []config.RecommendationRecord
+	Tranche    config.LadderTrancheDB // read-only; Build never mutates it.
 }
 
 // LadderInstrumentBuilder turns one claimed tranche into the records to buy.
@@ -36,6 +39,7 @@ func NewLadderInstrumentRegistry() *LadderInstrumentRegistry {
 	return &LadderInstrumentRegistry{builders: map[ladder.LayerType]LadderInstrumentBuilder{
 		ladder.LayerComputeSP:     buildComputeSPRecs,
 		ladder.LayerEC2InstanceSP: buildEC2InstanceSPRecs,
+		ladder.LayerConvertibleRI: buildConvertibleRIRecs,
 	}}
 }
 

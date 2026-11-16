@@ -34,7 +34,7 @@ func buildOne(t *testing.T, in LadderBuildInput) config.RecommendationRecord {
 }
 
 func TestLadderInstrument_Layers(t *testing.T) {
-	assert.Equal(t, []ladder.LayerType{ladder.LayerComputeSP, ladder.LayerEC2InstanceSP}, NewLadderInstrumentRegistry().Layers())
+	assert.Equal(t, []ladder.LayerType{ladder.LayerComputeSP, ladder.LayerConvertibleRI, ladder.LayerEC2InstanceSP}, NewLadderInstrumentRegistry().Layers())
 }
 
 func TestLadderInstrument_ComputeSPGoldenRecord(t *testing.T) {
