@@ -4,10 +4,8 @@
 import { localStorageMock, sessionStorageMock, fetchMock } from './setup';
 import {
   initAuth,
-  setAuthToken,
   setAuthenticated,
   setCsrfToken,
-  setApiKey,
   isAuthenticated,
   clearAuth,
   getAuthHeaders,
@@ -52,142 +50,70 @@ describe('Authentication', () => {
   beforeEach(() => {
     localStorageMock.getItem.mockReturnValue(null);
     sessionStorageMock.getItem.mockReturnValue(null);
+    localStorageMock.setItem.mockClear();
+    localStorageMock.removeItem.mockClear();
+    sessionStorageMock.removeItem.mockClear();
     clearAuth();
   });
 
   describe('initAuth', () => {
-    test('loads auth token from localStorage', () => {
-      // Issue #462: tokens live in localStorage so cross-tab sessions
-      // bootstrap from an existing login instead of forcing re-auth.
-      localStorageMock.getItem.mockImplementation((key: string) => {
-        if (key === 'authToken') return 'test-token';
-        return null;
-      });
+    test('purges legacy token keys from localStorage and sessionStorage', () => {
       initAuth();
-      expect(isAuthenticated()).toBe(true);
+      for (const key of ['authToken', 'apiKey', 'csrfToken']) {
+        expect(localStorageMock.removeItem).toHaveBeenCalledWith(key);
+        expect(sessionStorageMock.removeItem).toHaveBeenCalledWith(key);
+      }
     });
 
-    test('loads api key from localStorage', () => {
-      localStorageMock.getItem.mockImplementation((key: string) => {
-        if (key === 'apiKey') return 'test-key';
-        return null;
-      });
+    test('a stored legacy token no longer authenticates and is never copied', () => {
+      localStorageMock.getItem.mockImplementation((key: string) => (key === 'authToken' ? 'old' : null));
       initAuth();
-      expect(isAuthenticated()).toBe(true);
+      expect(isAuthenticated()).toBe(false);
+      expect(getAuthHeaders()['X-Authorization']).toBeUndefined();
+      expect(localStorageMock.setItem).not.toHaveBeenCalled();
     });
 
-    test('fresh tab inherits an existing valid session (issue #462)', () => {
-      // Simulate a second tab opened on the same origin: localStorage
-      // already carries a valid token written by the first tab. The
-      // bootstrap path must NOT prompt for login.
-      localStorageMock.getItem.mockImplementation((key: string) => {
-        if (key === 'authToken') return 'existing-session-token';
-        return null;
-      });
-      // Nothing in sessionStorage to migrate.
-      sessionStorageMock.getItem.mockReturnValue(null);
-      initAuth();
-      expect(isAuthenticated()).toBe(true);
-    });
-
-    test('migrates legacy sessionStorage entries to localStorage', () => {
-      // Users upgrading from the pre-#462 build had their token in
-      // sessionStorage. Migration copies it into localStorage and
-      // removes the sessionStorage entry so we don't re-migrate.
-      sessionStorageMock.getItem.mockImplementation((key: string) => {
-        if (key === 'authToken') return 'legacy-token';
-        return null;
-      });
-      initAuth();
-      expect(localStorageMock.setItem).toHaveBeenCalledWith('authToken', 'legacy-token');
-      expect(sessionStorageMock.removeItem).toHaveBeenCalledWith('authToken');
-    });
-  });
-
-  describe('setAuthToken', () => {
-    test('sets token and stores in localStorage', () => {
-      setAuthToken('new-token');
-      expect(localStorageMock.setItem).toHaveBeenCalledWith('authToken', 'new-token');
-      expect(isAuthenticated()).toBe(true);
-    });
-
-    test('clears token when empty', () => {
-      setAuthToken('');
-      expect(localStorageMock.removeItem).toHaveBeenCalledWith('authToken');
-    });
-  });
-
-  describe('setApiKey', () => {
-    test('sets key and stores in localStorage', () => {
-      setApiKey('new-key');
-      expect(localStorageMock.setItem).toHaveBeenCalledWith('apiKey', 'new-key');
-      expect(isAuthenticated()).toBe(true);
-    });
-
-    test('clears key when empty', () => {
-      setApiKey('');
-      expect(localStorageMock.removeItem).toHaveBeenCalledWith('apiKey');
+    test('blocked storage does not break boot', () => {
+      localStorageMock.removeItem.mockImplementationOnce(() => { throw new Error('denied'); });
+      expect(() => initAuth()).not.toThrow();
     });
   });
 
   describe('isAuthenticated', () => {
-    test('returns false when no credentials', () => {
+    test('is false until the server accepts the session', () => {
       expect(isAuthenticated()).toBe(false);
-    });
-
-    test('returns true with auth token', () => {
-      setAuthToken('token');
-      expect(isAuthenticated()).toBe(true);
-    });
-
-    test('returns true with api key', () => {
-      setApiKey('key');
+      setAuthenticated(true);
       expect(isAuthenticated()).toBe(true);
     });
   });
 
   describe('clearAuth', () => {
-    test('removes all credentials from localStorage and any legacy sessionStorage', () => {
-      setAuthToken('token');
-      setApiKey('key');
+    test('drops the in-memory session and CSRF token', () => {
+      setAuthenticated(true);
+      setCsrfToken('csrf');
       clearAuth();
-      expect(localStorageMock.removeItem).toHaveBeenCalledWith('authToken');
-      expect(localStorageMock.removeItem).toHaveBeenCalledWith('apiKey');
-      expect(localStorageMock.removeItem).toHaveBeenCalledWith('csrfToken');
-      // Also clears any legacy sessionStorage entries from older builds.
-      expect(sessionStorageMock.removeItem).toHaveBeenCalledWith('authToken');
-      expect(sessionStorageMock.removeItem).toHaveBeenCalledWith('apiKey');
-      expect(sessionStorageMock.removeItem).toHaveBeenCalledWith('csrfToken');
       expect(isAuthenticated()).toBe(false);
+      expect(getAuthHeaders()['X-CSRF-Token']).toBeUndefined();
     });
   });
 
   describe('getAuthHeaders', () => {
-    test('returns content-type with no auth', () => {
+    test('returns content-type only with no session', () => {
+      expect(getAuthHeaders()).toEqual({ 'Content-Type': 'application/json' });
+    });
+
+    test('includes the in-memory CSRF token and no credential header', () => {
+      setCsrfToken('csrf-1');
       const headers = getAuthHeaders();
-      expect(headers['Content-Type']).toBe('application/json');
+      expect(headers['X-CSRF-Token']).toBe('csrf-1');
       expect(headers['X-Authorization']).toBeUndefined();
       expect(headers['X-API-Key']).toBeUndefined();
     });
 
-    test('includes Bearer token when set', () => {
-      setAuthToken('my-token');
-      const headers = getAuthHeaders();
-      expect(headers['X-Authorization']).toBe('Bearer my-token');
-    });
-
-    test('includes API key when set', () => {
-      setApiKey('my-key');
-      const headers = getAuthHeaders();
-      expect(headers['X-API-Key']).toBe('my-key');
-    });
-
-    test('prefers auth token over api key', () => {
-      setAuthToken('token');
-      setApiKey('key');
-      const headers = getAuthHeaders();
-      expect(headers['X-Authorization']).toBe('Bearer token');
-      expect(headers['X-API-Key']).toBeUndefined();
+    test('never writes the CSRF token to web storage', () => {
+      setCsrfToken('csrf-1');
+      expect(localStorageMock.setItem).not.toHaveBeenCalled();
+      expect(sessionStorageMock.setItem).not.toHaveBeenCalled();
     });
   });
 });
@@ -346,8 +272,8 @@ describe('API Requests', () => {
       expect(call1.headers['x-amz-content-sha256']).toBe(call2.headers['x-amz-content-sha256']);
     });
 
-    test('includes auth headers', async () => {
-      setAuthToken('test-token');
+    test('sends the CSRF header and same-origin credentials, no bearer token', async () => {
+      setCsrfToken('test-csrf');
       fetchMock.mockResolvedValue({
         ok: true,
         json: () => Promise.resolve({})
@@ -358,7 +284,7 @@ describe('API Requests', () => {
         '/api/test',
         expect.objectContaining({
           headers: expect.objectContaining({
-            'X-Authorization': 'Bearer test-token'
+            'X-CSRF-Token': 'test-csrf'
           }),
           credentials: 'same-origin'
         })
@@ -498,8 +424,8 @@ describe('API Requests', () => {
   });
 
   describe('login', () => {
-    test('sends credentials and stores token', async () => {
-      mockSessionStart({ token: 'new-token' });
+    test('ignores the body token, keeps only the CSRF token in memory', async () => {
+      mockSessionStart({ token: 'new-token', csrf_token: 'csrf-new' }, { status: 200, body: { id: 'u', email: 'a@b.c', groups: [], csrf_token: 'csrf-new' } });
 
       await login('test@example.com', 'password');
 
@@ -511,9 +437,11 @@ describe('API Requests', () => {
           body: JSON.stringify({ email: 'test@example.com', password: btoa('password') })
         })
       );
-      // Issue #462: tokens are persisted to localStorage so a second
-      // tab on the same origin inherits the session.
-      expect(localStorageMock.setItem).toHaveBeenCalledWith('authToken', 'new-token');
+      expect(localStorageMock.setItem).not.toHaveBeenCalled();
+      expect(sessionStorageMock.setItem).not.toHaveBeenCalled();
+      expect(isAuthenticated()).toBe(true);
+      expect(getAuthHeaders()['X-CSRF-Token']).toBe('csrf-new');
+      expect(getAuthHeaders()['X-Authorization']).toBeUndefined();
     });
 
     test('a login whose cookie /auth/me rejects fails with the HTTPS hint and stays signed out', async () => {
@@ -657,7 +585,7 @@ describe('API Requests', () => {
       expect(fetchMock).toHaveBeenCalledWith('/api/auth/me', expect.anything());
     });
 
-    test('restores the CSRF token from /auth/me without leaking it onto the user', async () => {
+    test('restores the session and CSRF token from /auth/me without leaking it onto the user', async () => {
       fetchMock.mockResolvedValue({
         ok: true,
         json: () => Promise.resolve({ id: 'u1', email: 'a@b.c', groups: [], csrf_token: 'csrf-restored' })
@@ -665,21 +593,24 @@ describe('API Requests', () => {
 
       const user = await getCurrentUser();
 
+      expect(isAuthenticated()).toBe(true);
       expect(getAuthHeaders()['X-CSRF-Token']).toBe('csrf-restored');
       expect(user).not.toHaveProperty('csrf_token');
+      expect(localStorageMock.setItem).not.toHaveBeenCalled();
     });
 
-    test('a 200 without csrf_token fails loud', async () => {
+    test('a 200 without csrf_token fails loud and leaves the page signed out', async () => {
       fetchMock.mockResolvedValue({
         ok: true,
         json: () => Promise.resolve({ id: 'u1', email: 'a@b.c', groups: [] })
       });
 
       await expect(getCurrentUser()).rejects.toThrow('no CSRF token');
+      expect(isAuthenticated()).toBe(false);
       expect(getAuthHeaders()['X-CSRF-Token']).toBeUndefined();
     });
 
-    test('a 401 rejects', async () => {
+    test('a 401 rejects and leaves the page signed out', async () => {
       fetchMock.mockResolvedValue({
         ok: false,
         status: 401,
@@ -687,6 +618,7 @@ describe('API Requests', () => {
       });
 
       await expect(getCurrentUser()).rejects.toMatchObject({ status: 401 });
+      expect(isAuthenticated()).toBe(false);
     });
   });
 
@@ -789,8 +721,8 @@ describe('API Requests', () => {
   });
 
   describe('setupAdmin', () => {
-    test('creates admin and stores token', async () => {
-      mockSessionStart({ token: 'admin-token' });
+    test('creates admin and keeps only the CSRF token in memory', async () => {
+      mockSessionStart({ token: 'admin-token', csrf_token: 'csrf-admin' }, { status: 200, body: { id: 'u', email: 'a@b.c', groups: [], csrf_token: 'csrf-admin' } });
 
       await setupAdmin('api-key', 'admin@example.com', 'password');
 
@@ -803,9 +735,9 @@ describe('API Requests', () => {
           body: JSON.stringify({ email: 'admin@example.com', password: btoa('password') })
         })
       );
-      // Issue #462: tokens are persisted to localStorage so a second
-      // tab on the same origin inherits the session.
-      expect(localStorageMock.setItem).toHaveBeenCalledWith('authToken', 'admin-token');
+      expect(localStorageMock.setItem).not.toHaveBeenCalled();
+      expect(isAuthenticated()).toBe(true);
+      expect(getAuthHeaders()['X-CSRF-Token']).toBe('csrf-admin');
     });
 
     // Issue #748: a proxy 502 with an HTML body used to surface as

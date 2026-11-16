@@ -2,7 +2,7 @@
  * Authentication API functions
  */
 
-import { apiRequest, getAuthHeaders, setAuthToken, setAuthenticated, setCsrfToken, clearAuth, broadcastLogout, addContentHashHeader, base64Encode, getApiBase } from './client';
+import { apiRequest, getAuthHeaders, setAuthenticated, setCsrfToken, clearAuth, broadcastLogout, addContentHashHeader, base64Encode, getApiBase } from './client';
 import type {
   ApiError,
   LoginResponse,
@@ -50,8 +50,9 @@ function isMFALoginErrorCode(s: unknown): s is MFALoginErrorCode {
  * is expected to detect `MFALoginError` and re-submit with `mfaCode`
  * set rather than treating MFA as a hard failure (issue #497).
  *
- * On success: stores the session token + CSRF token via the client
- * module's setAuthToken / setCsrfToken side-effects. On failure:
+ * On success: the server has set the httpOnly session cookie; the client
+ * keeps only the CSRF token (memory). The body's `token` is for CLI/MCP
+ * callers and is ignored here. On failure:
  * throws `MFALoginError` for the two MFA sentinels, plain `Error`
  * for everything else.
  */
@@ -79,6 +80,7 @@ function acceptSession(csrf: string): void {
 
 const COOKIE_REJECTED_MESSAGE =
   'Signed in, but the browser did not keep the session cookie. Serve CUDly over HTTPS.';
+const LOGOUT_FAILED_MESSAGE = 'Sign out failed, please try again.';
 
 /**
  * Right after a login the cookie must come back on /auth/me. A browser that
@@ -96,7 +98,6 @@ async function verifySessionCookie(csrf: string | undefined): Promise<void> {
     throw err;
   }
 }
-const LOGOUT_FAILED_MESSAGE = 'Sign out failed, please try again.';
 
 async function postLogin(payload: Record<string, string>): Promise<LoginResponse> {
   const API_BASE = getApiBase();
@@ -123,7 +124,6 @@ async function postLogin(payload: Record<string, string>): Promise<LoginResponse
   }
 
   const data = await readJson<LoginResponse>(response);
-  setAuthToken(data.token);
   await verifySessionCookie(data.csrf_token);
   return data;
 }
@@ -356,7 +356,6 @@ export async function setupAdmin(key: string, email: string, password: string): 
   }
 
   const data = await readJson<LoginResponse>(response);
-  setAuthToken(data.token);
   await verifySessionCookie(data.csrf_token);
   return data;
 }
