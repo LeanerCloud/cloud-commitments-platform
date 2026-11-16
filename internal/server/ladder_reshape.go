@@ -15,11 +15,15 @@ import (
 type ladderReshapeRefusal string
 
 const (
-	ladderReshapeOK                ladderReshapeRefusal = ""
-	reshapeRefuseNoGlobal          ladderReshapeRefusal = "global config unavailable"
-	reshapeRefuseLadderingOff      ladderReshapeRefusal = "laddering_enabled is off"
-	reshapeRefuseExecutionOff      ladderReshapeRefusal = "ladder_execution_enabled is off"
-	reshapeRefuseExchangeOff       ladderReshapeRefusal = "ri_exchange_enabled is off"
+	ladderReshapeOK           ladderReshapeRefusal = ""
+	reshapeRefuseNoGlobal     ladderReshapeRefusal = "global config unavailable"
+	reshapeRefuseLadderingOff ladderReshapeRefusal = "laddering_enabled is off"
+	reshapeRefuseExecutionOff ladderReshapeRefusal = "ladder_execution_enabled is off"
+	reshapeRefuseExchangeOff  ladderReshapeRefusal = "ri_exchange_enabled is off"
+	// Stricter than the plan's four-eyes downgrade to manual: the fire gate
+	// refuses while require_different_approver is on too, so a reshape does
+	// too. Deliberate.
+	reshapeRefuseFourEyes          ladderReshapeRefusal = "require_different_approver is on (ladder reshapes have no approver)"
 	reshapeRefuseNoConfig          ladderReshapeRefusal = "ladder config unavailable"
 	reshapeRefuseConfigDisabled    ladderReshapeRefusal = "config is disabled"
 	reshapeRefuseProvider          ladderReshapeRefusal = "provider is not aws"
@@ -56,6 +60,8 @@ func ladderReshapeSwitchRefusal(g *config.GlobalConfig) ladderReshapeRefusal {
 		return reshapeRefuseExecutionOff
 	case !g.RIExchangeEnabled:
 		return reshapeRefuseExchangeOff
+	case g.RequireDifferentApprover:
+		return reshapeRefuseFourEyes
 	}
 	return ladderReshapeOK
 }
@@ -98,10 +104,6 @@ func ladderReshapeRunRefusal(run *config.LadderRunDB) ladderReshapeRefusal {
 // born live), approved, executing and completed keep the plan's reshape action
 // live. awaiting_approval is not yet approved; canceled, expired and failed
 // mean an operator stopped the run or it never took effect.
-//
-// The four-eyes downgrade (require_different_approver, refused by the fire gate
-// at ladder_fire_gate.go ladderSwitchRefusal) is deliberately not checked here:
-// S16b must enforce it, via fourEyesExchangeMode, before running a reshape.
 func ladderReshapeRunStatusAllowed(status pkgladder.RunStatus) bool {
 	switch status {
 	case pkgladder.RunStatusPlanned, pkgladder.RunStatusApproved,

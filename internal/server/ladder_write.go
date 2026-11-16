@@ -12,6 +12,7 @@ import (
 	awsprovider "github.com/LeanerCloud/cloud-commitments-go/providers/aws"
 	awsladder "github.com/LeanerCloud/cloud-commitments-go/providers/aws/ladder"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/api"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/ec2offered"
 )
 
@@ -55,17 +56,18 @@ func (a *exchangeRunnerAdapter) RunAutoExchange(ctx context.Context, cfg exchang
 	return a.run(ctx, cfg, clients, ladderRunID, dryRun)
 }
 
-// run applies the 4-eyes policy to cfg.Mode, lists convertible RIs and
-// utilization, converts them for the exchange package, then delegates to
-// exchange.RunAutoExchange. The ladder always asks for auto mode; under 4-eyes
-// it runs as manual, so exchanges wait for approval (issue #679). A global
-// config that cannot be read fails closed: the run stops before any AWS call.
+// run applies the exchange mode policy to cfg.Mode (ladderExchangeMode), lists
+// convertible RIs and utilization, converts them for the exchange package, then
+// delegates to exchange.RunAutoExchange. The ladder always asks for auto mode;
+// it runs as manual unless the global RIExchangeMode is auto and 4-eyes is off,
+// so exchanges otherwise wait for approval (issue #679). A global config that
+// cannot be read fails closed: the run stops before any AWS call.
 func (a *exchangeRunnerAdapter) run(ctx context.Context, cfg exchange.RIExchangeConfig, clients riExchangeClients, ladderRunID *string, dryRun bool) (*exchange.AutoExchangeResult, error) {
 	globalCfg, err := a.app.Config.GetGlobalConfig(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("exchangeRunnerAdapter: 4-eyes policy check: load global config: %w", err)
 	}
-	cfg.Mode = fourEyesExchangeMode(globalCfg, cfg.Mode)
+	cfg.Mode = ladderExchangeMode(globalCfg, cfg.Mode)
 
 	instances, err := clients.listConvertibleRIs(ctx)
 	if err != nil {
@@ -79,7 +81,7 @@ func (a *exchangeRunnerAdapter) run(ctx context.Context, cfg exchange.RIExchange
 	riInfos, utilInfos, riMetadata := convertForAutoExchange(instances, utilData)
 	store := newConfigExchangeStoreAdapter(a.app.Config)
 
-	return exchange.RunAutoExchange(ctx, exchange.RunAutoExchangeParams{
+	result, err := exchange.RunAutoExchange(ctx, exchange.RunAutoExchangeParams{
 		Store:                store,
 		ExchangeClient:       clients.exchangeClient,
 		LookupOffering:       clients.lookupOffering,
@@ -94,6 +96,30 @@ func (a *exchangeRunnerAdapter) run(ctx context.Context, cfg exchange.RIExchange
 		LadderRunID:          ladderRunID,
 		DryRun:               dryRun,
 	})
+	if err != nil {
+		return result, err
+	}
+	// ReshapeBuffer drops the per-exchange outcomes, so the adapter, which
+	// holds them, sends the same notice the standalone exchange path does.
+	notifyEmail := ""
+	if globalCfg != nil && globalCfg.NotificationEmail != nil {
+		notifyEmail = *globalCfg.NotificationEmail
+	}
+	a.app.sendExchangeNotification(ctx, result, notifyEmail)
+	return result, nil
+}
+
+// ladderExchangeMode is the mode a ladder reshape may run in. ReshapeBuffer
+// always asks for auto, which executes exchanges on the spot, so auto is kept
+// only when the operator also set the global RIExchangeMode to auto; any other
+// global mode, or a nil global config, runs as manual. The 4-eyes downgrade
+// applies on top, and the stricter of the two wins.
+func ladderExchangeMode(g *config.GlobalConfig, requested string) string {
+	auto := string(exchange.ExchangeModeAuto)
+	if g == nil || g.RIExchangeMode != auto || requested != auto {
+		return string(exchange.ExchangeModeManual)
+	}
+	return fourEyesExchangeMode(g, requested)
 }
 
 // planningCapability builds the capability ladder_run plans with. Planning never
@@ -102,6 +128,13 @@ func (a *exchangeRunnerAdapter) run(ctx context.Context, cfg exchange.RIExchange
 // real clients (#70). The returned error carries no config ID: the caller
 // already prefixes its log line with it.
 func (app *Application) planningCapability(ctx context.Context, region, accountID string) (pkgladder.LadderCapability, error) {
+	return app.ladderCapability(ctx, false, region, accountID)
+}
+
+// ladderCapability builds the capability for accountID and wires its write side
+// per executionEnabled. Only planningCapability (false) and runLadderReshape
+// (true) call it; TestLadderWriteSideTrueHasOneCaller pins that.
+func (app *Application) ladderCapability(ctx context.Context, executionEnabled bool, region, accountID string) (pkgladder.LadderCapability, error) {
 	if app.LadderCapabilityFactory == nil {
 		return nil, errors.New("LadderCapabilityFactory is nil (not wired)")
 	}
@@ -109,7 +142,7 @@ func (app *Application) planningCapability(ctx context.Context, region, accountI
 	if err != nil {
 		return nil, fmt.Errorf("failed to build ladder capability: %w", err)
 	}
-	return app.wireLadderWriteSide(ctx, false, region, accountID, capability)
+	return app.wireLadderWriteSide(ctx, executionEnabled, region, accountID, capability)
 }
 
 // bufferFractionSetter is implemented by *awsladder.AWSLadder. Without a call

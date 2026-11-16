@@ -50,6 +50,9 @@ func TestLadderReshapeEligible(t *testing.T) {
 		{"exchange off", func(g *config.GlobalConfig, _ *config.LadderConfigDB, _ **config.CloudAccount, _ *string, _ **config.LadderRunDB) {
 			g.RIExchangeEnabled = false
 		}, reshapeRefuseExchangeOff},
+		{"4-eyes on", func(g *config.GlobalConfig, _ *config.LadderConfigDB, _ **config.CloudAccount, _ *string, _ **config.LadderRunDB) {
+			g.RequireDifferentApprover = true
+		}, reshapeRefuseFourEyes},
 		{"config disabled", func(_ *config.GlobalConfig, c *config.LadderConfigDB, _ **config.CloudAccount, _ *string, _ **config.LadderRunDB) {
 			c.Enabled = false
 		}, reshapeRefuseConfigDisabled},

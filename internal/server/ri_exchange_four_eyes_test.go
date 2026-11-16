@@ -175,7 +175,7 @@ func TestExecuteRIExchangeReshape_FourEyesOffAutoStillExecutes(t *testing.T) {
 func TestExchangeRunnerAdapter_FourEyesDowngradesLadderReshape(t *testing.T) {
 	t.Parallel()
 	ctx := testutil.TestContext(t)
-	f := newFourEyesExchangeFixture(&config.GlobalConfig{RequireDifferentApprover: true}, nil)
+	f := newFourEyesExchangeFixture(&config.GlobalConfig{RIExchangeMode: "auto", RequireDifferentApprover: true}, nil)
 	adapter := &exchangeRunnerAdapter{
 		app:       &Application{Config: f.store},
 		region:    "us-east-1",
@@ -195,7 +195,7 @@ func TestExchangeRunnerAdapter_FourEyesDowngradesLadderReshape(t *testing.T) {
 func TestExchangeRunnerAdapter_FourEyesOffLadderStillExecutes(t *testing.T) {
 	t.Parallel()
 	ctx := testutil.TestContext(t)
-	f := newFourEyesExchangeFixture(&config.GlobalConfig{}, nil)
+	f := newFourEyesExchangeFixture(&config.GlobalConfig{RIExchangeMode: "auto"}, nil)
 	adapter := &exchangeRunnerAdapter{
 		app:       &Application{Config: f.store},
 		region:    "us-east-1",
@@ -208,6 +208,78 @@ func TestExchangeRunnerAdapter_FourEyesOffLadderStillExecutes(t *testing.T) {
 	assert.Equal(t, 1, f.executed)
 	assert.Equal(t, "auto", result.Mode)
 	assert.Len(t, result.Completed, 1)
+}
+
+// TestExchangeRunnerAdapter_GlobalModeNotAutoDowngradesLadderReshape: with
+// 4-eyes off the ladder's auto request must still wait for approval unless the
+// global RIExchangeMode is auto.
+func TestExchangeRunnerAdapter_GlobalModeNotAutoDowngradesLadderReshape(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"manual", "", "Auto"} {
+		t.Run("global mode "+mode, func(t *testing.T) {
+			t.Parallel()
+			f := newFourEyesExchangeFixture(&config.GlobalConfig{RIExchangeMode: mode}, nil)
+			adapter := &exchangeRunnerAdapter{
+				app:       &Application{Config: f.store},
+				region:    "us-east-1",
+				accountID: "123456789012",
+			}
+			ladderRunID := "ladder-run-1"
+
+			result, err := adapter.run(testutil.TestContext(t), ladderExchangeConfig(), f.clients, &ladderRunID, false)
+			require.NoError(t, err)
+			assertDowngradedToPending(t, f, result)
+		})
+	}
+}
+
+// TestExchangeRunnerAdapter_SendsExchangeNotification: ReshapeBuffer drops
+// the outcomes, so the adapter must send the pending-approval notice itself.
+func TestExchangeRunnerAdapter_SendsExchangeNotification(t *testing.T) {
+	t.Parallel()
+	notify := "ops@example.com"
+	f := newFourEyesExchangeFixture(&config.GlobalConfig{RIExchangeMode: "manual", NotificationEmail: &notify}, nil)
+	var gotRecipient string
+	sent := 0
+	adapter := &exchangeRunnerAdapter{
+		app: &Application{Config: f.store, Email: &mockEmailSender{
+			sendApprovalFunc: func(_ context.Context, d email.RIExchangeNotificationData) error {
+				sent++
+				gotRecipient = d.RecipientEmail
+				return nil
+			},
+		}},
+		region:    "us-east-1",
+		accountID: "123456789012",
+	}
+	ladderRunID := "ladder-run-1"
+
+	_, err := adapter.run(testutil.TestContext(t), ladderExchangeConfig(), f.clients, &ladderRunID, false)
+	require.NoError(t, err)
+	assert.Equal(t, 1, sent)
+	assert.Equal(t, notify, gotRecipient)
+}
+
+func TestLadderExchangeMode(t *testing.T) {
+	t.Parallel()
+	auto := &config.GlobalConfig{RIExchangeMode: "auto"}
+	tests := []struct {
+		name      string
+		cfg       *config.GlobalConfig
+		requested string
+		want      string
+	}{
+		{"nil global", nil, "auto", "manual"},
+		{"global manual", &config.GlobalConfig{RIExchangeMode: "manual"}, "auto", "manual"},
+		{"global empty", &config.GlobalConfig{}, "auto", "manual"},
+		{"requested manual", auto, "manual", "manual"},
+		{"requested empty", auto, "", "manual"},
+		{"auto and auto", auto, "auto", "auto"},
+		{"4-eyes on wins", &config.GlobalConfig{RIExchangeMode: "auto", RequireDifferentApprover: true}, "auto", "manual"},
+	}
+	for _, tc := range tests {
+		assert.Equal(t, tc.want, ladderExchangeMode(tc.cfg, tc.requested), tc.name)
+	}
 }
 
 // TestExchangeRunnerAdapter_PolicyLookupErrorFailsClosed: an unreadable
