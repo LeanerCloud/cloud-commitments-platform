@@ -191,7 +191,9 @@ type guardedKeySet struct {
 // go-oidc fails, the kid is cached if a fresh fetch confirmed it unknown.
 func (k *guardedKeySet) VerifySignature(ctx context.Context, rawJWT string) ([]byte, error) {
 	arrival := k.g.observer.started.Load()
-	jws, err := jose.ParseSigned(rawJWT, k.g.algs)
+	// An ID token is a compact JWS. This deliberately rejects the JSON serialization,
+	// which go-oidc would still accept.
+	jws, err := jose.ParseSignedCompact(rawJWT, k.g.algs)
 	if err != nil {
 		return nil, fmt.Errorf("malformed jwt: %w", err)
 	}
