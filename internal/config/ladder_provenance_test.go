@@ -233,3 +233,10 @@ func TestRequireLadderCommitmentBasis(t *testing.T) {
 		})
 	}
 }
+
+func TestNewLadderInFlightRow_CopiesFamily(t *testing.T) {
+	od := LadderAmountOnDemand
+	row, err := newLadderInFlightRow("1", &LadderTrancheDB{AmountBasis: &od, Family: "m5"})
+	require.NoError(t, err)
+	require.Equal(t, "m5", row.Family)
+}

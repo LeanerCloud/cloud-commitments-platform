@@ -22,7 +22,7 @@ WITH scoped AS (
  SELECT t.id, t.run_id, t.config_id, t.layer_type, t.term, t.payment_option,
         t.status, r.status AS run_status, t.execution_id, t.revision,
         t.amount_usd_hr::text AS amount_usd_hr, t.amount_basis, t.commitment_rate,
-        t.scheduled_date, t.created_at
+        t.scheduled_date, t.created_at, t.family
  FROM ladder_tranches t
  JOIN ladder_configs c ON c.id = t.config_id
  JOIN ladder_runs r ON r.id = t.run_id AND r.config_id = c.id

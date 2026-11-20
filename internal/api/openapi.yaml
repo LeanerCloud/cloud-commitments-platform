@@ -9871,6 +9871,9 @@ components:
         layer_type:
           type: string
           enum: [ec2-instance-sp, compute-sp, convertible-ri, azure-reservation, azure-savings-plan]
+        family:
+          type: string
+          description: EC2 instance family of an ec2-instance-sp tranche. Omitted for other layers and for rows written before family-aware tranches.
         term:
           type: string
           enum: [1yr, 3yr]

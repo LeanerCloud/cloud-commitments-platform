@@ -23,6 +23,7 @@ type LadderTimelineEvent struct {
 	ExecutionID    *string              `json:"execution_id,omitempty"`
 	CommitmentRate *string              `json:"commitment_rate,omitempty"`
 	RunID          string               `json:"run_id"`
+	Family         string               `json:"family,omitempty"`
 	AmountUSDHr    string               `json:"amount_usd_hr"`
 	ConfigID       string               `json:"config_id"`
 	ID             string               `json:"id"`

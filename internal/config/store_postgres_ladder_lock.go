@@ -187,7 +187,7 @@ func inFlightLadderRows(ctx context.Context, q dbConn, assumeOD bool, configID s
 }
 
 func ladderNettingRows(ctx context.Context, q dbConn, assumeOD bool, predicate string, args ...any) ([]LadderInFlightRow, error) {
-	rows, err := q.Query(ctx, "SELECT id,layer_type,amount_usd_hr::text,amount_basis,commitment_rate FROM ladder_tranches WHERE config_id=$1 AND ("+predicate+")", args...)
+	rows, err := q.Query(ctx, "SELECT id,layer_type,amount_usd_hr::text,amount_basis,commitment_rate,family FROM ladder_tranches WHERE config_id=$1 AND ("+predicate+")", args...)
 	if err != nil {
 		return nil, fmt.Errorf("read ladder netting rows: %w", err)
 	}
@@ -196,7 +196,7 @@ func ladderNettingRows(ctx context.Context, q dbConn, assumeOD bool, predicate s
 	for rows.Next() {
 		var tr LadderTrancheDB
 		var amount string
-		if err := rows.Scan(&tr.ID, &tr.LayerType, &amount, &tr.AmountBasis, &tr.CommitmentRate); err != nil {
+		if err := rows.Scan(&tr.ID, &tr.LayerType, &amount, &tr.AmountBasis, &tr.CommitmentRate, &tr.Family); err != nil {
 			return nil, err
 		}
 		trp := &tr

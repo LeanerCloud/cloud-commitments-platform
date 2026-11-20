@@ -109,6 +109,7 @@ func nettingFloat(total *big.Rat) (float64, error) {
 type LadderInFlightRow struct {
 	exactOD              *big.Rat // set by the store so legacy totals stay bit-identical to the exact sum
 	Layer                ladder.LayerType
+	Family               string // EC2 instance family; empty for legacy rows and non-EC2-SP layers
 	CommitmentUSDPerHour float64
 	Rate                 float64
 }
@@ -151,7 +152,7 @@ func newLadderInFlightRow(amount string, tr *LadderTrancheDB) (LadderInFlightRow
 		rateDown = math.Nextafter(rateDown, 0)
 	}
 	rateDown = max(rateDown, math.SmallestNonzeroFloat64)
-	return LadderInFlightRow{Layer: tr.LayerType, CommitmentUSDPerHour: commitmentUp, Rate: rateDown, exactOD: od}, nil
+	return LadderInFlightRow{Layer: tr.LayerType, Family: tr.Family, CommitmentUSDPerHour: commitmentUp, Rate: rateDown, exactOD: od}, nil
 }
 
 func (r LadderInFlightRow) onDemand() (*big.Rat, error) {
