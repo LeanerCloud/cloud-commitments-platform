@@ -263,3 +263,28 @@ func TestApplyPlanScheduleCommandDropsSuppressionsOfReplacedRoot(t *testing.T) {
 	require.NoError(t, f.store.db.QueryRow(ctx, `SELECT count(*) FROM purchase_suppressions WHERE execution_id=$1`, old.ExecutionID).Scan(&n))
 	require.Equal(t, 0, n)
 }
+
+func TestApplyPlanScheduleCommandKeepsOtherExecutionsSuppressions(t *testing.T) {
+	ctx := context.Background()
+	f, old, plan := managedRootFixture(ctx, t, "pending")
+	other := f.row(ctx, t, 3, nil, "pending")
+	insert := func(executionID, resourceType string) {
+		_, err := f.store.db.Exec(ctx, `INSERT INTO purchase_suppressions
+			(execution_id, account_id, provider, service, region, resource_type, suppressed_count, expires_at)
+			VALUES ($1, 'a', 'aws', 'ec2', 'us-east-1', $2, 1, NOW() + interval '1 day')`, executionID, resourceType)
+		require.NoError(t, err)
+	}
+	insert(old.ExecutionID, "m5.large")
+	insert(old.ExecutionID, "m5.xlarge")
+	insert(other.ExecutionID, "c5.large")
+
+	_, err := f.store.ApplyPlanScheduleCommand(ctx, rootCommand(plan, time.Now().AddDate(0, 0, 9)))
+	require.NoError(t, err)
+
+	count := func(executionID string) (n int) {
+		require.NoError(t, f.store.db.QueryRow(ctx, `SELECT count(*) FROM purchase_suppressions WHERE execution_id=$1`, executionID).Scan(&n))
+		return n
+	}
+	require.Equal(t, 0, count(old.ExecutionID), "every suppression of the replaced root goes")
+	require.Equal(t, 1, count(other.ExecutionID), "another execution's suppression stays")
+}
