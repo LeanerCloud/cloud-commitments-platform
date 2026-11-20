@@ -39,7 +39,7 @@ func (s *PostgresStore) ListDueLadderTranches(ctx context.Context, configID stri
 	}
 	rows, err := s.db.Query(ctx, `
 		SELECT id, config_id, run_id, layer_type, amount_usd_hr, term,
-		       payment_option, scheduled_date, status, settled_at, created_at, amount_basis, commitment_rate,
+		       payment_option, scheduled_date, status, settled_at, created_at, amount_basis, commitment_rate, family,
 		       COALESCE(`+ladderClaimablePredicateSQL+`, false)
 		FROM ladder_tranches
 		WHERE config_id = $1
@@ -60,7 +60,7 @@ func (s *PostgresStore) ListDueLadderTranches(ctx context.Context, configID stri
 		var d LadderDueRow
 		tr := &d.Tranche
 		if err := rows.Scan(&tr.ID, &tr.ConfigID, &tr.RunID, &tr.LayerType, &tr.AmountUSDHr, &tr.Term,
-			&tr.PaymentOption, &tr.ScheduledDate, &tr.Status, &tr.SettledAt, &tr.CreatedAt, &tr.AmountBasis, &tr.CommitmentRate, &d.SQLClaimable); err != nil {
+			&tr.PaymentOption, &tr.ScheduledDate, &tr.Status, &tr.SettledAt, &tr.CreatedAt, &tr.AmountBasis, &tr.CommitmentRate, &tr.Family, &d.SQLClaimable); err != nil {
 			return nil, fmt.Errorf("failed to scan due ladder_tranche: %w", err)
 		}
 		out = append(out, d)

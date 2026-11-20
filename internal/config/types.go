@@ -1734,6 +1734,9 @@ type LadderTrancheDB struct {
 	// Nil basis preserves unproven history; native rates are lossless rational text.
 	AmountBasis    *LadderAmountBasis `json:"amount_basis,omitempty"`
 	CommitmentRate *string            `json:"commitment_rate,omitempty"`
+	// Family is the EC2 instance family a tranche is allocated to; empty means
+	// no family (legacy rows and every layer except EC2 Instance SP).
+	Family string `json:"family,omitempty"`
 	// Nullable FK pointers.
 	ConfigID *string `json:"config_id,omitempty"`
 	// Required fields.
