@@ -2,7 +2,6 @@ package server
 
 import (
 	"encoding/json"
-	"sort"
 	"testing"
 	"time"
 
@@ -135,10 +134,5 @@ func TestExecuteLadderRun_InFlightFamilyNetsPerFamily(t *testing.T) {
 		{Layer: pkgladder.LayerEC2InstanceSP, CommitmentUSDPerHour: 6, Rate: 1},
 	})
 	legacy := trancheAmountsByFamily(noFamily.savedTranches)
-	families := make([]string, 0, len(legacy))
-	for f := range legacy {
-		families = append(families, f)
-	}
-	sort.Strings(families)
-	assert.NotEqual(t, got, legacy, "a family-less in-flight row nets by share, so the split differs (families %v)", families)
+	assert.NotEqual(t, got, legacy, "a family-less in-flight row nets by share, so the split differs")
 }
