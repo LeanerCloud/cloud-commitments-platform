@@ -1234,8 +1234,8 @@ func TestImmediateTrancheAmounts_SumsStoredAmounts(t *testing.T) {
 	}, now)
 	require.NoError(t, err)
 	require.Len(t, sums, 1, "a layer whose immediate amount floors to 0 has no entry")
-	require.NotNil(t, sums[pkgladder.LayerComputeSP])
-	assert.Equal(t, "0.666666", sums[pkgladder.LayerComputeSP].FloatString(6), "two floored 1/3 tranches, not 2/3")
+	require.NotNil(t, sums[ladderAmountKey{layer: pkgladder.LayerComputeSP}])
+	assert.Equal(t, "0.666666", sums[ladderAmountKey{layer: pkgladder.LayerComputeSP}].FloatString(6), "two floored 1/3 tranches, not 2/3")
 
 	_, err = immediateTrancheAmounts([]pkgladder.Tranche{
 		flooringTestTranche("tr-zero", pkgladder.LayerComputeSP, "0", now),

@@ -431,7 +431,7 @@ func (p *ladderRunPlanner) plan(rows []config.LadderInFlightRow) (*config.Ladder
 	// Allocate rejects a row on a layer outside Layers, so it cannot be silently un-netted.
 	inFlight := make([]pkgladder.InFlightTranche, len(rows))
 	for i, r := range rows {
-		inFlight[i] = pkgladder.InFlightTranche{Layer: r.Layer, CommitmentUSDPerHour: r.CommitmentUSDPerHour, Rate: r.Rate}
+		inFlight[i] = pkgladder.InFlightTranche{Layer: r.Layer, Family: r.Family, CommitmentUSDPerHour: r.CommitmentUSDPerHour, Rate: r.Rate}
 	}
 	allocResult, err := pkgladder.Allocate(&pkgladder.AllocationInput{
 		Now:             p.now,
@@ -647,7 +647,7 @@ func assembleLadderPlan(
 	scope pkgladder.Scope,
 	now time.Time,
 	allocResult *pkgladder.AllocateResult,
-	immediate map[pkgladder.LayerType]*big.Rat,
+	immediate map[ladderAmountKey]*big.Rat,
 	baseline pkgladder.UsageBaseline,
 	targetCoveragePct float64,
 	term pkgladder.Term,
@@ -660,13 +660,14 @@ func assembleLadderPlan(
 	// immediate step has no purchase action. The plan is display only; the sole
 	// purchase path is tranche -> purchase_executions (not built yet).
 	for _, alloc := range allocResult.Allocations {
-		amount := immediate[alloc.Layer]
+		amount := immediate[ladderAmountKey{layer: alloc.Layer, family: alloc.Family}]
 		if amount == nil {
 			continue
 		}
 		actions = append(actions, pkgladder.PlannedAction{
 			Action:           pkgladder.ActionPurchase,
 			Layer:            alloc.Layer,
+			Family:           alloc.Family,
 			AmountUSDPerHour: amount,
 			Term:             term,
 			PaymentOption:    paymentOpt,
@@ -790,34 +791,6 @@ func storedTrancheAmount(tr *pkgladder.Tranche) (amount *big.Rat, stored bool, e
 	return floored, floored.Sign() > 0, nil
 }
 
-// immediateTrancheAmounts sums, per layer, the tranches that fire at the run
-// start (FireAfter <= now: the AfterDays==0 ramp step). It sums the stored
-// (floored) amounts, so the display plan never shows more than the persisted
-// rows, and skips the tranches buildTrancheDBRows drops; a layer whose
-// immediate tranches all floor to zero has no entry. It fails loud on a
-// malformed or non-positive amount, like buildTrancheDBRows.
-func immediateTrancheAmounts(tranches []pkgladder.Tranche, now time.Time) (map[pkgladder.LayerType]*big.Rat, error) {
-	sums := make(map[pkgladder.LayerType]*big.Rat)
-	for i := range tranches {
-		tr := &tranches[i]
-		if tr.FireAfter.After(now) {
-			continue
-		}
-		r, stored, err := storedTrancheAmount(tr)
-		if err != nil {
-			return nil, err
-		}
-		if !stored {
-			continue
-		}
-		if sums[tr.Layer] == nil {
-			sums[tr.Layer] = new(big.Rat)
-		}
-		sums[tr.Layer].Add(sums[tr.Layer], r)
-	}
-	return sums, nil
-}
-
 // buildTrancheDBRows converts pkg/ladder Tranche rows to config.LadderTrancheDB
 // rows ready for SaveLadderTranches. It fails loud on a malformed or
 // non-positive AmountUSDPerHour (money path): rather than persist a silently
@@ -853,6 +826,7 @@ func buildTrancheDBRows(tranches []pkgladder.Tranche, runID string, configID *st
 			ConfigID:       configID,
 			RunID:          &runIDCopy,
 			LayerType:      tr.Layer,
+			Family:         tr.Family,
 			Term:           tr.Term,
 			PaymentOption:  tr.PaymentOption,
 			Status:         pkgladder.TrancheStatusScheduled,
@@ -871,6 +845,7 @@ func buildTrancheDBRows(tranches []pkgladder.Tranche, runID string, configID *st
 type ladderPlanJSONAction struct {
 	Action        string   `json:"action"`
 	Layer         string   `json:"layer"`
+	Family        string   `json:"family,omitempty"`
 	AmountUSDHr   *float64 `json:"amount_usd_hr,omitempty"` // nil for Hold/Reshape
 	Term          string   `json:"term,omitempty"`
 	PaymentOption string   `json:"payment_option,omitempty"`
@@ -904,6 +879,7 @@ func marshalLadderPlan(plan *pkgladder.LadderPlan, reasonCode string) (json.RawM
 		action := ladderPlanJSONAction{
 			Action:        string(a.Action),
 			Layer:         string(a.Layer),
+			Family:        a.Family,
 			AmountUSDHr:   ratToFloat64Ptr(a.AmountUSDPerHour),
 			Term:          string(a.Term),
 			PaymentOption: string(a.PaymentOption),
