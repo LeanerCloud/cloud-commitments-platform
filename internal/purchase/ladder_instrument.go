@@ -78,7 +78,7 @@ func checkBuildInput(in LadderBuildInput) error {
 	if in.Tranche.Status != ladder.TrancheStatusScheduled || in.Tranche.ExecutionID != nil {
 		return fmt.Errorf("ladder tranche %s: not a scheduled tranche without an execution", in.Tranche.ID)
 	}
-	return nil
+	return checkTrancheFamily(&in.Tranche)
 }
 
 // computeSPInputs validates the tranche fields the Compute SP record is

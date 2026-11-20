@@ -136,11 +136,16 @@ func splitEC2SPHourly(total float64, fams []ec2SPFamily) ([]ec2SPFamily, error) 
 }
 
 // buildEC2InstanceSPRecs builds one EC2 Instance Savings Plan record per family.
+// A tranche with a Family is family-bound and buys exactly one record; an empty
+// Family is a legacy row and is split by the stored recs' weights.
 // Empty OfferingID makes the client look the offering up per family and region.
 func buildEC2InstanceSPRecs(in LadderBuildInput) ([]config.RecommendationRecord, error) {
 	years, total, err := computeSPInputs(in)
 	if err != nil {
 		return nil, fmt.Errorf("ladder tranche %s: %w", in.Tranche.ID, err)
+	}
+	if in.Tranche.Family != "" {
+		return buildFamilyBoundEC2SPRecs(in, years, total)
 	}
 	fams := ec2SPFamilyWeights(in, years)
 	if len(fams) == 0 {
@@ -152,30 +157,39 @@ func buildEC2InstanceSPRecs(in LadderBuildInput) ([]config.RecommendationRecord,
 	}
 	recs := make([]config.RecommendationRecord, 0, len(parts))
 	for _, p := range parts {
-		details, err := common.MarshalServiceDetails(&common.SavingsPlanDetails{
-			PlanType:         string(sptypes.SavingsPlanTypeEc2Instance),
-			InstanceFamily:   p.family,
-			Region:           in.Region,
-			HourlyCommitment: p.hourly,
-		})
+		rec, err := newEC2SPRec(in, years, p.family, p.hourly)
 		if err != nil {
 			return nil, err
 		}
-		monthly := spMonthlyCost(p.hourly, years)
-		recs = append(recs, config.RecommendationRecord{
-			Provider:           string(common.ProviderAWS),
-			Service:            string(common.ServiceSavingsPlansEC2Instance),
-			Region:             in.Region,
-			ResourceType:       "ec2-instance-sp",
-			Details:            details,
-			Count:              1,
-			Term:               years,
-			Payment:            string(in.Tranche.PaymentOption),
-			MonthlyCost:        &monthly,
-			CommitmentCurrency: "USD",
-			Selected:           true,
-			CloudAccountID:     &in.CloudAccountID,
-		})
+		recs = append(recs, rec)
 	}
 	return recs, nil
+}
+
+// newEC2SPRec builds one EC2 Instance Savings Plan record for a family.
+func newEC2SPRec(in LadderBuildInput, years int, family string, hourly float64) (config.RecommendationRecord, error) {
+	details, err := common.MarshalServiceDetails(&common.SavingsPlanDetails{
+		PlanType:         string(sptypes.SavingsPlanTypeEc2Instance),
+		InstanceFamily:   family,
+		Region:           in.Region,
+		HourlyCommitment: hourly,
+	})
+	if err != nil {
+		return config.RecommendationRecord{}, err
+	}
+	monthly := spMonthlyCost(hourly, years)
+	return config.RecommendationRecord{
+		Provider:           string(common.ProviderAWS),
+		Service:            string(common.ServiceSavingsPlansEC2Instance),
+		Region:             in.Region,
+		ResourceType:       "ec2-instance-sp",
+		Details:            details,
+		Count:              1,
+		Term:               years,
+		Payment:            string(in.Tranche.PaymentOption),
+		MonthlyCost:        &monthly,
+		CommitmentCurrency: "USD",
+		Selected:           true,
+		CloudAccountID:     &in.CloudAccountID,
+	}, nil
 }
