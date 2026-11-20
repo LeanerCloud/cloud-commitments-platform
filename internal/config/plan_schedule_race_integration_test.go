@@ -65,7 +65,8 @@ func requireOneWinner(t *testing.T, errs [2]error) (winner int) {
 func TestApplyPlanScheduleCommandRaceOneWinnerOneConflict(t *testing.T) {
 	for name, maxConns := range map[string]int32{"default pool": 10, "pool of two": 2} {
 		t.Run(name, func(t *testing.T) {
-			ctx := context.Background()
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
 			f, old, plan := managedRootFixture(ctx, t, "pending")
 			store := racingStore(ctx, t, f, maxConns)
 			base := time.Now().UTC().Truncate(24 * time.Hour)
