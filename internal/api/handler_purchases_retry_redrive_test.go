@@ -117,6 +117,13 @@ func purchasesFiredByRetry(t *testing.T, failed *config.PurchaseExecution, req *
 // the cloud.
 func executeRedriveSuccessor(t *testing.T, successor *config.PurchaseExecution) []string {
 	t.Helper()
+	return runSuccessorThroughManager(t, successor).purchasedTokens()
+}
+
+// runSuccessorThroughManager is executeRedriveSuccessor returning the
+// recording service client, so callers can assert on what was bought.
+func runSuccessorThroughManager(t *testing.T, successor *config.PurchaseExecution) *fanoutServiceClient {
+	t.Helper()
 
 	pending := *successor
 	running := pending
@@ -152,7 +159,7 @@ func executeRedriveSuccessor(t *testing.T, successor *config.PurchaseExecution) 
 	require.NoError(t, err,
 		"the successor must execute cleanly; a non-nil error would make the purchase tally meaningless")
 
-	return svc.purchasedTokens()
+	return svc
 }
 
 // assertRedriveRefused asserts the shape of the refusal the retry endpoint

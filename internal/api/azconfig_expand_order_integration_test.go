@@ -87,7 +87,7 @@ func exerciseNewCode(ctx context.Context, t *testing.T, store *config.PostgresSt
 		Provider: "aws", Service: "rds", Region: "us-east-1", ResourceType: "db.r5.large", Engine: "mysql",
 		Term: 1, Payment: "all-upfront", Count: 1, Details: rdsDetails(priced),
 	}}
-	require.NoError(t, h.priceRecommendationsFromStore(ctx, req), "purchase pricing index lookup")
+	require.NoError(t, h.priceRecommendationsFromStore(ctx, req, 100), "purchase pricing index lookup")
 	assert.Equal(t, wantUpfront, req[0].UpfrontCost)
 }
 

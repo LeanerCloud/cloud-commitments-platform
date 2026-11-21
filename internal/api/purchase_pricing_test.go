@@ -506,7 +506,7 @@ func TestPriceFromStored_ScalesByCountAndKeepsStoredIdentity(t *testing.T) {
 
 	t.Run("ratio 0.5 with nil MonthlyCost stays nil", func(t *testing.T) {
 		req := config.RecommendationRecord{Count: 2, RecommendedCount: 4, Selected: true}
-		out, err := priceFromStored(&req, &stored, 0)
+		out, err := priceFromStored(&req, &stored, 0, 100)
 		require.NoError(t, err)
 		assert.Equal(t, 500.0, out.UpfrontCost)
 		assert.Equal(t, 50.0, out.Savings)
@@ -517,7 +517,7 @@ func TestPriceFromStored_ScalesByCountAndKeepsStoredIdentity(t *testing.T) {
 
 	t.Run("ratio 1 reproduces stored values exactly", func(t *testing.T) {
 		req := config.RecommendationRecord{Count: 4, RecommendedCount: 4, Selected: true}
-		out, err := priceFromStored(&req, &stored, 0)
+		out, err := priceFromStored(&req, &stored, 0, 100)
 		require.NoError(t, err)
 		assert.Equal(t, stored.UpfrontCost, out.UpfrontCost)
 		assert.Equal(t, stored.Savings, out.Savings)
@@ -527,7 +527,7 @@ func TestPriceFromStored_ScalesByCountAndKeepsStoredIdentity(t *testing.T) {
 
 	t.Run("Selected and RecommendedCount come from the request", func(t *testing.T) {
 		req := config.RecommendationRecord{Count: 4, RecommendedCount: 8, Selected: false}
-		out, err := priceFromStored(&req, &stored, 0)
+		out, err := priceFromStored(&req, &stored, 0, 100)
 		require.NoError(t, err)
 		assert.Equal(t, 8, out.RecommendedCount)
 		assert.False(t, out.Selected)
@@ -538,7 +538,7 @@ func TestPriceFromStored_ScalesByCountAndKeepsStoredIdentity(t *testing.T) {
 			Count: 4, RecommendedCount: 4, Selected: true,
 			Purchased: true, PurchaseID: "req-purchase-id", Error: "req-error",
 		}
-		out, err := priceFromStored(&req, &stored, 0)
+		out, err := priceFromStored(&req, &stored, 0, 100)
 		require.NoError(t, err)
 		assert.Equal(t, "stored-id", out.ID)
 		assert.Equal(t, string(stored.Details), string(out.Details))
@@ -1206,7 +1206,7 @@ func TestAzureCommitmentUnitsRegression(t *testing.T) {
 	stored.Savings = 50
 	req := stored
 	req.Count = 2
-	priced, err := priceFromStored(&req, &stored, 0)
+	priced, err := priceFromStored(&req, &stored, 0, 100)
 	require.NoError(t, err)
 	assert.Equal(t, 7200.0, priced.UpfrontCost)
 	assert.Equal(t, 20.0, *priced.MonthlyCost)

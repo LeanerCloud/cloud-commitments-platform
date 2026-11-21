@@ -67,7 +67,7 @@ func TestPriceRecommendationsFromStore_PricesFromRequestedPlatformAndTenancy(t *
 				Provider: "aws", Service: "ec2", Region: "us-east-1", ResourceType: "m5.large",
 				Term: 1, Payment: "all-upfront", Count: 1, Details: ec2Details(want.platform, want.tenancy),
 			}}
-			require.NoError(t, h.priceRecommendationsFromStore(context.Background(), req))
+			require.NoError(t, h.priceRecommendationsFromStore(context.Background(), req, 100))
 			assert.Equal(t, want.upfront, req[0].UpfrontCost)
 		})
 	}
@@ -85,7 +85,7 @@ func TestPriceRecommendationsFromStore_RequestWithoutDetailsRefusedForEC2(t *tes
 		Provider: "aws", Service: "ec2", Region: "us-east-1", ResourceType: "m5.large",
 		Term: 1, Payment: "all-upfront", Count: 1,
 	}}
-	err := h.priceRecommendationsFromStore(context.Background(), req)
+	err := h.priceRecommendationsFromStore(context.Background(), req, 100)
 	require.Error(t, err)
 	ce, isClient := IsClientError(err)
 	require.True(t, isClient)

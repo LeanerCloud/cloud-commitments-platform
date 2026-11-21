@@ -174,7 +174,7 @@ func TestRecommendationIdentity_CollectionPostgresDetailAndPricing(t *testing.T)
 				request := target
 				request.ID, request.UpfrontCost = base.ID, 1 // Details stay: the modal echoes them and platform/tenancy are part of the identity key
 				priced := []config.RecommendationRecord{request}
-				if assert.NoError(t, h.priceRecommendationsFromStore(ctx, priced)) {
+				if assert.NoError(t, h.priceRecommendationsFromStore(ctx, priced, 100)) {
 					assert.Equal(t, account.ID, *priced[0].CloudAccountID)
 					assert.Equal(t, target.UpfrontCost, priced[0].UpfrontCost)
 					assert.Equal(t, target.Count, priced[0].Count)
@@ -183,11 +183,11 @@ func TestRecommendationIdentity_CollectionPostgresDetailAndPricing(t *testing.T)
 			}
 			mismatch := base
 			mismatch.Term = 3
-			err = h.priceRecommendationsFromStore(ctx, []config.RecommendationRecord{mismatch})
+			err = h.priceRecommendationsFromStore(ctx, []config.RecommendationRecord{mismatch}, 100)
 			assert.ErrorContains(t, err, "not in the current recommendation set")
 			stale := base
 			stale.ID = "stale-before-refresh"
-			err = h.priceRecommendationsFromStore(ctx, []config.RecommendationRecord{stale})
+			err = h.priceRecommendationsFromStore(ctx, []config.RecommendationRecord{stale}, 100)
 			clientErr, ok := IsClientError(err)
 			require.True(t, ok)
 			assert.Equal(t, 409, clientErr.code)

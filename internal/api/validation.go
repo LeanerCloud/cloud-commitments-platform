@@ -729,15 +729,15 @@ func paymentAdjustmentFor(idx int, provider, service, requested, applied string)
 // any rec where the scaled Count doesn't match. Recs that don't carry a
 // RecommendedCount (0 / absent: legacy callers, single-rec full-capacity
 // purchases, retry replays) are skipped — the field is opt-in, so its absence
-// means "no claim to verify" rather than a failure. capacityPercent is the
-// already-defaulted/bounded value (1..100) from validateExecutePurchaseRequest.
+// means "no claim to verify" rather than a failure. Savings Plans rows are
+// skipped too: their count is the placeholder 1 and capacity_percent scales
+// the hourly commitment server-side (priceFromStored, #1959).
+// capacityPercent is the already-defaulted/bounded value (1..100) from
+// validateExecutePurchaseRequest.
 func validateCapacityConsistency(recs []config.RecommendationRecord, capacityPercent int) error {
-	if err := refuseSavingsPlanPartialCapacity(recs, capacityPercent); err != nil {
-		return err
-	}
 	for i := range recs {
 		rec := recs[i]
-		if rec.RecommendedCount <= 0 {
+		if rec.RecommendedCount <= 0 || isSavingsPlanSlug(rec.Service) {
 			continue
 		}
 		expected := rec.RecommendedCount * capacityPercent / 100
@@ -750,26 +750,13 @@ func validateCapacityConsistency(recs []config.RecommendationRecord, capacityPer
 	return nil
 }
 
-// refuseSavingsPlanPartialCapacity rejects capacity_percent < 100 when any rec
-// is a Savings Plan (#1959). SP recs carry a placeholder count of 1 and are
-// priced by hourly commitment, which capacity_percent never scales, so the
-// purchase would be 100% while the audit row claimed less. capacity_percent
-// is request-wide, so one SP rec refuses the whole request. Detection is by
-// slug family (umbrella, hyphenated and dash-free per-type, legacy
-// "savings-plans"), case-insensitive, and uses no stored data.
-func refuseSavingsPlanPartialCapacity(recs []config.RecommendationRecord, capacityPercent int) error {
-	if capacityPercent >= 100 {
-		return nil
-	}
-	for i := range recs {
-		svc := strings.ToLower(strings.TrimSpace(recs[i].Service))
-		if strings.HasPrefix(svc, "savings-plans") || strings.HasPrefix(svc, "savingsplans") {
-			return NewClientError(400, fmt.Sprintf(
-				"recommendation %d: Savings Plans are bought at 100%% capacity only; use a plan ramp for partial coverage (got capacity_percent %d)",
-				i, capacityPercent))
-		}
-	}
-	return nil
+// isSavingsPlanSlug reports whether service is in the Savings Plans slug
+// family (umbrella, hyphenated and dash-free per-type, legacy
+// "savings-plans"), case-insensitive. Broader than common.IsSavingsPlan, which
+// misses the dash-free per-type slugs.
+func isSavingsPlanSlug(service string) bool {
+	svc := strings.ToLower(strings.TrimSpace(service))
+	return strings.HasPrefix(svc, "savings-plans") || strings.HasPrefix(svc, "savingsplans")
 }
 
 // decodeBase64Password decodes a base64-encoded password.

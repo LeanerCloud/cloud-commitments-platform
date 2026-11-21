@@ -97,11 +97,16 @@ func (*fanoutCredStore) LoadRaw(_ context.Context, _, _ string) ([]byte, error) 
 // purchase that reaches the "cloud". One recorded token == one real purchase.
 type fanoutServiceClient struct {
 	tokens []string
+	// hourly records the Savings Plans hourly commitment of every purchase.
+	hourly []float64
 	mu     sync.Mutex
 }
 
-func (c *fanoutServiceClient) PurchaseCommitment(_ context.Context, _ common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {
+func (c *fanoutServiceClient) PurchaseCommitment(_ context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {
 	c.mu.Lock()
+	if sp, ok := rec.Details.(*common.SavingsPlanDetails); ok {
+		c.hourly = append(c.hourly, sp.HourlyCommitment)
+	}
 	c.tokens = append(c.tokens, opts.IdempotencyToken)
 	c.mu.Unlock()
 	return common.PurchaseResult{Success: true, CommitmentID: "ri-" + opts.IdempotencyToken}, nil

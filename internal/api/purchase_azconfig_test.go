@@ -44,7 +44,7 @@ func TestPriceRecommendationsFromStore_PricesFromRequestedAZConfig(t *testing.T)
 				Provider: "aws", Service: "rds", Region: "us-east-1", ResourceType: "db.r5.large", Engine: "mysql",
 				Term: 1, Payment: "all-upfront", Count: 1, Details: rdsDetails(want.azConfig),
 			}}
-			require.NoError(t, h.priceRecommendationsFromStore(context.Background(), req))
+			require.NoError(t, h.priceRecommendationsFromStore(context.Background(), req, 100))
 			assert.Equal(t, want.upfront, req[0].UpfrontCost)
 			got, err := req[0].DetailsAZConfig()
 			require.NoError(t, err)
@@ -65,7 +65,7 @@ func TestPriceRecommendationsFromStore_RequestWithoutAZConfigRefusedForRDS(t *te
 		Provider: "aws", Service: "rds", Region: "us-east-1", ResourceType: "db.r5.large", Engine: "mysql",
 		Term: 1, Payment: "all-upfront", Count: 1,
 	}}
-	err := h.priceRecommendationsFromStore(context.Background(), req)
+	err := h.priceRecommendationsFromStore(context.Background(), req, 100)
 	require.Error(t, err)
 	ce, isClient := IsClientError(err)
 	require.True(t, isClient)

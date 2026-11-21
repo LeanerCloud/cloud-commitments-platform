@@ -91,7 +91,7 @@ func (h *Handler) validateExecutePurchaseRequest(ctx context.Context, req *event
 	// client's own upfront_cost / monthly_cost / savings / details are never
 	// used (issue #1905): a purchaser under a MaxPurchaseAmount cap could
 	// otherwise state any number and buy at list price.
-	if err := h.priceAndEnforcePurchaseConstraints(ctx, session, execReq.Recommendations); err != nil {
+	if err := h.priceAndEnforcePurchaseConstraints(ctx, session, execReq.Recommendations, execReq.CapacityPercent); err != nil {
 		return ExecutePurchaseRequest{}, nil, nil, err
 	}
 	return execReq, session, adjustments, nil

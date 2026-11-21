@@ -3,9 +3,11 @@ package api
 import (
 	"context"
 	"fmt"
+	"math/big"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/planstep"
 )
 
 // priceAndEnforcePurchaseConstraints replaces every rec's cost fields with
@@ -16,8 +18,8 @@ import (
 // (issue #1905, audit A01-001). Wrapped in one call so
 // validateExecutePurchaseRequest keeps its gocyclo score (it is at the
 // pre-commit ceiling of 10).
-func (h *Handler) priceAndEnforcePurchaseConstraints(ctx context.Context, session *Session, recs []config.RecommendationRecord) error {
-	if err := h.priceRecommendationsFromStore(ctx, recs); err != nil {
+func (h *Handler) priceAndEnforcePurchaseConstraints(ctx context.Context, session *Session, recs []config.RecommendationRecord, capacityPercent int) error {
+	if err := h.priceRecommendationsFromStore(ctx, recs, capacityPercent); err != nil {
 		return err
 	}
 	return h.enforcePurchaseConstraints(ctx, session, "execute", recs)
@@ -30,7 +32,7 @@ func (h *Handler) priceAndEnforcePurchaseConstraints(ctx context.Context, sessio
 // term/payment change (#111, #197, #1903) resolve to the stored variant the
 // user actually chose: AWS stores every (term, payment) combination and
 // Azure stores both payment variants, each under its own id.
-func (h *Handler) priceRecommendationsFromStore(ctx context.Context, recs []config.RecommendationRecord) error {
+func (h *Handler) priceRecommendationsFromStore(ctx context.Context, recs []config.RecommendationRecord, capacityPercent int) error {
 	byKey, byID, err := h.loadStoredRecommendationIndex(ctx, recs)
 	if err != nil {
 		return err
@@ -68,7 +70,7 @@ func (h *Handler) priceRecommendationsFromStore(ctx context.Context, recs []conf
 		} else if err := checkRequestDetailDiscriminators(&recs[i], &match, i); err != nil {
 			return err
 		}
-		priced, err := priceFromStored(&recs[i], &match, i)
+		priced, err := priceFromStored(&recs[i], &match, i, capacityPercent)
 		if err != nil {
 			return err
 		}
@@ -128,7 +130,15 @@ func (h *Handler) loadStoredRecommendationIndex(ctx context.Context, recs []conf
 // not count-denominated, so their Count must equal the stored placeholder.
 // A stored row that cannot yield a positive price is refused: the cap must
 // never be evaluated against a zero or negative commitment.
-func priceFromStored(req, stored *config.RecommendationRecord, idx int) (config.RecommendationRecord, error) {
+//
+// capacityPercent below 100 scales a Savings Plans rec's hourly commitment
+// (floored to whole cents, minimum 0.01/hr, via planstep.SizeSavingsPlan) and
+// every cost by the sized/stored ratio, so the spend cap, the persisted rec,
+// the approval email and the executor all see the amount actually bought.
+// This is the only place capacity_percent sizes money; retry, approval and
+// execution read the persisted rec and must never rescale it. At 100 nothing
+// changes.
+func priceFromStored(req, stored *config.RecommendationRecord, idx, capacityPercent int) (config.RecommendationRecord, error) {
 	if stored.Count <= 0 {
 		return config.RecommendationRecord{}, NewClientError(409, fmt.Sprintf(
 			"recommendation %d (%s): stored recommendation has count %d, cannot derive a per-unit price",
@@ -149,11 +159,47 @@ func priceFromStored(req, stored *config.RecommendationRecord, idx int) (config.
 	out.Count = req.Count
 	out.RecommendedCount = req.RecommendedCount
 	out.Selected = req.Selected
+	ratio, err := scaleSavingsPlanForCapacity(&out, stored, req, idx, capacityPercent, ratio)
+	if err != nil {
+		return config.RecommendationRecord{}, err
+	}
 	out.UpfrontCost = stored.UpfrontCost * ratio
 	out.Savings = stored.Savings * ratio
 	out.MonthlyCost = scaledCost(stored.MonthlyCost, ratio)
 	out.OnDemandCost = scaledCost(stored.OnDemandCost, ratio)
 	return out, nil
+}
+
+// scaleSavingsPlanForCapacity returns the cost ratio for a capacity_percent
+// purchase, rewriting out's hourly commitment for a Savings Plans rec. Anything
+// that is not a Savings Plan, or capacity 100, keeps ratio unchanged. A Savings
+// Plans slug the sizer does not know is refused rather than bought at 100%
+// while the audit row claims less (#1959). Sizer failures are about the stored
+// row, so they are 409, never 500.
+func scaleSavingsPlanForCapacity(out, stored, req *config.RecommendationRecord, idx, capacityPercent int, ratio float64) (float64, error) {
+	if capacityPercent >= 100 {
+		return ratio, nil
+	}
+	if !common.IsSavingsPlan(common.ServiceType(stored.Service)) {
+		if isSavingsPlanSlug(req.Service) || isSavingsPlanSlug(stored.Service) {
+			return 0, NewClientError(400, fmt.Sprintf(
+				"recommendation %d (%s): Savings Plans are bought at 100%% capacity only for this service (got capacity_percent %d)",
+				idx, describeRec(req), capacityPercent))
+		}
+		return ratio, nil
+	}
+	sized, err := planstep.SizeSavingsPlan(out, stored, big.NewRat(int64(capacityPercent), 100))
+	if err != nil {
+		return 0, NewClientError(409, fmt.Sprintf(
+			"recommendation %d (%s): cannot size the Savings Plans commitment to capacity_percent %d: %v",
+			idx, describeRec(req), capacityPercent, err))
+	}
+	if sized == 0 {
+		return 0, NewClientError(400, fmt.Sprintf(
+			"recommendation %d (%s): capacity_percent %d%% of the Savings Plans hourly commitment is below the $0.01/hr minimum; raise capacity_percent or buy at 100%%",
+			idx, describeRec(req), capacityPercent))
+	}
+	return sized, nil
 }
 
 // checkPurchaseDetailIdentity refuses a repriced purchase when the row the

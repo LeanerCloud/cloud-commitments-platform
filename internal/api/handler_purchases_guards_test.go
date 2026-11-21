@@ -567,9 +567,9 @@ func mustPurchaseIdempotencyKey(creatorID string, recs []config.RecommendationRe
 	return key
 }
 
-// --- #1959: Savings Plans are bought at 100% capacity only ---
+// --- #1959: Savings Plans are scaled by priceFromStored, not equation-checked ---
 
-func TestValidateCapacityConsistency_SavingsPlans(t *testing.T) {
+func TestValidateCapacityConsistency_SavingsPlansSkipEquation(t *testing.T) {
 	t.Parallel()
 	sp := func(service string, recommended int) config.RecommendationRecord {
 		r := validRec()
@@ -589,54 +589,16 @@ func TestValidateCapacityConsistency_SavingsPlans(t *testing.T) {
 		"savings-plans-sagemaker", "savings-plans-database", "savingsplans-compute", "SavingsPlans",
 	}
 	for _, slug := range slugs {
-		for _, recommended := range []int{0, 1} {
-			name := fmt.Sprintf("%s recommended_count %d", slug, recommended)
-			t.Run(name+" 50 refused", func(t *testing.T) {
+		for _, capacity := range []int{50, 99, 100} {
+			t.Run(fmt.Sprintf("%s at %d with recommended_count 7", slug, capacity), func(t *testing.T) {
 				t.Parallel()
-				err := validateCapacityConsistency([]config.RecommendationRecord{sp(slug, recommended)}, 50)
-				ce, ok := IsClientError(err)
-				require.True(t, ok, "got %v", err)
-				assert.Equal(t, 400, ce.code)
-				assert.Contains(t, err.Error(), "plan ramp")
-			})
-			t.Run(name+" 99 refused", func(t *testing.T) {
-				t.Parallel()
-				require.Error(t, validateCapacityConsistency([]config.RecommendationRecord{sp(slug, recommended)}, 99))
-			})
-			t.Run(name+" 100 ok", func(t *testing.T) {
-				t.Parallel()
-				require.NoError(t, validateCapacityConsistency([]config.RecommendationRecord{sp(slug, recommended)}, 100))
+				require.NoError(t, validateCapacityConsistency([]config.RecommendationRecord{sp(slug, 7)}, capacity))
 			})
 		}
 	}
-	t.Run("mixed SP and non-SP at 50 refused", func(t *testing.T) {
+	t.Run("non-SP at 50 keeps the equation check next to an SP row", func(t *testing.T) {
 		t.Parallel()
-		require.Error(t, validateCapacityConsistency([]config.RecommendationRecord{nonSP(5, 10), sp("savingsplans", 0)}, 50))
+		require.NoError(t, validateCapacityConsistency([]config.RecommendationRecord{nonSP(5, 10), sp("savingsplans", 1)}, 50))
+		require.Error(t, validateCapacityConsistency([]config.RecommendationRecord{nonSP(10, 10), sp("savingsplans", 1)}, 50))
 	})
-	t.Run("non-SP at 50 keeps the equation check", func(t *testing.T) {
-		t.Parallel()
-		require.NoError(t, validateCapacityConsistency([]config.RecommendationRecord{nonSP(5, 10)}, 50))
-		require.Error(t, validateCapacityConsistency([]config.RecommendationRecord{nonSP(10, 10)}, 50))
-	})
-}
-
-// The #1959 hole end to end: an SP rec with no recommended_count and
-// capacity_percent 50 used to skip the equation check and buy 100%. The strict
-// store mock has no stored-rec expectation, so any pricing lookup would panic:
-// the refusal must come before it.
-func TestExecutePurchase_SavingsPlanPartialCapacityRefused(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	mockAuth := new(MockAuthService)
-	mockAuth.On("ValidateSession", ctx, "admin-token").Return(&Session{UserID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", Email: "admin@example.com"}, nil)
-	mockAuth.grantAdminPurchaser()
-	h := &Handler{config: new(MockConfigStore), auth: mockAuth}
-	_, _, _, err := h.validateExecutePurchaseRequest(ctx, &events.LambdaFunctionURLRequest{
-		Headers: map[string]string{"Authorization": "Bearer admin-token"},
-		Body:    `{"capacity_percent":50,"recommendations":[{"provider":"aws","service":"savingsplans","term":1,"payment":"all-upfront","count":1}]}`,
-	})
-	ce, ok := IsClientError(err)
-	require.True(t, ok, "got %v", err)
-	assert.Equal(t, 400, ce.code)
-	assert.Contains(t, err.Error(), "100% capacity only")
 }

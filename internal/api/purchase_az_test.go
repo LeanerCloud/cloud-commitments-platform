@@ -131,7 +131,7 @@ func TestPriceRecommendationsFromStore_PricesFromRequestedAZ(t *testing.T) {
 		Term: 1, Payment: "all-upfront", Count: 1, AvailabilityZone: "us-east-1b",
 		Details: zonalEC2Details("us-east-1b"),
 	}}
-	require.NoError(t, h.priceRecommendationsFromStore(ctx, req))
+	require.NoError(t, h.priceRecommendationsFromStore(ctx, req, 100))
 	assert.Equal(t, 900.0, req[0].UpfrontCost)
 	assert.Equal(t, "us-east-1b", req[0].AvailabilityZone)
 }
@@ -148,7 +148,7 @@ func TestPriceRecommendationsFromStore_ZonalRequestWithoutAZRefused(t *testing.T
 		Provider: "aws", Service: "ec2", Region: "us-east-1", ResourceType: "m5.large",
 		Term: 1, Payment: "all-upfront", Count: 1,
 	}}
-	err := h.priceRecommendationsFromStore(ctx, req)
+	err := h.priceRecommendationsFromStore(ctx, req, 100)
 	require.Error(t, err)
 	ce, isClient := IsClientError(err)
 	require.True(t, isClient)
@@ -171,7 +171,7 @@ func TestPriceRecommendationsFromStore_NoIDDetailsAZMismatchRefused(t *testing.T
 				Term: 1, Payment: "all-upfront", Count: 1,
 				AvailabilityZone: topLevel, Details: zonalEC2Details("us-east-1a"),
 			}}
-			err := h.priceRecommendationsFromStore(ctx, req)
+			err := h.priceRecommendationsFromStore(ctx, req, 100)
 			require.Error(t, err)
 			ce, isClient := IsClientError(err)
 			require.True(t, isClient)
