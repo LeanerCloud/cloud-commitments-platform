@@ -540,14 +540,15 @@ describe('Issue #711: purchase screens state the monthly charge and the term tot
   });
 });
 
-// Issue #1959: Savings Plans rows carry count 1, so the Capacity control used
-// to floor them to 0 and silently drop them. They are bought at 100% only.
-describe('Issue #1959: Savings Plans are never scaled or dropped by Capacity', () => {
-  const SP_MESSAGE = 'Savings Plans are bought at 100% capacity only; use a plan ramp for partial coverage.';
-  const sp = (id: string, service: string): LocalRecommendation => ({
+// Issue #1959: Savings Plans rows carry count 1, so the count cannot be
+// scaled. They go through unscaled with capacity_percent and the backend sizes
+// the hourly commitment (floor to whole cents, minimum $0.01/hr).
+describe('Issue #1959: Savings Plans are sized by hourly commitment, not count', () => {
+  const sp = (id: string, service: string, hourly = 1): LocalRecommendation => ({
     id, provider: service === 'savingsplans' ? 'azure' : 'aws', service,
     region: 'us-east-1', resource_type: 'ComputeSavingsPlans', term: 1, payment: 'all-upfront',
     count: 1, upfront_cost: 1000, monthly_cost: 0, savings: 100,
+    details: { plan_type: 'Compute', hourly_commitment: hourly, offering_id: 'off-1' },
   });
   const ec2: LocalRecommendation = {
     id: 'ec2-1', provider: 'aws', service: 'ec2', region: 'us-east-1', resource_type: 'm5.large',
@@ -567,37 +568,83 @@ describe('Issue #1959: Savings Plans are never scaled or dropped by Capacity', (
     await flush();
   }
 
-  function expectRefused(rowId: string): void {
-    expect(showToast).toHaveBeenCalledTimes(1);
-    const opts = (showToast as jest.Mock).mock.calls[0]![0] as { message: string; timeout?: number | null };
-    expect(opts.message).toContain(SP_MESSAGE);
-    expect(opts.message).toContain(rowId);
-    expect(opts.timeout).toBeNull();
-    expect(getPurchaseModalRecommendations()).toHaveLength(0);
-    expect(getFanOutBuckets()).toBeNull();
-    expect(api.executePurchase).not.toHaveBeenCalled();
+  function dropToast(): { message: string; timeout?: number | null } | undefined {
+    return (showToast as jest.Mock).mock.calls.map((c) => c[0] as { message: string; timeout?: number | null })
+      .find((o) => o.message.includes('Savings Plans rows left out'));
   }
 
-  test.each(['savings-plans-compute', 'savings-plans-ec2instance', 'savings-plans-sagemaker', 'savings-plans-database', 'savingsplans'])(
-    'only %s rows at 50%% are refused with the message',
+  async function submitSingleBucket(): Promise<Array<Record<string, unknown>>> {
+    (document.getElementById('execute-purchase-btn') as HTMLButtonElement).click();
+    await flush();
+    expect(api.executePurchase).toHaveBeenCalledTimes(1);
+    return (api.executePurchase as jest.Mock).mock.calls[0]![0] as Array<Record<string, unknown>>;
+  }
+
+  test.each(['savings-plans-compute', 'savings-plans-ec2instance', 'savings-plans-sagemaker', 'savings-plans-database'])(
+    '%s at 50%% is not refused: Count stays 1, capacity_percent 50, the modal shows the sized hourly',
     async (service) => {
       await clickBulk([sp('sp-1', service)], 50);
-      expectRefused('ComputeSavingsPlans');
+      expect(dropToast()).toBeUndefined();
+      const rows = getPurchaseModalRecommendations();
+      expect(rows.map((r) => [r.id, r.count])).toEqual([['sp-1', 1]]);
+      expect(rows[0]!.upfront_cost).toBe(500);
+      expect(document.querySelector('.purchase-modal-sp-hourly')!.textContent)
+        .toBe('Savings Plans hourly commitment: $0.50/hr (50% of $1.00/hr recommended)');
+      const body = await submitSingleBucket();
+      expect(body[0]).toMatchObject({ id: 'sp-1', count: 1, recommended_count: 1 });
+      expect((api.executePurchase as jest.Mock).mock.calls[0]![1]).toBe(50);
     },
   );
 
-  test('SP plus non-SP rows at 50% are refused as a whole', async () => {
-    await clickBulk([sp('sp-1', 'savings-plans-compute'), ec2], 50);
-    expectRefused('ComputeSavingsPlans');
+  test('the sized hourly floors to whole cents like the backend (0.58/hr at 50% is 0.29/hr)', async () => {
+    await clickBulk([sp('sp-1', 'savings-plans-compute', 0.58)], 50);
+    expect(document.querySelector('.purchase-modal-sp-hourly')!.textContent)
+      .toBe('Savings Plans hourly commitment: $0.29/hr (50% of $0.58/hr recommended)');
   });
 
-  test('capacity 99 still refuses, 100 opens the modal unchanged', async () => {
-    await clickBulk([sp('sp-1', 'savings-plans-compute')], 99);
-    expectRefused('ComputeSavingsPlans');
+  test('SP plus RI rows at 50%: SP keeps Count 1, the RI count is scaled, the fan-out shows the sized hourly', async () => {
+    await clickBulk([sp('sp-1', 'savings-plans-compute'), ec2], 50);
+    expect(dropToast()).toBeUndefined();
+    const buckets = getFanOutBuckets()!;
+    const byService = Object.fromEntries(buckets.map((b) => [b.service, b.recs]));
+    expect(byService['savings-plans']!.map((r) => r.count)).toEqual([1]);
+    expect(byService['ec2']!.map((r) => r.count)).toEqual([2]);
+    expect(document.querySelector('.fanout-bucket-sp-hourly')!.textContent)
+      .toBe('Savings Plans hourly commitment: $0.50/hr (50% of $1.00/hr recommended)');
+  });
+
+  test('a Savings Plans row below the $0.01/hr minimum is dropped with a sticky warning; the RI row still goes', async () => {
+    const tiny = { ...sp('sp-tiny', 'savings-plans-compute', 0.01), resource_type: 'TinyPlan' };
+    await clickBulk([tiny, ec2], 50);
+    const toast = dropToast()!;
+    expect(toast.message).toContain('TinyPlan');
+    expect(toast.message).toContain('$0.01/hr minimum');
+    expect(toast.timeout).toBeNull();
+    expect(getPurchaseModalRecommendations().map((r) => r.id)).toEqual(['ec2-1']);
+    const body = await submitSingleBucket();
+    expect(body.map((r) => r['id'])).toEqual(['ec2-1']);
+  });
+
+  test('only below-minimum Savings Plans rows: warning, nothing opens, nothing is posted', async () => {
+    await clickBulk([sp('sp-tiny', 'savings-plans-compute', 0.01)], 50);
+    expect(dropToast()).toBeDefined();
+    expect((showToast as jest.Mock)).toHaveBeenCalledTimes(1);
+    expect(getPurchaseModalRecommendations()).toHaveLength(0);
+    expect(getFanOutBuckets()).toBeNull();
+    expect(api.executePurchase).not.toHaveBeenCalled();
+  });
+
+  test('a Savings Plans row with no hourly commitment to size is dropped and named, never sent', async () => {
+    const noDetails = { ...sp('sp-x', 'savings-plans-compute'), details: undefined };
+    await clickBulk([noDetails, ec2], 50);
+    expect(dropToast()!.message).toContain('savings-plans-compute ComputeSavingsPlans us-east-1');
+    expect(getPurchaseModalRecommendations().map((r) => r.id)).toEqual(['ec2-1']);
+  });
+
+  test('capacity 100 opens the modal with the Savings Plans row unchanged', async () => {
     await clickBulk([sp('sp-1', 'savings-plans-compute')], 100);
-    expect(showToast).not.toHaveBeenCalled();
-    expect(getPurchaseModalRecommendations().map((r) => r.id)).toEqual(['sp-1']);
-    expect(getPurchaseModalRecommendations()[0]!.count).toBe(1);
+    expect(dropToast()).toBeUndefined();
+    expect(getPurchaseModalRecommendations().map((r) => [r.id, r.count, r.upfront_cost])).toEqual([['sp-1', 1, 1000]]);
   });
 
   test('non-SP rows at 50% are scaled as before', async () => {
@@ -606,35 +653,33 @@ describe('Issue #1959: Savings Plans are never scaled or dropped by Capacity', (
     expect(getPurchaseModalRecommendations().map((r) => r.count)).toEqual([2]);
   });
 
-  test('scaleRecForCapacity keeps carrying recommended_count for SP rows (backend equation backstop)', () => {
+  test('scaleRecForCapacity never scales the SP count (it only sizes the money fields)', () => {
     const row = sp('sp-1', 'savings-plans-compute');
     expect(scaleRecForCapacity(row, 100)).toMatchObject({ count: 1, recommended_count: 1 });
-    expect(scaleRecForCapacity(row, 50)).toBeNull();
+    expect(scaleRecForCapacity(row, 50)).toMatchObject({ count: 1, recommended_count: 1, upfront_cost: 500, savings: 50 });
+    expect(scaleRecForCapacity(sp('sp-t', 'savings-plans-compute', 0.01), 50)).toBeNull();
   });
 
   test('storage says 100 but the input says 50: the POST still carries recommended_count', async () => {
     await clickBulk([sp('sp-1', 'savings-plans-compute')], 100);
     (document.getElementById('bulk-purchase-capacity') as HTMLInputElement).value = '50';
-    (document.getElementById('execute-purchase-btn') as HTMLButtonElement).click();
-    await flush();
-    expect(api.executePurchase).toHaveBeenCalledTimes(1);
-    const body = (api.executePurchase as jest.Mock).mock.calls[0]![0] as Array<{ recommended_count?: number }>;
-    expect(body[0]!.recommended_count).toBe(1);
+    const body = await submitSingleBucket();
+    expect((body[0] as { recommended_count?: number }).recommended_count).toBe(1);
   });
 
-  test('lists at most 5 rows then +M more, naming the account', async () => {
+  test('the drop warning lists at most 5 rows then +M more, naming the account', async () => {
     const rows = Array.from({ length: 7 }, (_, i) => ({
-      ...sp(`sp-${i}`, 'savings-plans-compute'), resource_type: `Plan${i}`, cloud_account_id: 'acct-9',
+      ...sp(`sp-${i}`, 'savings-plans-compute', 0.01), resource_type: `Plan${i}`, cloud_account_id: 'acct-9',
     }));
     await clickBulk(rows, 50);
-    const msg = ((showToast as jest.Mock).mock.calls[0]![0] as { message: string }).message;
+    const msg = dropToast()!.message;
     expect(msg).toContain('Plan4 us-east-1 (acct-9)');
     expect(msg).not.toContain('Plan5');
     expect(msg).toContain(' +2 more.');
   });
 
-  test('a repeated refusal and a passing click dismiss the previous refusal toast', async () => {
-    const rows = [sp('sp-1', 'savings-plans-compute')];
+  test('a repeated warning and a passing click dismiss the previous warning toast', async () => {
+    const rows = [sp('sp-1', 'savings-plans-compute', 0.01)];
     const first = { dismiss: jest.fn() };
     const second = { dismiss: jest.fn() };
     (showToast as jest.Mock).mockReturnValueOnce(first).mockReturnValueOnce(second);

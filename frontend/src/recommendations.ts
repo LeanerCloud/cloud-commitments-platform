@@ -12,6 +12,7 @@ import { serviceLabel } from './lib/service-labels';
 import { getRecommendationsFreshness, refreshRecommendations as refreshRecommendationsAPI } from './api/recommendations';
 import type { RecommendationsFreshness } from './api/recommendations';
 import { showToast } from './toast';
+import { savingsPlanHourlySummary, scaleSavingsPlanForCapacity } from './sp-capacity';
 import { createIcon, iconSvg } from './icons';
 import {
   isPaymentSupported,
@@ -4405,6 +4406,8 @@ async function openCreatePlanFromBottomBox(snapshot: LocalRecommendation[]): Pro
 // pricedCellVariant can apply the same scaling to a sibling variant swapped
 // in on a Term/Payment change.
 export function scaleRecForCapacity(r: LocalRecommendation, capacityPercent: number): LocalRecommendation | null {
+  // Savings Plans are sized by hourly commitment, never by count (#1959).
+  if (isSavingsPlanService(r.service)) return scaleSavingsPlanForCapacity(r, capacityPercent);
   const newCount = Math.floor((r.count * capacityPercent) / 100);
   if (newCount <= 0) return null;
   const ratio = r.count > 0 ? newCount / r.count : 1;
@@ -4423,8 +4426,27 @@ export function scaleRecForCapacity(r: LocalRecommendation, capacityPercent: num
   };
 }
 
-const SP_REFUSAL_MAX_ROWS = 5;
-let spRefusalToast: { dismiss: () => void } | null = null;
+const SP_DROP_MAX_ROWS = 5;
+let spDropToast: { dismiss: () => void } | null = null;
+
+function spRowLabel(r: LocalRecommendation): string {
+  const acct = r.cloud_account_id ? ` (${getAccountName(r.cloud_account_id)})` : '';
+  return `${r.service} ${r.resource_type ?? ''} ${r.region ?? ''}`.replace(/\s+/g, ' ').trim() + acct;
+}
+
+// A Savings Plans row whose sized hourly commitment is below $0.01/hr is
+// refused by the backend for the whole request, which would also block the
+// RI rows in its bucket. Drop it before sending and say so, never silently.
+function warnDroppedSavingsPlans(dropped: LocalRecommendation[], capacity: number): void {
+  if (dropped.length === 0) return;
+  const shown = dropped.slice(0, SP_DROP_MAX_ROWS).map(spRowLabel).join(', ');
+  const more = dropped.length > SP_DROP_MAX_ROWS ? ` +${dropped.length - SP_DROP_MAX_ROWS} more` : '';
+  spDropToast = showToast({
+    message: `Savings Plans rows left out: at ${capacity}% capacity their hourly commitment falls below the $0.01/hr minimum (or carries no hourly commitment to size): ${shown}${more}. Raise Capacity to include them.`,
+    kind: 'warning',
+    timeout: null,
+  });
+}
 
 function handleBulkPurchaseClick(recommendations: LocalRecommendation[]): void {
   const tb = loadBulkPurchaseState();
@@ -4433,33 +4455,21 @@ function handleBulkPurchaseClick(recommendations: LocalRecommendation[]): void {
     return;
   }
 
-  // Savings Plans cannot be scaled (#1959): refuse the whole action instead
-  // of silently dropping them or buying only the other rows.
-  spRefusalToast?.dismiss();
-  spRefusalToast = null;
-  const spRows = tb.capacity < 100 ? recommendations.filter((r) => isSavingsPlanService(r.service)) : [];
-  if (spRows.length > 0) {
-    const label = (r: LocalRecommendation): string => {
-      const acct = r.cloud_account_id ? ` (${getAccountName(r.cloud_account_id)})` : '';
-      return `${r.service} ${r.resource_type ?? ''} ${r.region ?? ''}`.replace(/\s+/g, ' ').trim() + acct;
-    };
-    const shown = spRows.slice(0, SP_REFUSAL_MAX_ROWS).map(label).join(', ');
-    const more = spRows.length > SP_REFUSAL_MAX_ROWS ? ` +${spRows.length - SP_REFUSAL_MAX_ROWS} more` : '';
-    spRefusalToast = showToast({
-      message: `Savings Plans are bought at 100% capacity only; use a plan ramp for partial coverage. Capacity is ${tb.capacity}%; deselect these rows or set Capacity to 100%: ${shown}${more}.`,
-      kind: 'warning',
-      timeout: null,
-    });
-    return;
-  }
+  spDropToast?.dismiss();
+  spDropToast = null;
 
-  // Scale by capacity %; drop rows whose scaled count floors to 0.
+  // Scale by capacity %; drop rows whose scaled count floors to 0. Savings
+  // Plans rows keep Count 1 and are sized by the backend from capacity_percent.
   const scaled: LocalRecommendation[] = [];
+  const droppedSavingsPlans: LocalRecommendation[] = [];
   for (const r of recommendations) {
     const s = scaleRecForCapacity(r, tb.capacity);
     if (s) scaled.push(s);
+    else if (isSavingsPlanService(r.service)) droppedSavingsPlans.push(r);
   }
+  warnDroppedSavingsPlans(droppedSavingsPlans, tb.capacity);
   if (scaled.length === 0) {
+    if (droppedSavingsPlans.length > 0) return;
     showToast({
       message: `Capacity ${tb.capacity}% produces no whole-number purchases from the current selection. Try a higher %.`,
       kind: 'warning',
@@ -5106,6 +5116,13 @@ function renderFanOutBucketSection(b: FanOutBucket): HTMLElement {
   const monthlyPart = bucketMonthly === null ? 'monthly cost not reported' : `${formatCurrency(bucketMonthly)}/mo recurring`;
   totals.textContent = `${bucketTotal.count} commitment${bucketTotal.count === 1 ? '' : 's'} · ${formatCurrency(bucketTotal.upfront)} upfront · ${monthlyPart} · ${formatCostForPeriod(bucketTotal.savings, bPeriod)} savings ${periodSuffix(bPeriod)}`;
   section.appendChild(totals);
+  const spHourly = isSPBucket ? savingsPlanHourlySummary(b.recs, b.capacityPercent, isSavingsPlanService) : null;
+  if (spHourly) {
+    const spHourlyEl = document.createElement('p');
+    spHourlyEl.className = 'fanout-bucket-sp-hourly';
+    spHourlyEl.textContent = spHourly;
+    section.appendChild(spHourlyEl);
+  }
 
   // Issue #249: for mixed-SP buckets with 2+ distinct plan types, render
   // a collapsible per-plan-type breakdown so operators can see how their
@@ -5976,7 +5993,17 @@ function updatePurchaseModalTotals(selectAllCb: HTMLInputElement): void {
   }
 
   const band = document.getElementById('purchase-modal-commitment-band');
-  if (band) band.replaceChildren(buildCommitmentBand(checkedPurchaseLines(), { upfrontLabel: 'Upfront' }));
+  if (band) {
+    band.replaceChildren(buildCommitmentBand(checkedPurchaseLines(), { upfrontLabel: 'Upfront' }));
+    const checkedRecs = Array.from(checkedPurchaseIndices, (i) => currentPurchaseRecommendations[i]).filter((r): r is LocalRecommendation => !!r);
+    const spHourly = savingsPlanHourlySummary(checkedRecs, currentPurchaseCapacityPercent, isSavingsPlanService);
+    if (spHourly) {
+      const note = document.createElement('p');
+      note.className = 'purchase-modal-sp-hourly';
+      note.textContent = spHourly;
+      band.appendChild(note);
+    }
+  }
 
   // Issue #1903: the direct-execute warning's dollar total is derived from
   // checkedPurchaseIndices too, so it must refresh on every checkbox toggle,

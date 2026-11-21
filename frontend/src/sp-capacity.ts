@@ -78,18 +78,20 @@ export function savingsPlanHourlySummary(
   capacityPercent: number,
   isSavingsPlan: (service: string) => boolean,
 ): string | null {
-  let sizedCents = 0;
-  let recommendedCents = 0;
+  let sized = 0;
+  let recommended = 0;
   let rows = 0;
   for (const r of recs) {
     if (!isSavingsPlan(r.service)) continue;
     const hourly = savingsPlanHourly(r);
     if (hourly === null) continue;
     rows++;
-    recommendedCents += savingsPlanSizedCents(hourly, 100);
-    sizedCents += savingsPlanSizedCents(hourly, Math.min(capacityPercent, 100));
+    recommended += hourly;
+    // At 100% the backend buys the stored hourly as is; below that it floors to whole cents.
+    sized += capacityPercent >= 100 ? hourly : savingsPlanSizedCents(hourly, capacityPercent) / 100;
   }
   if (rows === 0) return null;
-  const usd = (cents: number): string => `$${(cents / 100).toFixed(2)}/hr`;
-  return `Savings Plans hourly commitment: ${usd(sizedCents)} (${capacityPercent}% of ${usd(recommendedCents)} recommended)`;
+  // Up to five decimals (the precision the purchase client sends), never fewer than two.
+  const usd = (x: number): string => `$${x.toFixed(5).replace(/0{1,3}$/, '')}/hr`;
+  return `Savings Plans hourly commitment: ${usd(sized)} (${capacityPercent}% of ${usd(recommended)} recommended)`;
 }
