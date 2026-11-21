@@ -107,22 +107,30 @@ var legacyAWSServiceSlugs = map[string]common.ServiceType{
 // four per-plan-type slugs in both spellings — pulled out of mapServiceType
 // to keep that switch under the gocyclo budget.
 //
-// TODO(#95): PR #94 (merged 2026-04-30) renamed "savings-plans" ->
-// "savingsplans". purchase_executions rows have a ~6-month retention window,
-// so the earliest safe drop date is 2026-10-30. Until then the
-// "savings-plans"-spelled aliases below must stay so Lambda-scheduled
-// executions persisted before PR #94 still map correctly on retry/approval.
-// To drop: verify zero rows with
+// The hyphenated per-plan-type slugs ("savings-plans-compute", "-database",
+// "-ec2instance", "-sagemaker") are the CANONICAL spelling: service_configs
+// stores them today, so they must stay. Only the legacy umbrella spelling
+// "savings-plans" (no plan type) is a drop candidate (#95): PR #94 (merged
+// 2026-04-30) renamed it to "savingsplans", and purchase_executions rows have a
+// ~6-month retention window, so the earliest safe drop date was 2026-10-30.
+// The dash-free per-plan-type keys ("savingsplans-*") are forward-compat.
+// To drop the umbrella key, verify zero rows in purchase_executions AND
+// service_configs (JSONB text has a space after the colon, so match with
+// jsonb_array_elements, not LIKE on the text):
 //
-//	SELECT id FROM purchase_executions
-//	WHERE recommendations::text LIKE '%"service":"savings-plans"%'
-//	LIMIT 1;
+//	SELECT count(*) FROM purchase_executions pe
+//	WHERE EXISTS (SELECT 1 FROM jsonb_array_elements(
+//	    CASE WHEN jsonb_typeof(pe.recommendations) = 'array'
+//	         THEN pe.recommendations ELSE '[]'::jsonb END) r
+//	  WHERE r->>'service' = 'savings-plans');
+//	SELECT count(*) FROM service_configs WHERE service = 'savings-plans';
 //
-// then remove every "savings-plans*" key from this map and the matching
-// case in pkg/common/service_details_codec.go: newDetailsForService, and
-// flip the coverage_extra_test.go case (line ~60) to assert
-// ServiceType("savings-plans") (default-arm pass-through). The
-// "savingsplans-*" keys are forward-compat and should stay.
+// A read-only check on the single dev database on 2026-11-21 found 0 for both
+// (and 4 service_configs rows under the per-type hyphenated slugs). Removing
+// the umbrella key also needs the matching case in
+// pkg/common/service_details_codec.go: newDetailsForService, and the
+// coverage_extra_test.go case (line ~60) flipped to assert
+// ServiceType("savings-plans") (default-arm pass-through).
 //
 // A new per-plan-type spelling must also be added to
 // config.awsSavingsPlansSpellings, else a suppression stored under it misses
