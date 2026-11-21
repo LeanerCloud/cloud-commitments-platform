@@ -574,12 +574,39 @@ func sizeSP(out, stored *config.RecommendationRecord, product float64, share *bi
 			return 0, err
 		}
 	}
+	return applySPSize(out, stored, keys, hourly, sized)
+}
+
+// SizeSavingsPlan sizes a Savings Plans recommendation to share (an exact
+// fraction of the stored hourly commitment) the way a plan step does: the
+// hourly commitment is floored to whole cents, never rounded up. It rewrites
+// out.Details (every other key untouched) and out.Count, and returns the
+// ratio sized/stored; 0 means the share is below the one-cent minimum and out
+// is left unchanged. The caller owns scaling the cost fields by the ratio.
+func SizeSavingsPlan(out, stored *config.RecommendationRecord, share *big.Rat) (float64, error) {
+	if err := checkStoredSPCount(stored); err != nil {
+		return 0, err
+	}
+	keys, hourly, err := decodeHourly(stored.Details)
+	if err != nil {
+		return 0, err
+	}
+	sized, err := exactSPHourly(hourly, share)
+	if err != nil {
+		return 0, err
+	}
+	return applySPSize(out, stored, keys, hourly, sized)
+}
+
+func applySPSize(out, stored *config.RecommendationRecord, keys map[string]json.RawMessage, hourly, sized float64) (float64, error) {
 	if sized < spHourlyStep {
 		return 0, nil
 	}
-	if out.Details, err = encodeHourly(keys, sized); err != nil {
+	details, err := encodeHourly(keys, sized)
+	if err != nil {
 		return 0, err
 	}
+	out.Details = details
 	out.Count = stored.Count
 	return sized / hourly, nil
 }
