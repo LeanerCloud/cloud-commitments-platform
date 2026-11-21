@@ -491,3 +491,17 @@ func TestHandleOIDCHTTP(t *testing.T) {
 	testutil.AssertTrue(t, strings.HasPrefix(ct, "application/json"),
 		"handleOIDCHTTP must return application/json, got: "+ct)
 }
+
+func TestHttpToLambdaRequest_KeepsPathPercentEncoded(t *testing.T) {
+	t.Parallel()
+	r := httptest.NewRequest("GET", "/api/purchases/%2541/cancel", nil)
+	req, err := httpToLambdaRequest(httptest.NewRecorder(), r, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, got := range map[string]string{"Path": req.RequestContext.HTTP.Path, "RawPath": req.RawPath} {
+		if got != "/api/purchases/%2541/cancel" {
+			t.Errorf("%s = %q, want the still-encoded path so the router decodes once", name, got)
+		}
+	}
+}

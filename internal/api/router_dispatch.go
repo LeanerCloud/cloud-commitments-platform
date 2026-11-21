@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/url"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/aws/aws-lambda-go/events"
 )
@@ -107,8 +108,13 @@ func (r *Router) extractParams(route Route, path string) map[string]string {
 // decode or would decode to a path separator is kept as sent.
 func decodePathID(id string) string {
 	decoded, err := url.PathUnescape(id)
-	if err != nil || strings.Contains(decoded, "/") {
+	if err != nil || strings.Contains(decoded, "/") || !utf8.ValidString(decoded) {
 		return id
+	}
+	for _, c := range decoded {
+		if c < 0x20 || c == 0x7f {
+			return id
+		}
 	}
 	return decoded
 }

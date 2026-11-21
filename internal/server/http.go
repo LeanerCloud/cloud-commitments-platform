@@ -444,18 +444,20 @@ func httpToLambdaRequest(w http.ResponseWriter, r *http.Request, trustedHops int
 
 	sourceIP := requestSourceIP(r, trustedHops)
 
+	// Hand the router the raw (still percent-encoded) path, as Lambda does, so
+	// path ids are decoded exactly once, by the router.
 	return &events.LambdaFunctionURLRequest{
 		RequestContext: events.LambdaFunctionURLRequestContext{
 			HTTP: events.LambdaFunctionURLRequestContextHTTPDescription{
 				Method:    r.Method,
-				Path:      r.URL.Path,
+				Path:      r.URL.EscapedPath(),
 				Protocol:  r.Proto,
 				SourceIP:  sourceIP,
 				UserAgent: r.Header.Get("User-Agent"),
 			},
 			TimeEpoch: time.Now().Unix(),
 		},
-		RawPath:               r.URL.Path,
+		RawPath:               r.URL.EscapedPath(),
 		RawQueryString:        r.URL.RawQuery,
 		Headers:               headers,
 		QueryStringParameters: queryParams,
