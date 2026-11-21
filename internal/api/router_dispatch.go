@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"net/url"
 	"strings"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -94,9 +95,20 @@ func (r *Router) extractParams(route Route, path string) map[string]string {
 			remaining = strings.TrimSuffix(remaining, route.PathSuffix)
 		}
 		if remaining != "" {
-			params["id"] = remaining
+			params["id"] = decodePathID(remaining)
 		}
 	}
 
 	return params
+}
+
+// decodePathID percent-decodes a path id. Lambda delivers the raw path, so an
+// id containing ':', '@', '+' or a space arrives encoded. An id that fails to
+// decode or would decode to a path separator is kept as sent.
+func decodePathID(id string) string {
+	decoded, err := url.PathUnescape(id)
+	if err != nil || strings.Contains(decoded, "/") {
+		return id
+	}
+	return decoded
 }
