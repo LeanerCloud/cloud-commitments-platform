@@ -191,8 +191,8 @@ func scaleSavingsPlanForCapacity(out, stored, req *config.RecommendationRecord, 
 	sized, err := planstep.SizeSavingsPlan(out, stored, big.NewRat(int64(capacityPercent), 100))
 	if err != nil {
 		return 0, NewClientError(409, fmt.Sprintf(
-			"recommendation %d (%s): cannot size the Savings Plans commitment to capacity_percent %d: %v",
-			idx, describeRec(req), capacityPercent, err))
+			"recommendation %d (%s): cannot size the Savings Plans commitment to capacity_percent %d; its stored details are unusable, buy it at 100%% or refresh the recommendation",
+			idx, describeRec(req), capacityPercent))
 	}
 	if sized == 0 {
 		return 0, NewClientError(400, fmt.Sprintf(

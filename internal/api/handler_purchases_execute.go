@@ -32,8 +32,10 @@ type ExecutePurchaseRequest struct {
 	Recommendations []config.RecommendationRecord `json:"recommendations"`
 	// CapacityPercent is what fraction (1..100) of the originally-
 	// recommended counts the user chose in the bulk Purchase flow.
-	// Audit-only: the Recommendations slice already carries scaled
-	// counts, so backend math ignores this field for purchase work.
+	// Count-based recommendations already carry scaled counts, so the
+	// backend only audits it for them. A Savings Plans recommendation keeps
+	// Count 1 and is sized here: the hourly commitment is scaled by this
+	// percentage (priceFromStored, #1959).
 	// 0 / absent defaults to 100 ("full capacity").
 	CapacityPercent int `json:"capacity_percent,omitempty"`
 }
