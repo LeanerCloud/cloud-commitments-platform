@@ -8,6 +8,7 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/email"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -41,6 +42,11 @@ func spReqJSON(capacity int, extra string) string {
 // and returns the persisted execution (nil when refused).
 func runSPExecute(t *testing.T, cap float64, body string, stored ...config.RecommendationRecord) (*config.PurchaseExecution, error) {
 	t.Helper()
+	return runSPExecuteWith(t, &recordingEmailNotifier{}, cap, body, stored...)
+}
+
+func runSPExecuteWith(t *testing.T, notifier *recordingEmailNotifier, cap float64, body string, stored ...config.RecommendationRecord) (*config.PurchaseExecution, error) {
+	t.Helper()
 	ctx := context.Background()
 	mockStore := new(MockConfigStore)
 	mockAuth := new(MockAuthService)
@@ -62,7 +68,7 @@ func runSPExecute(t *testing.T, cap float64, body string, stored ...config.Recom
 	mockStore.On("SavePurchaseExecution", mock.Anything, mock.AnythingOfType("*config.PurchaseExecution")).
 		Run(func(args mock.Arguments) { c := *args.Get(1).(*config.PurchaseExecution); saved = &c }).
 		Return(nil).Maybe()
-	h := &Handler{config: mockStore, auth: mockAuth, emailNotifier: &recordingEmailNotifier{}}
+	h := &Handler{config: mockStore, auth: mockAuth, emailNotifier: notifier}
 	_, err := h.executePurchase(ctx, &events.LambdaFunctionURLRequest{
 		Headers: map[string]string{"Authorization": "Bearer tok"}, Body: body,
 	})
@@ -239,4 +245,37 @@ func TestPurchaseIdempotencyKey_SavingsPlanScalingUnchanged(t *testing.T) {
 		mustPurchaseIdempotencyKey("u", []config.RecommendationRecord{scaled}, 50))
 	assert.NotEqual(t, mustPurchaseIdempotencyKey("u", []config.RecommendationRecord{scaled}, 50),
 		mustPurchaseIdempotencyKey("u", []config.RecommendationRecord{scaled}, 25))
+}
+
+// The approval email renders the persisted (sized) rec, never the stored
+// recommendation's original figures (#1959): what the approver reads is what
+// will be bought. The email has no hourly column; upfront, savings and count
+// are its sizing-dependent figures.
+func TestExecutePurchase_SavingsPlanApprovalEmailShowsSizedFigures(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name     string
+		line     string
+		upfront  float64
+		savings  float64
+		capacity int
+	}{
+		{"half capacity", "Est. Savings: $400.00/month", 2500, 400, 50},
+		{"full capacity unchanged", "Est. Savings: $800.00/month", 5000, 800, 100},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			n := &recordingEmailNotifier{}
+			saved, err := runSPExecuteWith(t, n, 0, spReqJSON(tc.capacity, ""), spStored(spDetails))
+			require.NoError(t, err)
+			require.NotNil(t, saved)
+			require.Len(t, n.captured.Recommendations, 1)
+			assert.Equal(t, 1, n.captured.Recommendations[0].Count)
+			assert.Equal(t, tc.savings, n.captured.Recommendations[0].MonthlySavings)
+			assert.Equal(t, tc.upfront, n.captured.TotalUpfrontCost)
+			body, err := email.RenderPurchaseApprovalRequestEmail(n.captured)
+			require.NoError(t, err)
+			assert.Contains(t, body, tc.line)
+		})
+	}
 }
