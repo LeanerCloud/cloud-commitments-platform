@@ -250,7 +250,7 @@ header h1 {
 
 #logout-btn:hover {
     background: var(--cudly-on-primary-10);
-    border-color: white;
+    border-color: var(--cudly-white);
 }
 
 .header-link {

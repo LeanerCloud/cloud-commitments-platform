@@ -335,7 +335,7 @@
 }
 
 .service-default-card {
-    background: white;
+    background: var(--cudly-surface);
     border: 1px solid var(--cudly-border);
     border-radius: 8px;
     padding: 1rem;
@@ -562,7 +562,7 @@ select.dirty {
     justify-content: space-between;
     gap: 1rem;
     padding: 0.5rem 0.75rem;
-    background: white;
+    background: var(--cudly-surface);
     border: 1px solid var(--cudly-info-border-faint);
     border-radius: 6px;
 }

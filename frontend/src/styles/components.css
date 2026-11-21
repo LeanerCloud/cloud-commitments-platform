@@ -143,7 +143,7 @@ button:disabled {
 button.primary {
     background: var(--cudly-primary);
     border-color: var(--cudly-primary);
-    color: white;
+    color: var(--cudly-on-solid);
 }
 
 button.primary:hover {
@@ -154,7 +154,7 @@ button.primary:hover {
 button.success {
     background: var(--cudly-success);
     border-color: var(--cudly-success);
-    color: white;
+    color: var(--cudly-on-solid);
 }
 
 button.success:hover {
@@ -165,7 +165,7 @@ button.success:hover {
 button.danger {
     background: var(--cudly-error);
     border-color: var(--cudly-error);
-    color: white;
+    color: var(--cudly-on-solid);
 }
 
 button.danger:hover {
@@ -210,7 +210,7 @@ button.secondary:hover {
     font-size: var(--cudly-fs-sm);
     border: 1px solid var(--cudly-border-strong);
     border-radius: 4px;
-    background: white;
+    background: var(--cudly-surface);
     color: var(--cudly-text);
     cursor: pointer;
     margin-right: 0.25rem;
@@ -223,7 +223,7 @@ button.secondary:hover {
 
 .btn-small.primary {
     background: var(--cudly-primary);
-    color: white;
+    color: var(--cudly-on-solid);
     border-color: var(--cudly-primary);
 }
 
@@ -234,7 +234,7 @@ button.secondary:hover {
 
 .btn-small.success {
     background: var(--cudly-success);
-    color: white;
+    color: var(--cudly-on-solid);
     border-color: var(--cudly-success);
 }
 
@@ -262,7 +262,7 @@ button.secondary:hover {
 
 .btn-small.danger:hover {
     background: var(--cudly-error);
-    color: white;
+    color: var(--cudly-on-solid);
 }
 
 /* Variants used in markup next to .btn / .btn-small. Outlined by default;
@@ -277,7 +277,7 @@ button.secondary:hover {
 .btn-danger:hover {
     background: var(--cudly-error);
     border-color: var(--cudly-error);
-    color: white;
+    color: var(--cudly-on-solid);
 }
 
 .btn-warning {
@@ -313,7 +313,7 @@ button.secondary:hover {
  */
 .btn-primary {
     background: var(--cudly-primary);
-    color: white;
+    color: var(--cudly-on-solid);
     border: 1px solid var(--cudly-primary);
 }
 
@@ -332,7 +332,7 @@ button.secondary:hover {
 
 .btn-destructive {
     background: var(--cudly-error);
-    color: white;
+    color: var(--cudly-on-solid);
     border: 1px solid var(--cudly-error);
 }
 
@@ -384,7 +384,7 @@ button.secondary:hover {
     align-items: start;
     gap: 0.5rem;
     padding: 0.75rem 1rem;
-    background: white;
+    background: var(--cudly-surface);
     border-radius: 6px;
     border-left: 4px solid var(--cudly-text-muted);
     box-shadow: 0 6px 18px var(--cudly-shadow-ink-18);
@@ -492,7 +492,7 @@ button.secondary:hover {
 .settings-savebar {
     position: sticky;
     bottom: 0;
-    background: white;
+    background: var(--cudly-surface);
     padding: 1rem;
     margin-top: 1rem;
     border-top: 1px solid transparent;
@@ -541,7 +541,7 @@ button.secondary:hover {
 
 .trend-range.active {
     background: var(--cudly-primary);
-    color: white;
+    color: var(--cudly-on-solid);
     border-color: var(--cudly-primary);
 }
 
@@ -1290,12 +1290,12 @@ tr.rec-variant-row:hover td:not(.checkbox-col) {
 
 .provider-badge.azure {
     background: var(--cudly-brand-azure);
-    color: white;
+    color: var(--cudly-white);
 }
 
 .provider-badge.gcp {
     background: var(--cudly-brand-gcp);
-    color: white;
+    color: var(--cudly-white);
 }
 
 /* Service badges */

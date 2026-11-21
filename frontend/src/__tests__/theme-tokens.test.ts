@@ -9,13 +9,11 @@ const baseCss = fs.readFileSync(path.join(STYLES, 'base.css'), 'utf8');
 
 /** Colour tokens that keep their :root value in the dark scheme on purpose. */
 const UNTHEMED = new Set([
-  '--cudly-brand-aws', '--cudly-brand-aws-fg', '--cudly-brand-azure', '--cudly-brand-gcp', // brand marks
+  '--cudly-brand-aws', '--cudly-brand-aws-fg', '--cudly-brand-azure', '--cudly-brand-gcp', '--cudly-white', // brand marks
   '--cudly-mask-opaque', '--cudly-scroll-hint-ink', // alpha-only masks
   '--cudly-shadow-ink-08', '--cudly-shadow-ink-10', '--cudly-shadow-ink-13', '--cudly-shadow-ink-15',
   '--cudly-shadow-ink-18', '--cudly-shadow-ink-20', '--cudly-shadow-ink-40', '--cudly-shadow-scroll',
   '--cudly-scrim', '--cudly-shadow-dialog', // black-ish inks work on both schemes
-  '--cudly-on-primary-10', '--cudly-on-primary-15', '--cudly-on-primary-18', '--cudly-on-primary-50',
-  '--cudly-on-primary-80', '--cudly-on-primary-95', // white alphas stay white
 ]);
 
 function declarations(body: string): Map<string, string> {
@@ -48,6 +46,9 @@ const PAIRS: ReadonlyArray<readonly [string, string]> = [
   ['--cudly-primary-fg', '--cudly-primary'], ['--cudly-primary', '--cudly-surface'],
   ['--cudly-error-fg', '--cudly-error-bg'], ['--cudly-success-fg', '--cudly-success-bg'],
   ['--cudly-warn-fg', '--cudly-warn-bg'],
+  ['--cudly-on-solid', '--cudly-primary'], ['--cudly-on-solid', '--cudly-primary-hover'],
+  ['--cudly-on-solid', '--cudly-success'], ['--cudly-on-solid', '--cudly-error'],
+  ['--cudly-on-solid', '--cudly-error-fg'],
 ];
 
 describe('dark palette tokens', () => {
@@ -72,6 +73,17 @@ describe('dark palette tokens', () => {
       const ratio = contrast(tokens.get(fg)!, tokens.get(bg)!);
       expect([name, fg, bg, ratio >= 4.5]).toEqual([name, fg, bg, true]);
     }
+  });
+
+  it('leaves no literal white in any stylesheet (use a token)', () => {
+    const sheets = fs.readdirSync(STYLES).filter((f) => f.endsWith('.css'));
+    // Token definitions (--name: value;) are where white may live; every other declaration must use a token.
+    const literal = /(?<![\w-])white(?![\w-])|#f{3}\b|#f{6}\b/i;
+    const hits = sheets.filter((f) => literal.test(
+      fs.readFileSync(path.join(STYLES, f), 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/--[\w-]+:\s*[^;]+;/g, '')));
+    expect(hits).toEqual([]);
   });
 
   it('declares color-scheme for both schemes', () => {

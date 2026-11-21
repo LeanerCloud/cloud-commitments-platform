@@ -15,6 +15,8 @@
     --cudly-primary: #2563eb;       /* Blue accent used on top bar + primary CTAs */
     --cudly-primary-hover: #1d4ed8;
     --cudly-primary-fg: #ffffff;
+    --cudly-on-solid: #ffffff;      /* Text on primary, success and error fills */
+    --cudly-white: #ffffff;         /* Fixed white: brand badge text, toggle knob */
 
     /* Surfaces */
     --cudly-bg: #f5f7fa;            /* App background — sits behind cards */
@@ -227,8 +229,8 @@
 }
 
 /* Dark palette (issue #699). Inert unless <html data-theme="dark"> is set.
- * Only tokens whose value changes are listed; brand marks, shadow inks, white
- * alphas, scrims and the mask stay as in :root (see theme-tokens.test.ts). */
+ * Only tokens whose value changes are listed; brand marks, shadow inks,
+ * scrims and the mask stay as in :root (see theme-tokens.test.ts). */
 :root[data-theme="dark"] {
     color-scheme: dark;
 
@@ -236,6 +238,15 @@
     --cudly-primary: #60a5fa;
     --cudly-primary-hover: #93c5fd;
     --cudly-primary-fg: #0f172a;
+    --cudly-on-solid: #0f172a;
+
+    /* Ink alphas on the primary bar follow the bar's text colour */
+    --cudly-on-primary-10: rgba(15, 23, 42, 0.1);
+    --cudly-on-primary-15: rgba(15, 23, 42, 0.15);
+    --cudly-on-primary-18: rgba(15, 23, 42, 0.18);
+    --cudly-on-primary-50: rgba(15, 23, 42, 0.5);
+    --cudly-on-primary-80: rgba(15, 23, 42, 0.8);
+    --cudly-on-primary-95: rgba(15, 23, 42, 0.95);
     --cudly-bg: #0f172a;
     --cudly-surface: #1e293b;
     --cudly-surface-muted: #172033;
