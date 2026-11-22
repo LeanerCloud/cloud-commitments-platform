@@ -5,7 +5,8 @@
  * network modules are mocked.
  */
 import { loadRecommendations } from '../recommendations';
-import { closePopover } from '../recsflow/popover';
+import { closePopover, rebindOpenPopoverAnchor, rerenderRecommendations } from '../recsflow/popover';
+import { openColumnFilterPopover, closeColumnFilterPopover } from '../lib/column-filter-popover';
 import { resetColumnFiltersState } from '../recsflow/columnPrefs';
 import * as api from '../api';
 import * as state from '../state';
@@ -82,6 +83,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   closePopover();
+  closeColumnFilterPopover();
 });
 
 describe('SP All Savings Plans group', () => {
@@ -251,5 +253,52 @@ describe('popover position', () => {
     t.getBoundingClientRect = () => ({ left: 400, top: 790, width: 24, height: 24, right: 424, bottom: 814, x: 400, y: 790, toJSON: () => ({}) }) as DOMRect;
     t.click();
     expect(pop()!.style.top).toBe('786px');
+  });
+});
+
+describe('recs scope isolation', () => {
+  const openForeign = (scope: string, findTrigger: (b: HTMLButtonElement) => HTMLElement | null): HTMLButtonElement => {
+    const b = document.createElement('button');
+    b.className = `${scope}-column-filter-btn`;
+    document.body.appendChild(b);
+    openColumnFilterPopover({
+      scope, column: 'provider', label: 'Provider', kind: 'categorical', distinctValues: ['aws', 'gcp'],
+      getFilter: () => undefined, onCommit: () => undefined, findTrigger: () => findTrigger(b),
+      triggerSelector: `.${scope}-column-filter-btn`,
+    }, b);
+    return b;
+  };
+
+  test.each(['history', 'plans'])('recs closePopover and rebind leave an open %s popover alone', async (scope) => {
+    await render();
+    const b = openForeign(scope, (x) => x);
+    const el = pop()!;
+    closePopover(true);
+    rebindOpenPopoverAnchor();
+    rerenderRecommendations();
+    expect(pop()).toBe(el);
+    expect(el.isConnected).toBe(true);
+    expect(b.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  test('rebind does not close another scope whose trigger cannot be found', async () => {
+    await render();
+    openForeign('history', () => null);
+    rebindOpenPopoverAnchor();
+    expect(pop()).not.toBeNull();
+  });
+
+  test('the tab observer is registered at most once across renders and opens', async () => {
+    const observe = jest.spyOn(MutationObserver.prototype, 'observe');
+    try {
+      await render();
+      await render();
+      rerenderRecommendations();
+      open('service');
+      await render();
+      expect(observe.mock.calls.filter(([t]) => t === tab).length).toBeLessThanOrEqual(1);
+    } finally {
+      observe.mockRestore();
+    }
   });
 });
