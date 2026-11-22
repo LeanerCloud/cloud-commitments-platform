@@ -22,13 +22,14 @@ import { hasNoCommitments, isRealTerm } from './lib/purchase-row-guards';
 import { openHistoryColumnPopover, renderHistoryFilterButton, closeOpenHistoryPopover } from './lib/history-filter-popover';
 import type { PurchaseHistoryColumnId, ApprovalQueueColumnId } from './state';
 import { historyState } from './historyflow/historyState';
-import { VALID_PROVIDERS, boughtNothing, noSavingsCell, statusFullTextHtml, normalizeStatus, isInFlightStatus, statusBadgeHTML, buildStatusChipRowHTML, MUTED_DASH, NO_RECS_HTML, termCell, historyDate, providerCell, upfrontCell, roundForDisplay } from './historyflow/cells';
+import { VALID_PROVIDERS, noSavingsCell, statusFullTextHtml, normalizeStatus, isInFlightStatus, statusBadgeHTML, buildStatusChipRowHTML, MUTED_DASH, NO_RECS_HTML, termCell, historyDate, providerCell, upfrontCell, roundForDisplay } from './historyflow/cells';
 import type { StatusFilter } from './historyflow/cells';
 import { refreshFourEyesMode } from './historyflow/rowGuards';
 import { renderPendingActionButtons, opsHintHtml, renderActionCell } from './historyflow/rowRender';
 import { wireRowActionHandlers } from './historyflow/rowHandlers';
 import { mountAmortizeCheckbox, syncAmortizeCheckbox } from './historyflow/amortize';
 import { applyExecutionDeepLink } from './historyflow/deepLink';
+import { PURCHASE_HISTORY_NUMERIC_COLUMNS, applyPurchaseHistoryColumnFilters, PURCHASE_HISTORY_LABELS, purchaseHistoryDistinctValues, purchaseHistoryDisplayLabel, PURCHASE_HISTORY_FILTER_SCOPE } from './historyflow/historyColumns';
 
 let activeStatusFilter: StatusFilter = 'all';
 
@@ -390,116 +391,6 @@ function renderHistorySummary(summary: HistorySummary | null): void {
     </div>
   `;
 }
-
-// ---------------------------------------------------------------------------
-// Per-column filter wiring for the Purchase History table.
-//
-// The Status chip-row above stays as-is — it's an enum-driven filter with no
-// natural fit for the generic set/expr column-filter shape, and the chip-row
-// is the more discoverable affordance for status anyway. Column filters here
-// cover the row attributes (provider/service/type/region/term/count/upfront/
-// savings) — Status is intentionally excluded.
-//
-// Numeric extractors round to 0 decimal places to match formatCurrency's
-// default (CURRENCY_DEFAULT_DIGITS), so a user typing the visible "$123"
-// matches the row that displays that exact value (issue #484 contract on
-// the recommendations table).
-// ---------------------------------------------------------------------------
-
-const PURCHASE_HISTORY_NUMERIC_COLUMNS: ReadonlySet<PurchaseHistoryColumnId> = new Set([
-  'count', 'upfront_cost', 'savings',
-]);
-
-function purchaseHistoryCategoricalCellValue(
-  p: HistoryPurchase,
-  col: PurchaseHistoryColumnId,
-): string {
-  switch (col) {
-    case 'provider':       return p.provider ?? '';
-    case 'service':        return p.service ?? '';
-    case 'resource_type':  return p.resource_type ?? '';
-    case 'region':         return p.region ?? '';
-    case 'term':           return p.term == null ? '' : String(p.term);
-    case 'count':
-    case 'upfront_cost':
-    case 'savings':        return '';
-  }
-}
-
-export function purchaseHistoryNumericCellValue(
-  p: HistoryPurchase,
-  col: PurchaseHistoryColumnId,
-): number {
-  switch (col) {
-    case 'count':         return p.count ?? 0;
-    case 'upfront_cost':  return p.upfront_cost ?? Number.NaN;
-    case 'savings':       return boughtNothing(p) ? 0 : p.estimated_savings ?? Number.NaN;
-    case 'provider':
-    case 'service':
-    case 'resource_type':
-    case 'region':
-    case 'term':          return Number.NaN;
-  }
-}
-
-export function applyPurchaseHistoryColumnFilters(
-  purchases: readonly HistoryPurchase[],
-  filters: state.PurchaseHistoryColumnFilters,
-): HistoryPurchase[] {
-  return applyColumnFilters<HistoryPurchase, PurchaseHistoryColumnId>(
-    purchases,
-    filters,
-    {
-      categorical: purchaseHistoryCategoricalCellValue,
-      numeric: (p, col) => roundForDisplay(purchaseHistoryNumericCellValue(p, col)),
-    },
-  );
-}
-
-const PURCHASE_HISTORY_LABELS: Record<PurchaseHistoryColumnId, string> = {
-  provider: 'Provider',
-  service: 'Service',
-  resource_type: 'Type',
-  region: 'Region',
-  term: 'Term',
-  count: 'Count',
-  upfront_cost: 'Upfront Cost',
-  savings: 'Monthly Savings',
-};
-
-function purchaseHistoryDistinctValues(
-  purchases: readonly HistoryPurchase[],
-  column: PurchaseHistoryColumnId,
-): string[] {
-  const seen = new Set<string>();
-  for (const p of purchases) {
-    seen.add(purchaseHistoryCategoricalCellValue(p, column));
-  }
-  return Array.from(seen).sort((a, b) => {
-    if (a === '' && b !== '') return -1;
-    if (a !== '' && b === '') return 1;
-    return a.localeCompare(b);
-  });
-}
-
-function purchaseHistoryDisplayLabel(
-  column: PurchaseHistoryColumnId,
-  value: string,
-): string {
-  if (value === '') return '(empty)';
-  if (column === 'term') {
-    // Match the cell: a 0 term renders as a dash, never "0 Years" (#181).
-    const n = Number(value);
-    return isRealTerm(n) ? formatTermShort(n) : Number.isFinite(n) ? NO_VALUE : value;
-  }
-  if (column === 'service') return serviceLabel(value);
-  return value;
-}
-
-// Per-table namespaces for the shared filter popover (issue #281): both
-// tables render buttons with the same bare column ids, so the popover keys
-// and resolves its anchor by (scope, column).
-const PURCHASE_HISTORY_FILTER_SCOPE = 'history';
 
 const APPROVAL_QUEUE_FILTER_SCOPE = 'queue';
 
@@ -973,3 +864,4 @@ export function renderApprovalQueue(purchases: HistoryPurchase[]): void {
 }
 
 export { readDeepLinkExecutionID, applyExecutionDeepLink } from './historyflow/deepLink';
+export { purchaseHistoryNumericCellValue, applyPurchaseHistoryColumnFilters } from './historyflow/historyColumns';
