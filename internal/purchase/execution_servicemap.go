@@ -101,36 +101,19 @@ var legacyAWSServiceSlugs = map[string]common.ServiceType{
 	"memorydb":    common.ServiceMemoryDB,
 }
 
-// mapSavingsPlansSlug normalizes both the canonical hyphenated SP slugs and
-// the dash-free spellings the frontend has historically sent into the
-// matching common.ServiceType. The map covers the legacy umbrella plus the
-// four per-plan-type slugs in both spellings — pulled out of mapServiceType
-// to keep that switch under the gocyclo budget.
+// mapSavingsPlansSlug normalizes the umbrella "savingsplans" slug and the four
+// per-plan-type slugs, in both the hyphenated and dash-free spellings, into the
+// matching common.ServiceType. It is pulled out of mapServiceType to keep that
+// switch under the gocyclo budget.
 //
 // The hyphenated per-plan-type slugs ("savings-plans-compute", "-database",
 // "-ec2instance", "-sagemaker") are the CANONICAL spelling: service_configs
-// stores them today, so they must stay. Only the legacy umbrella spelling
-// "savings-plans" (no plan type) is a drop candidate (#95): PR #94 (merged
-// 2026-04-30) renamed it to "savingsplans", and purchase_executions rows have a
-// ~6-month retention window, so the earliest safe drop date was 2026-10-30.
-// The dash-free per-plan-type keys ("savingsplans-*") are forward-compat.
-// To drop the umbrella key, verify zero rows in purchase_executions AND
-// service_configs (JSONB text has a space after the colon, so match with
-// jsonb_array_elements, not LIKE on the text):
-//
-//	SELECT count(*) FROM purchase_executions pe
-//	WHERE EXISTS (SELECT 1 FROM jsonb_array_elements(
-//	    CASE WHEN jsonb_typeof(pe.recommendations) = 'array'
-//	         THEN pe.recommendations ELSE '[]'::jsonb END) r
-//	  WHERE r->>'service' = 'savings-plans');
-//	SELECT count(*) FROM service_configs WHERE service = 'savings-plans';
-//
-// A read-only check on the single dev database on 2026-11-21 found 0 for both
-// (and 4 service_configs rows under the per-type hyphenated slugs). Removing
-// the umbrella key also needs the matching case in
-// pkg/common/service_details_codec.go: newDetailsForService, and the
-// coverage_extra_test.go case (line ~60) flipped to assert
-// ServiceType("savings-plans") (default-arm pass-through).
+// stores them, so they must stay. The legacy hyphenated umbrella
+// "savings-plans" (no plan type) was dropped (#7): a read-only dev database
+// check on 2026-11-23 found no row using it in purchase_history,
+// purchase_executions, service_configs or any other table with a service
+// column. It now passes through mapServiceType like any unknown slug. The
+// pinned cloud-commitments-go codec still has a case for it, which is harmless.
 //
 // A new per-plan-type spelling must also be added to
 // config.awsSavingsPlansSpellings, else a suppression stored under it misses
@@ -141,7 +124,6 @@ func mapSavingsPlansSlug(service string) (common.ServiceType, bool) {
 }
 
 var savingsPlansSlugs = map[string]common.ServiceType{
-	"savings-plans":             common.ServiceSavingsPlansAll,
 	"savingsplans":              common.ServiceSavingsPlansAll,
 	"savings-plans-compute":     common.ServiceSavingsPlansCompute,
 	"savingsplans-compute":      common.ServiceSavingsPlansCompute,

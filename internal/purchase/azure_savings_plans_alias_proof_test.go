@@ -135,7 +135,7 @@ func purchaseThroughPinnedAzureClient(t *testing.T, exec *config.PurchaseExecuti
 }
 
 func TestAzureSavingsPlansAliasIsDerivedFromTheRedriveToken(t *testing.T) {
-	for _, service := range []string{"savings-plans", "savingsplans"} {
+	for _, service := range []string{"savingsplans"} {
 		t.Run(service, func(t *testing.T) {
 			first := purchaseThroughPinnedAzureClient(t, azureSavingsPlansExec(t, service, "lineage-1"))
 			redrive := purchaseThroughPinnedAzureClient(t, azureSavingsPlansExec(t, service, "lineage-1"))

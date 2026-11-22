@@ -43,8 +43,10 @@ func TestRedriveGuardReachMatchesDispatchReach(t *testing.T) {
 	m := NewManager(ManagerConfig{})
 
 	candidates := []string{
-		// Every key of mapSavingsPlansSlug (execution.go). Only the first two
-		// map to ServiceSavingsPlansAll; the rest are AWS plan-type slugs.
+		// Every key of mapSavingsPlansSlug (execution.go). Only "savingsplans"
+		// maps to ServiceSavingsPlansAll; the rest are AWS plan-type slugs.
+		// "savings-plans" (the dropped legacy umbrella, #7) must now dispatch
+		// nowhere and so be refused nowhere.
 		"savings-plans", "savingsplans",
 		"savings-plans-compute", "savingsplans-compute",
 		"savings-plans-ec2instance", "savingsplans-ec2instance",
@@ -105,8 +107,8 @@ func TestRedriveGuardReachMatchesDispatchReach(t *testing.T) {
 func TestRedriveGuardRefusalSetIsExactlyTheDispatchableSpellings(t *testing.T) {
 	m := NewManager(ManagerConfig{})
 
-	// The only two spellings that reach Azure's savings-plans client.
-	for _, service := range []string{"savingsplans", "savings-plans"} {
+	// The only spelling that reaches Azure's savings-plans client.
+	for _, service := range []string{"savingsplans"} {
 		require.Equal(t, common.ServiceSavingsPlansAll, m.mapServiceType(service),
 			"%q must still dispatch to the Azure savings-plans client", service)
 		assert.NotEmpty(t, recRedriveRefusalReason(config.RecommendationRecord{Provider: "azure", Service: service}),

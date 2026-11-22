@@ -197,7 +197,7 @@ func TestClaimAndExecuteRefusesArmedAzureSavingsPlanRetry(t *testing.T) {
 // all. Gating only the two executors the issue named would have left this
 // entire path open for exactly the rows the issue is about.
 func TestFireScheduledDelayedPurchasesRefusesArmedAzureSavingsPlanRetry(t *testing.T) {
-	exec := armedExecution("azure", "savings-plans", 1, "scheduled")
+	exec := armedExecution("azure", "savingsplans", 1, "scheduled")
 	mgr, store, rec := armedHarness(t, common.ServiceSavingsPlansAll)
 	store.On("GetScheduledExecutionsDue", mock.Anything).
 		Return([]config.PurchaseExecution{*exec}, nil).Once()

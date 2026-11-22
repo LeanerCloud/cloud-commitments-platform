@@ -181,7 +181,7 @@ func recRedriveRefusalReason(rec config.RecommendationRecord) string {
 		// collapse onto the first order (see RedriveRefusalReason), so a
 		// re-drive may create a duplicate. All other Azure services use
 		// DoIdempotentPurchaseTwoStep (#729).
-		if rec.Service == "savingsplans" || rec.Service == "savings-plans" {
+		if rec.Service == "savingsplans" {
 			return redriveReasonAzureSavingsPlan
 		}
 		return ""

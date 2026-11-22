@@ -29,7 +29,6 @@ func TestRejectUnsupportedPartition(t *testing.T) {
 		refused   bool
 	}{
 		{"aws-cn umbrella SP slug", config.AWSPartitionChina, "savingsplans", true},
-		{"aws-cn legacy SP slug", config.AWSPartitionChina, "savings-plans", true},
 		{"aws-cn compute SP", config.AWSPartitionChina, "savings-plans-compute", true},
 		{"aws-cn EC2 instance SP", config.AWSPartitionChina, "savingsplans-ec2instance", true},
 		{"aws-cn SageMaker SP", config.AWSPartitionChina, "savings-plans-sagemaker", true},
