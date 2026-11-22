@@ -8,7 +8,7 @@ import { BackendPlan, LEGACY_PLAN_SERVICE_IDS, extractPlanInfo, rampRadioValue }
 import { setupPlanAccountsSection } from './planAccounts';
 import { wirePlanRangeInputs } from './planRanges';
 import { setupRampScheduleHandlers, setCustomRampConfigVisible } from './rampSchedule';
-import { showSelectionGroups, setPlanFieldsLocked, openPlanForm } from '../plans';
+import { showSelectionGroups, setPlanFieldsLocked, openPlanForm } from './planModal';
 
 export async function editPlan(planId: string): Promise<boolean> {
   plansState.editPlanFailureStatus = undefined;
