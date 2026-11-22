@@ -24,33 +24,26 @@ import { upcomingEmptyMessage } from './lib/upcoming-scope';
 import { formatTrendAxisTick, formatTrendTooltipTitle, formatSparseTrendMessage, MIN_TREND_POINTS, upsertChart } from './modules/chart-utils';
 import { setChartSummary, renderChartTable, removeChartTable } from './lib/chart-a11y';
 import { applyChartDefaults, chartColor, onThemeChange, surfaceColor, withAlpha } from './lib/chart-theme';
+import { dashboardState } from './dashboardflow/dashboardState';
+
 // Re-export for backward compatibility (tests and other callers import from dashboard.ts).
 export { formatTrendAxisTick } from './modules/chart-utils';
 
 // Register Chart.js components
 Chart.register(...registerables);
 
-// Separate Chart instance for the trend widget so it doesn't conflict with
-// the per-service savings chart instance below.
-let savingsTrendChart: Chart | null = null;
 let savingsTrendRange: '7' | '30' | '90' | 'all' = '90';
 // Request generation for loadSavingsTrendChart; see the stale guard there (#747).
 let savingsTrendGeneration = 0;
 
-// Chart instance for the per-service savings-range bar chart (issue #765).
-let savingsByServiceChart: Chart | null = null;
-
-// Inputs of the last per-service render, replayed when the color scheme
-// changes (the canvas only picks up new token values on a rebuild, #699).
-let lastSavingsByServiceArgs: Parameters<typeof renderSavingsByService> | null = null;
 let stopThemeWatch: (() => void) | null = null;
 
 // One module-lifetime subscription, started when the first chart is drawn.
 // Each rebuild is a no-op for a chart that is not on screen.
 function watchTheme(): void {
   stopThemeWatch ??= onThemeChange(() => {
-    if (savingsByServiceChart && lastSavingsByServiceArgs) renderSavingsByService(...lastSavingsByServiceArgs);
-    if (savingsTrendChart) void loadSavingsTrendChart();
+    if (dashboardState.savingsByServiceChart && dashboardState.lastSavingsByServiceArgs) renderSavingsByService(...dashboardState.lastSavingsByServiceArgs);
+    if (dashboardState.savingsTrendChart) void loadSavingsTrendChart();
   });
 }
 
@@ -132,10 +125,6 @@ export function savingsLayerColors(): { current: string; lowestOption: string; u
 // enumerates real pending executions to surface execution_id properly.
 let upcomingPurchasesIndex: Map<string, UpcomingPurchase> = new Map();
 
-// Bumped on every upcoming request so a slower, older response cannot
-// overwrite the widget after a newer chip selection rendered (#713).
-let upcomingGen = 0;
-
 /**
  * True when the Home tab is the currently-visible tab. Used by the
  * reload-on-filter-change subscriptions below to skip the fetch (and
@@ -208,8 +197,8 @@ export async function loadDashboard(): Promise<void> {
   if (upcomingEl) showSkeletonBlock(upcomingEl, '100%', '6rem');
   // #1686: the two chart cards share the same loading treatment. The trend
   // loader clears its own; the per-service one is cleared in finally below.
-  const trendLoadingEl = showChartSkeleton(SAVINGS_TREND_LOADING_ID, 'savings-trend-chart', 'savings-trend-empty', savingsTrendChart);
-  const byServiceLoadingEl = showChartSkeleton('savings-by-service-loading', 'savings-by-service-chart', 'savings-by-service-empty', savingsByServiceChart);
+  const trendLoadingEl = showChartSkeleton(SAVINGS_TREND_LOADING_ID, 'savings-trend-chart', 'savings-trend-empty', dashboardState.savingsTrendChart);
+  const byServiceLoadingEl = showChartSkeleton('savings-by-service-loading', 'savings-by-service-chart', 'savings-by-service-empty', dashboardState.savingsByServiceChart);
 
   try {
     const currentProvider = state.getCurrentProvider();
@@ -223,7 +212,7 @@ export async function loadDashboard(): Promise<void> {
     // move the range computation server-side if needed.
     // Promise.allSettled ensures the dashboard still renders if any individual
     // fetch fails -- each card falls back gracefully.
-    const gen = ++upcomingGen;
+    const gen = ++dashboardState.upcomingGen;
     const [summaryResult, upcomingResult, recsResult, enabledProviders, accountsResult] = await Promise.allSettled([
       api.getDashboardSummary(currentProvider, currentAccountIDs),
       api.getUpcomingPurchases(currentProvider, currentAccountIDs),
@@ -290,7 +279,7 @@ export async function loadDashboard(): Promise<void> {
     // Single merged per-service chart (#908): potential range from recs +
     // current-savings underlay from the summary's by_service map.
     renderSavingsByService(recs, summaryData.by_service || {}, filterDesc);
-    if (gen !== upcomingGen) {
+    if (gen !== dashboardState.upcomingGen) {
       // A newer upcoming request owns the widget.
     } else if (upcomingResult.status === 'rejected') {
       console.error('Failed to load upcoming purchases:', upcomingResult.reason);
@@ -330,8 +319,8 @@ export async function loadDashboard(): Promise<void> {
     if (upcoming) teardownSkeleton(upcoming);
     // The trend loader never runs on this path, so clear its skeleton here.
     if (trendLoadingEl) teardownSkeleton(trendLoadingEl);
-    if (!savingsTrendChart) showChartLoadFailed('savings-trend-empty', TREND_LOAD_FAILED_TEXT);
-    if (!savingsByServiceChart) {
+    if (!dashboardState.savingsTrendChart) showChartLoadFailed('savings-trend-empty', TREND_LOAD_FAILED_TEXT);
+    if (!dashboardState.savingsByServiceChart) {
       showChartLoadFailed('savings-by-service-empty', 'Potential savings could not be loaded. Reload the page to try again.');
     }
   } finally {
@@ -564,14 +553,14 @@ async function retryUpcomingPurchases(): Promise<void> {
     container.focus();
     showSkeletonBlock(container, '100%', '6rem');
   }
-  const gen = ++upcomingGen;
+  const gen = ++dashboardState.upcomingGen;
   try {
     const data = await api.getUpcomingPurchases(state.getCurrentProvider(), state.getCurrentAccountIDs());
-    if (gen !== upcomingGen) return;
+    if (gen !== dashboardState.upcomingGen) return;
     // `?.`: apiRequest resolves null for an empty 2xx body (#304).
     renderUpcomingPurchases(data?.purchases || []);
   } catch (error) {
-    if (gen !== upcomingGen) return;
+    if (gen !== dashboardState.upcomingGen) return;
     console.error('Failed to load upcoming purchases:', error);
     renderUpcomingError();
   }
@@ -988,7 +977,6 @@ export function computeServiceStatsFromRecs(
   return stats;
 }
 
-
 /**
  * Render the single merged per-service savings chart (issues #769 + #908).
  *
@@ -1022,7 +1010,7 @@ export function renderSavingsByService(
   const emptyEl = document.getElementById('savings-by-service-empty');
   const section = document.getElementById('savings-by-service-section');
   if (!canvas) return;
-  lastSavingsByServiceArgs = [recs, byService, filterDesc];
+  dashboardState.lastSavingsByServiceArgs = [recs, byService, filterDesc];
 
   const stats = computeServiceStatsFromRecs(recs);
   const heading = section?.querySelector('h3');
@@ -1072,8 +1060,8 @@ export function renderSavingsByService(
   if (positive.length === 0) {
     if (heading) heading.textContent = 'Potential savings range per service';
     note?.classList.add('hidden');
-    savingsByServiceChart?.destroy();
-    savingsByServiceChart = null;
+    dashboardState.savingsByServiceChart?.destroy();
+    dashboardState.savingsByServiceChart = null;
     canvas.classList.add('hidden');
     removeChartTable(SAVINGS_BY_SERVICE_TABLE_ID);
     if (emptyEl) {
@@ -1142,7 +1130,7 @@ export function renderSavingsByService(
   applyChartDefaults(Chart.defaults);
   // #747: update in place so a filter change doesn't replay the entry animation.
   watchTheme();
-  savingsByServiceChart = upsertChart(savingsByServiceChart, canvas, {
+  dashboardState.savingsByServiceChart = upsertChart(dashboardState.savingsByServiceChart, canvas, {
     type: 'bar',
     data: {
       labels,
@@ -1273,7 +1261,7 @@ export async function loadSavingsTrendChart(): Promise<void> {
   // #747: quick range or filter changes overlap requests; only the latest
   // may paint, or an older response landing last would show the wrong range.
   const generation = ++savingsTrendGeneration;
-  const loadingEl = showChartSkeleton(SAVINGS_TREND_LOADING_ID, 'savings-trend-chart', 'savings-trend-empty', savingsTrendChart);
+  const loadingEl = showChartSkeleton(SAVINGS_TREND_LOADING_ID, 'savings-trend-chart', 'savings-trend-empty', dashboardState.savingsTrendChart);
 
   const now = new Date();
   const nowMs = now.getTime();
@@ -1349,7 +1337,7 @@ export async function loadSavingsTrendChart(): Promise<void> {
           + (isAllRange ? '' : ' Older savings may show in the 1y range.');
         empty.classList.remove('hidden');
       }
-      if (savingsTrendChart) { savingsTrendChart.destroy(); savingsTrendChart = null; }
+      if (dashboardState.savingsTrendChart) { dashboardState.savingsTrendChart.destroy(); dashboardState.savingsTrendChart = null; }
       removeChartTable(SAVINGS_TREND_TABLE_ID);
       return;
     }
@@ -1361,7 +1349,7 @@ export async function loadSavingsTrendChart(): Promise<void> {
         empty.textContent = formatSparseTrendMessage(points[0] as SavingsDataPoint);
         empty.classList.remove('hidden');
       }
-      if (savingsTrendChart) { savingsTrendChart.destroy(); savingsTrendChart = null; }
+      if (dashboardState.savingsTrendChart) { dashboardState.savingsTrendChart.destroy(); dashboardState.savingsTrendChart = null; }
       // The sparse message carries the one value; drop any table left from
       // an earlier render, as the empty state does (#744).
       removeChartTable(SAVINGS_TREND_TABLE_ID);
@@ -1387,7 +1375,7 @@ export async function loadSavingsTrendChart(): Promise<void> {
     applyChartDefaults(Chart.defaults);
     // #747: update in place so a range click doesn't replay the entry animation.
     watchTheme();
-    savingsTrendChart = upsertChart(savingsTrendChart, canvas, {
+    dashboardState.savingsTrendChart = upsertChart(dashboardState.savingsTrendChart, canvas, {
       type: 'line',
       data: {
         datasets: [{
@@ -1447,7 +1435,7 @@ export async function loadSavingsTrendChart(): Promise<void> {
     // the dashboard — hide the widget and say the load failed, so it does not
     // read as "no history" (#1686).
     console.warn('Savings trend chart unavailable:', err);
-    if (savingsTrendChart) { savingsTrendChart.destroy(); savingsTrendChart = null; }
+    if (dashboardState.savingsTrendChart) { dashboardState.savingsTrendChart.destroy(); dashboardState.savingsTrendChart = null; }
     removeChartTable(SAVINGS_TREND_TABLE_ID);
     canvas.classList.add('hidden');
     if (empty) {
