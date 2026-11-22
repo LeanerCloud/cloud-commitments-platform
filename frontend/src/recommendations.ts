@@ -35,12 +35,6 @@ import { captureFocus, restoreFocus } from './lib/focus-restore';
 import { canAccess } from './permissions';
 import { buildFirstRunEmptyState, isScopeFiltered } from './first-run-empty-state';
 
-// Issue #869: true when the current session can take any action on
-// recommendations (purchase or plan). Readonly/viewer sessions have neither
-// permission, so checkboxes and row-click selection are meaningless for them.
-function canActOnRecommendations(): boolean {
-  return canAccess('execute', 'purchases') || canAccess('create', 'plans');
-}
 import { parseNumericFilter, applyColumnFilters as applyColumnFiltersLib } from './lib/column-filters';
 import { formatPaymentOption, formatTermShort } from './lib/table-format';
 import { fetchOverridesForAccounts } from './lib/overrides';
@@ -48,21 +42,13 @@ import { ownValue } from './lib/own-property';
 import { HOURS_PER_MONTH } from './lib/hours-per-month';
 import { anchorInView } from './lib/table-scroll';
 import { expandedCells, expandedSpGroups, resetExpandedCells, clearPurchaseModalRecommendations, recsState } from './recsflow/recsState';
+import { getAccountName, providerDisplayName, providerBadgeClass, PAYMENT_DISPLAY_LABELS, formatPayment, canActOnRecommendations } from './recsflow/shared';
 // Re-export the shared primitives so existing consumers that import from
 // recommendations.ts keep working without import-path churn (issue #166).
 export { parseNumericFilter } from './lib/column-filters';
 export type { ParsedNumericFilter } from './lib/column-filters';
 export { getPurchaseModalSession, getPurchaseModalRecommendations, clearPurchaseModalRecommendations, resetExpandedCells } from './recsflow/recsState';
-
-/**
- * Returns the display name for a cloud account ID, falling back to the raw
- * ID when the name has not been cached yet. Exported so other modules (e.g.
- * history.ts Approval Queue) can resolve account names without importing the
- * full recommendations data model.
- */
-export function getAccountName(accountId: string): string {
-  return recsState.accountNamesCache.get(accountId) || accountId;
-}
+export { getAccountName } from './recsflow/shared';
 
 // Buckets are single-account by construction (issue #333), so recs[0] names
 // the bucket's account.
@@ -3156,38 +3142,6 @@ function mountCostPeriodSelector(bar: HTMLElement): void {
 // inside the bottom action box. The old helper had only one caller; folding
 // keeps the action-target logic centralised in one place.
 
-
-function providerDisplayName(provider: string): string {
-  switch (provider.toLowerCase()) {
-    case 'aws': return 'AWS';
-    case 'azure': return 'Azure';
-    case 'gcp': return 'GCP';
-    default: return provider;
-  }
-}
-
-// CR #253 finding: whitelist provider for CSS class injection.
-// rec.provider comes from the API and is injected into class attributes via
-// template literals. A non-whitelisted value falls back to '' (no badge class).
-function providerBadgeClass(provider: string): string {
-  const n = provider.toLowerCase();
-  return n === 'aws' || n === 'azure' || n === 'gcp' ? n : '';
-}
-
-
-// Map raw payment_option values to display labels for the Payment column.
-const PAYMENT_DISPLAY_LABELS: Record<string, string> = {
-  'all-upfront':     'All Upfront',
-  'partial-upfront': 'Partial Upfront',
-  'no-upfront':      'No Upfront',
-  'upfront':         'Upfront',
-  'monthly':         'Monthly',
-};
-
-function formatPayment(payment: string | undefined): string {
-  if (!payment) return '\u2014';
-  return formatPaymentOption(payment);
-}
 
 // renderUsageSparkline returns an inline SVG polyline representing the
 // usage_history coverage percentages (0-100, oldest-to-newest). Returns
