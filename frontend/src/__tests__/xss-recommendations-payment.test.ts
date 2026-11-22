@@ -2,7 +2,7 @@
  * Regression tests for stored XSS via rec.payment rendered unescaped in the
  * Opportunities table's payment column (issue #1632).
  *
- * recommendations.ts:renderColumnCell used to emit:
+ * recsflow/cells.ts:renderColumnCell used to emit:
  *   case 'payment': return `<td>${formatPayment(rec.payment)}</td>`;
  *
  * while every other string-bearing arm of the same switch (provider,

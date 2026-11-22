@@ -12,7 +12,7 @@ export function setupButtonHandlers(): void {
   // Recommendations buttons — there is no visible Refresh affordance.
   // The previous filter-bar Refresh button was replaced by the freshness
   // indicator's Refresh, which was itself removed (#284 follow-up):
-  // triggerAutoRefreshIfStale in recommendations.ts now fires on every
+  // triggerAutoRefreshIfStale in recsflow/refresh.ts now fires on every
   // load if the cache is older than 24h, surfacing collection errors
   // via toast. Users who need a manual refresh can reload the page;
   // operators should expose a more-explicit affordance if support
@@ -20,7 +20,7 @@ export function setupButtonHandlers(): void {
   //
   // Bundle B note (column-filter UX overhaul): #create-plan-btn was relocated
   // from the old top filter bar into the sticky bottom action box. The
-  // button is now created and wired by recommendations.ts:mountBottomActionBox,
+  // button is now created and wired by recsflow/bottomBox.ts:mountBottomActionBox,
   // which calls openCreatePlanModal directly. The wiring used to live here.
 
   // Plans buttons

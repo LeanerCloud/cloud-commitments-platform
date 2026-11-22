@@ -154,7 +154,7 @@
                     </div>
                     <div class="page-header-actions">
                         <!-- Issue #909: AWS lookback selector + scope tooltip.
-                             Populated by recommendations.ts:renderLookbackToolbar on
+                             Populated by recsflow/lookback.ts:renderLookbackToolbar on
                              load (prefilled from /api/config; disabled for non-admin
                              sessions). Changing it persists recommendations_lookback_days
                              and triggers a recommendations re-collect for the new window. -->
@@ -164,7 +164,7 @@
                 <section id="recommendations-summary"></section>
                 <!-- Per-column header filters replace the old top filter bar.
                      The Clear-filters badge + aria-live count are injected
-                     by recommendations.ts:renderFilterStatusBar above the
+                     by recsflow/statusBar.ts:renderFilterStatusBar above the
                      list. Bottom action box (Payment / Capacity % / Purchase /
                      Create Plan) is rendered after the table by
                      mountBottomActionBox. -->

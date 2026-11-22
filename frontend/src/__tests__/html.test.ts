@@ -176,7 +176,7 @@ describe('HTML Structure', () => {
     // and the #recommendations-controls section that hosted it. The
     // service-filter / region-filter / min-savings-filter / provider-filter /
     // account-filter <select>s are gone — replaced by per-column header-mounted
-    // popovers driven by recommendations.ts:openColumnPopover. Negative-guard
+    // popovers driven by recsflow/popover.ts:openColumnPopover. Negative-guard
     // tests below ensure no regression accidentally re-introduces them.
     test('legacy top filter bar is absent (Bundle B)', () => {
       const recsTab = document.getElementById('opportunities-tab');

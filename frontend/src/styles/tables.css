@@ -880,7 +880,7 @@ th .history-column-filter-btn:focus-visible {
 }
 
 /* Opportunities bottom action bar (#recommendations-action-box, built in
- * recommendations.ts mountBottomActionBox): a tidy sticky footer. The
+ * recsflow/bottomBox.ts mountBottomActionBox): a tidy sticky footer. The
  * selection summary sits on the left with the muted disabled-state hint
  * under it; the labelled Capacity input and Purchase / Create Plan sit on
  * the right at one control height. Grid areas keep that order whatever
