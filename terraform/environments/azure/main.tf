@@ -59,20 +59,45 @@ provider "azurerm" {
 }
 
 # Kubernetes and Helm providers for AKS
-# These are configured after the cluster is created
+# The module's kube_config output is the raw kubeconfig YAML string, so its
+# attributes cannot be read; use the dedicated host/CA outputs instead (the
+# azurerm values are base64-encoded). Authentication is exec-based kubelogin
+# (Entra ID, Azure CLI login): AKS runs with local_account_disabled = true by
+# default, so there is no client certificate/key. The deploy identity needs an
+# Azure RBAC role on the cluster (e.g. "Azure Kubernetes Service RBAC Cluster
+# Admin") and kubelogin must be on PATH. The server-id is the public AKS
+# Entra server application ID. With compute_platform != "aks" the providers
+# stay unconfigured and no kubernetes/helm resource is planned.
+locals {
+  aks_host = try(module.compute_aks[0].host, "https://localhost")
+  aks_ca   = try(base64decode(module.compute_aks[0].cluster_ca_certificate), "")
+  aks_exec_args = [
+    "get-token", "--login", "azurecli",
+    "--server-id", "6dae42f8-4368-4678-94ff-3960e28e3630",
+  ]
+}
+
 provider "kubernetes" {
-  host                   = try(module.compute_aks[0].kube_config.host, "https://localhost")
-  client_certificate     = try(base64decode(module.compute_aks[0].kube_config.client_certificate), "")
-  client_key             = try(base64decode(module.compute_aks[0].kube_config.client_key), "")
-  cluster_ca_certificate = try(base64decode(module.compute_aks[0].kube_config.cluster_ca_certificate), "")
+  host                   = local.aks_host
+  cluster_ca_certificate = local.aks_ca
+
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    command     = "kubelogin"
+    args        = local.aks_exec_args
+  }
 }
 
 provider "helm" {
   kubernetes {
-    host                   = try(module.compute_aks[0].kube_config.host, "https://localhost")
-    client_certificate     = try(base64decode(module.compute_aks[0].kube_config.client_certificate), "")
-    client_key             = try(base64decode(module.compute_aks[0].kube_config.client_key), "")
-    cluster_ca_certificate = try(base64decode(module.compute_aks[0].kube_config.cluster_ca_certificate), "")
+    host                   = local.aks_host
+    cluster_ca_certificate = local.aks_ca
+
+    exec {
+      api_version = "client.authentication.k8s.io/v1beta1"
+      command     = "kubelogin"
+      args        = local.aks_exec_args
+    }
   }
 }
 
