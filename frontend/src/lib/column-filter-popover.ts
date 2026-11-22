@@ -49,6 +49,17 @@ export interface ColumnFilterPopoverConfig {
   // Follow the trigger while it scrolls on screen and close once it scrolls
   // out of view (tables inside a scrolling container).
   followOnScroll?: boolean;
+  // Categorical only: tri-state rows over a subset of values, rendered
+  // between (All) and the list (e.g. 'All Savings Plans'). Members absent
+  // from distinctValues are ignored. Omitted = no group rows.
+  valueGroups?: readonly ColumnFilterValueGroup[];
+}
+
+export interface ColumnFilterValueGroup {
+  // Value of the checkbox's data-role attribute, e.g. 'sp-group'.
+  role: string;
+  label: string;
+  members: readonly string[];
 }
 
 interface OpenPopover {
@@ -58,6 +69,7 @@ interface OpenPopover {
   errorEl: HTMLElement | null;
   checkboxes: Map<string, HTMLInputElement>;
   allBox: HTMLInputElement | null;
+  groups: { box: HTMLInputElement; members: readonly string[] }[];
 }
 
 let open: OpenPopover | null = null;
@@ -66,7 +78,7 @@ const SCROLL_OPTS: AddEventListenerOptions = { capture: true, passive: true };
 
 const defaultDisplay = (v: string): string => (v === '' ? '(empty)' : v);
 
-function positionPopover(popover: HTMLElement, anchor: HTMLElement): void {
+export function positionPopover(popover: HTMLElement, anchor: HTMLElement): void {
   const rect = anchor.getBoundingClientRect();
   popover.style.display = 'block';
   const popRect = popover.getBoundingClientRect();
@@ -93,6 +105,15 @@ function updateAllTriState(p: OpenPopover): void {
   p.allBox.checked = total > 0 && checked === total;
 }
 
+function updateGroupTriStates(p: OpenPopover): void {
+  for (const { box, members } of p.groups) {
+    let checked = 0;
+    for (const m of members) if (p.checkboxes.get(m)?.checked) checked++;
+    box.indeterminate = checked > 0 && checked < members.length;
+    box.checked = members.length > 0 && checked === members.length;
+  }
+}
+
 // Copy the current filter state into the open popover's controls. The
 // numeric input is left alone while it has focus so a re-render triggered
 // elsewhere does not clobber what the user is typing.
@@ -109,6 +130,7 @@ function resync(p: OpenPopover): void {
     : new Set(f.kind === 'set' ? f.values : []);
   p.checkboxes.forEach((cb, value) => { cb.checked = values === null || values.has(value); });
   updateAllTriState(p);
+  updateGroupTriStates(p);
 }
 
 function buildNumeric(p: OpenPopover, idBase: string): void {
@@ -171,6 +193,21 @@ function buildCategorical(p: OpenPopover): void {
   p.el.appendChild(allLabel);
   p.allBox = allBox;
 
+  for (const group of config.valueGroups ?? []) {
+    const groupLabel = document.createElement('label');
+    groupLabel.className = 'column-filter-group';
+    const groupBox = document.createElement('input');
+    groupBox.type = 'checkbox';
+    groupBox.dataset['role'] = group.role;
+    groupLabel.appendChild(groupBox);
+    const groupText = document.createElement('span');
+    groupText.textContent = group.label;
+    groupLabel.appendChild(groupText);
+    p.el.appendChild(groupLabel);
+    const members = group.members.filter((m) => (config.distinctValues ?? []).includes(m));
+    p.groups.push({ box: groupBox, members });
+  }
+
   const list = document.createElement('div');
   list.className = 'column-filter-list';
   for (const value of config.distinctValues ?? []) {
@@ -192,10 +229,20 @@ function buildCategorical(p: OpenPopover): void {
     const selected: string[] = [];
     p.checkboxes.forEach((cb, value) => { if (cb.checked) selected.push(value); });
     updateAllTriState(p);
+    updateGroupTriStates(p);
     config.onCommit(selected.length === p.checkboxes.size ? null : { kind: 'set', values: selected });
   };
   p.checkboxes.forEach((cb) => cb.addEventListener('change', commit));
   allBox.addEventListener('change', () => setAll(p, allBox.checked));
+  for (const { box: groupBox, members } of p.groups) {
+    groupBox.addEventListener('change', () => {
+      for (const m of members) {
+        const cb = p.checkboxes.get(m);
+        if (cb) cb.checked = groupBox.checked;
+      }
+      commit();
+    });
+  }
 }
 
 // Check or uncheck every value. Unchecking writes an explicit empty
@@ -203,6 +250,7 @@ function buildCategorical(p: OpenPopover): void {
 function setAll(p: OpenPopover, target: boolean): void {
   p.checkboxes.forEach((cb) => { cb.checked = target; });
   updateAllTriState(p);
+  updateGroupTriStates(p);
   p.config.onCommit(target ? null : { kind: 'set', values: [] });
 }
 
@@ -220,7 +268,7 @@ function buildPopover(config: ColumnFilterPopoverConfig): OpenPopover {
   heading.textContent = `Filter ${config.label}`;
   el.appendChild(heading);
 
-  const p: OpenPopover = { config, el, input: null, errorEl: null, checkboxes: new Map(), allBox: null };
+  const p: OpenPopover = { config, el, input: null, errorEl: null, checkboxes: new Map(), allBox: null, groups: [] };
   if (config.kind === 'numeric') buildNumeric(p, idBase);
   else buildCategorical(p);
 
@@ -321,6 +369,12 @@ export function closeColumnFilterPopover(restoreFocus = false): void {
   const trigger = config.findTrigger();
   trigger?.setAttribute('aria-expanded', 'false');
   if (restoreFocus) trigger?.focus();
+}
+
+/** Close the open popover only if it belongs to `scope`. */
+export function closeColumnFilterPopoverForScope(scope: string, restoreFocus = false): void {
+  dropIfDetached();
+  if (open?.config.scope === scope) closeColumnFilterPopover(restoreFocus);
 }
 
 /**
