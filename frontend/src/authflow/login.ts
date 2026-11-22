@@ -5,7 +5,6 @@
 import * as api from '../api';
 import { reloadPage } from '../utils';
 import { openAuthDialog } from '../authDialog';
-import { handleLoginSubmitListener, handleMFACodeSubmitListener, showForgotPasswordForm } from '../auth';
 import { setupPasswordToggle } from './password';
 
 /**
@@ -118,7 +117,7 @@ function validateLoginInputs(email: string, password: string): string | null {
  * Anything else (MFA prompts, rate-limit, server errors) passes through
  * unchanged so operational signals are not suppressed.
  */
-export function mapServerLoginError(message: string): string {
+function mapServerLoginError(message: string): string {
   const lower = message.toLowerCase();
   if (lower.includes('invalid email format')) {
     return 'Incorrect email format';
@@ -135,7 +134,7 @@ export function mapServerLoginError(message: string): string {
   return message;
 }
 
-export function showLoginError(message: string): void {
+function showLoginError(message: string): void {
   const errorDiv = document.getElementById('login-error');
   if (errorDiv) {
     errorDiv.textContent = message;
@@ -153,14 +152,14 @@ const LOGIN_COOLDOWN_MS = 2000; // 2 seconds between attempts
 // success, cancel, any terminal error, or after MFA_PENDING_TTL_MS so an
 // abandoned prompt does not keep the plaintext password reachable for the
 // rest of the page's life. Never persisted.
-export let pendingMFAEmail = '';
-export let pendingMFAPassword = '';
+let pendingMFAEmail = '';
+let pendingMFAPassword = '';
 // Server-issued continuation token; when present the password is never kept.
-export let pendingMFAToken = '';
+let pendingMFAToken = '';
 let pendingMFATimer: ReturnType<typeof setTimeout> | undefined;
 export const MFA_PENDING_TTL_MS = 5 * 60 * 1000;
 
-export function clearPendingMFA(): void {
+function clearPendingMFA(): void {
   pendingMFAEmail = '';
   pendingMFAPassword = '';
   pendingMFAToken = '';
@@ -189,13 +188,13 @@ function stashPendingMFA(email: string, password: string, mfaToken?: string): vo
 }
 
 /** Drop the pending credentials and return to the email/password step. */
-export function restartLogin(notice?: string): void {
+function restartLogin(notice?: string): void {
   clearPendingMFA();
   document.getElementById('login-modal')?.remove();
   void showLoginModal(notice);
 }
 
-export async function handleLogin(e: Event): Promise<void> {
+async function handleLogin(e: Event): Promise<void> {
   e.preventDefault();
 
   const emailInput = document.getElementById('login-email') as HTMLInputElement | null;
@@ -286,4 +285,139 @@ function showMFACodeStep(): void {
   form.addEventListener('submit', handleMFACodeSubmitListener);
   // The swap destroyed the focused field; keep focus inside the dialog (#731).
   document.getElementById('mfa-code')?.focus();
+}
+
+// Stored listener references so we can swap them on the form
+// without losing reference identity. Function-expression form keeps
+// each addEventListener / removeEventListener call referencing the
+// same Function — arrow IIFEs would create a new function each time.
+const handleLoginSubmitListener = (e: Event): void => { void handleLogin(e); };
+const handleMFACodeSubmitListener = (e: Event): void => { void handleMFACodeSubmit(e); };
+const handlePasswordResetSubmitListener = (e: Event): void => {
+  e.preventDefault();
+  void handlePasswordReset();
+};
+
+async function handleMFACodeSubmit(e: Event): Promise<void> {
+  e.preventDefault();
+  const codeInput = document.getElementById('mfa-code') as HTMLInputElement | null;
+  const code = codeInput?.value.trim() || '';
+  if (code === '') {
+    showLoginError('Enter your authenticator code');
+    return;
+  }
+  document.getElementById('login-error')?.classList.add('hidden');
+  try {
+    await (pendingMFAToken
+      ? api.loginWithMFAToken(pendingMFAEmail, pendingMFAToken, code)
+      : api.login(pendingMFAEmail, pendingMFAPassword, code));
+    clearPendingMFA();
+    document.getElementById('login-modal')?.remove();
+    reloadPage();
+  } catch (error) {
+    if (error instanceof api.MFALoginError && error.code === 'invalid_mfa_code') {
+      // Wrong code — stay on the MFA step, surface a specific error.
+      showLoginError('Incorrect code, try again');
+      if (codeInput) { codeInput.value = ''; codeInput.focus(); }
+      return;
+    }
+    if (error instanceof api.MFALoginError && error.code === 'mfa_required') {
+      // Shouldn't reach here (we sent a code), but defensively stay.
+      showLoginError('Two-factor code required');
+      return;
+    }
+    // Any other failure ends this attempt: a resubmit cannot succeed
+    // without the password, so drop it and restart at the first step.
+    const message = error instanceof Error ? error.message : String(error);
+    restartLogin(mapServerLoginError(message));
+  }
+}
+
+function showForgotPasswordForm(modal: HTMLElement): void {
+  const form = modal.querySelector('#login-form');
+  if (!form) return;
+
+  form.innerHTML = `
+    <h3>Reset Password</h3>
+    <label>Email:
+      <input type="email" id="reset-email" placeholder="Your email address" autocomplete="email" autocapitalize="none" autocorrect="off" required>
+    </label>
+    <p class="help-text">We'll send you a link to reset your password.</p>
+    <div id="login-error" class="error-message hidden" role="alert"></div>
+    <button type="submit" id="send-reset-btn" class="primary">Send Reset Link</button>
+    <p><a href="#" id="back-to-login-link">Back to login</a></p>
+  `;
+
+  // Keep the inline "enter your email" message instead of the native bubble.
+  (form as HTMLFormElement).noValidate = true;
+  form.removeEventListener('submit', handleLoginSubmitListener);
+  form.addEventListener('submit', handlePasswordResetSubmitListener);
+  document.getElementById('back-to-login-link')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    reloadPage();
+  });
+  // The swap destroyed the focused link; keep focus inside the dialog (#731).
+  document.getElementById('reset-email')?.focus();
+}
+
+async function handlePasswordReset(): Promise<void> {
+  const emailInput = document.getElementById('reset-email') as HTMLInputElement | null;
+  const errorDiv = document.getElementById('login-error');
+  const email = emailInput?.value.trim() || '';
+
+  // Reset any previous error before validating.
+  errorDiv?.classList.add('hidden');
+
+  if (!email) {
+    if (errorDiv) {
+      errorDiv.textContent = 'Please enter your email address';
+      errorDiv.classList.remove('hidden');
+    }
+    return;
+  }
+
+  const sendBtn = document.getElementById('send-reset-btn') as HTMLButtonElement | null;
+  if (sendBtn) sendBtn.disabled = true;
+  try {
+    await api.requestPasswordReset(email);
+    // Issue #457: previously this surfaced as an alert() that, when
+    // closed, left the underlying modal open with nothing for the user
+    // to do. Swap the modal body in place with a confirmation panel +
+    // single Close button so the user has one explicit exit that
+    // returns them to login (option 2 from the issue, agreed cleaner).
+    showResetEmailConfirmation();
+  } catch (error) {
+    console.error('Password reset error:', error);
+    if (errorDiv) {
+      errorDiv.textContent = 'Failed to send reset email. Please try again.';
+      errorDiv.classList.remove('hidden');
+    }
+    if (sendBtn) sendBtn.disabled = false;
+  }
+}
+
+// showResetEmailConfirmation swaps the inner #login-form body with a
+// confirmation panel after a successful forgot-password submission.
+// The wrapping #login-modal stays in the DOM so the user has a single
+// explicit Close action; fixes issue #457 (lingering modal after the
+// confirmation pop-up closed).
+function showResetEmailConfirmation(): void {
+  const form = document.querySelector('#login-modal #login-form');
+  if (!form) return;
+
+  // Static template, no user-controlled interpolation; same pattern
+  // the surrounding modal code uses for every panel.
+  form.innerHTML = `
+    <h3>Check your email</h3>
+    <p>If an account exists with that email, you will receive a password reset link shortly.</p>
+    <p class="help-text">The link is valid for one hour. If you don't see it, check your spam folder.</p>
+    <button type="button" id="reset-confirmation-close" class="primary">Close</button>
+  `;
+
+  document.getElementById('reset-confirmation-close')?.addEventListener('click', () => {
+    // Reloading returns the user to the login modal in a clean state
+    // (same exit-path as the existing back-to-login-link).
+    reloadPage();
+  });
+  document.getElementById('reset-confirmation-close')?.focus();
 }
