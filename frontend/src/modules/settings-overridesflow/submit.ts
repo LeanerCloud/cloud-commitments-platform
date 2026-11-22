@@ -8,7 +8,7 @@ import { overridesState } from './state';
 import type { OverrideModalContext } from './state';
 import { refreshRecommendationsAfterOverrideChange } from './refresh';
 import { closeOverrideModal } from './modal';
-import { loadOverridesPanel } from '../settings-overrides';
+import { loadOverridesPanel } from './panel';
 
 /**
  * Submit the create-override form. Sends a sparse PUT — fields left blank

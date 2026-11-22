@@ -10,7 +10,7 @@ import { inheritCurrentlyLabel, paymentLabel, termLabel } from '../settings-fiel
 import type { AccountProvider } from '../settings-state';
 import { overridesState } from './state';
 import { refreshRecommendationsAfterOverrideChange } from './refresh';
-import { loadOverridesPanel } from '../settings-overrides';
+import { loadOverridesPanel } from './panel';
 
 /**
  * Build the per-row Payment <select> for the overrides panel. Issue #23.

@@ -2,7 +2,7 @@ import * as api from '../../api';
 import { showToast } from '../../toast';
 import type { AccountProvider } from '../settings-state';
 import { refreshRecommendationsAfterOverrideChange } from './refresh';
-import { loadOverridesPanel } from '../settings-overrides';
+import { loadOverridesPanel } from './panel';
 
 /**
  * Build the per-row Coverage <input> for the overrides panel. Issue #110.
