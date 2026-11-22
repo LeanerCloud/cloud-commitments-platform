@@ -2569,3 +2569,79 @@ describe('Bulk override modal (issue #119)', () => {
     expect(rdsCb!.disabled).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Account form submit: custom onSave callback (registration approval, #210)
+// ---------------------------------------------------------------------------
+
+describe('Account form submit with onSave callback', () => {
+  const submit = async (): Promise<void> => {
+    document.getElementById('account-form')!.dispatchEvent(new Event('submit'));
+    await new Promise(r => setTimeout(r, 0));
+  };
+  const modalHidden = (): boolean => document.getElementById('account-modal')!.classList.contains('hidden');
+
+  beforeEach(() => {
+    buildAccountsDOM();
+    jest.clearAllMocks();
+    (api.listAccounts as jest.Mock).mockResolvedValue([]);
+    setupSettingsHandlers();
+  });
+
+  test('delegates to onSave with the modal provider and built request, skipping create/update', async () => {
+    const onSave = jest.fn<Promise<void>, [string, api.CloudAccountRequest]>().mockResolvedValue(undefined);
+    openAccountModal('gcp', undefined, { onSave });
+    (document.getElementById('account-name') as HTMLInputElement).value = ' Reg ';
+    (document.getElementById('account-external-id') as HTMLInputElement).value = 'proj-1';
+    await submit();
+
+    expect(onSave).toHaveBeenCalledTimes(1);
+    const [provider, req] = onSave.mock.calls[0]!;
+    expect(provider).toBe('gcp');
+    expect(req).toMatchObject({ name: 'Reg', provider: 'gcp', external_id: 'proj-1', gcp_project_id: 'proj-1' });
+    expect(api.createAccount).not.toHaveBeenCalled();
+    expect(api.updateAccount).not.toHaveBeenCalled();
+  });
+
+  test('closes the modal only after onSave resolves', async () => {
+    let resolve!: () => void;
+    const onSave = jest.fn(() => new Promise<void>((r) => { resolve = r; }));
+    openAccountModal('aws', undefined, { onSave });
+    await submit();
+    expect(onSave).toHaveBeenCalled();
+    expect(modalHidden()).toBe(false);
+
+    resolve();
+    await new Promise(r => setTimeout(r, 0));
+    expect(modalHidden()).toBe(true);
+  });
+
+  test('onSave failure keeps the modal open, toasts the error and keeps delegating', async () => {
+    const onSave = jest.fn().mockRejectedValue(new Error('nope'));
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    openAccountModal('aws', undefined, { onSave });
+    await submit();
+
+    expect(modalHidden()).toBe(false);
+    expect(mockShowToast).toHaveBeenCalledWith({ message: 'Failed to save: nope', kind: 'error' });
+    await submit();
+    expect(onSave).toHaveBeenCalledTimes(2);
+    expect(api.createAccount).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['successful onSave', async (): Promise<void> => { await submit(); }],
+    ['close button', async (): Promise<void> => { document.getElementById('close-account-modal-btn')!.click(); }],
+  ])('onSave is reset after %s so the next submit uses the normal flow', async (_label, finish) => {
+    const onSave = jest.fn().mockResolvedValue(undefined);
+    (api.createAccount as jest.Mock).mockResolvedValue({ id: 'n', name: 'A', provider: 'aws', external_id: '1', enabled: true });
+    openAccountModal('aws', undefined, { onSave });
+    await finish();
+    onSave.mockClear();
+
+    // No reopen: openAccountModal would overwrite onSave and mask a missing reset.
+    await submit();
+    expect(onSave).not.toHaveBeenCalled();
+    expect(api.createAccount).toHaveBeenCalledTimes(1);
+  });
+});
