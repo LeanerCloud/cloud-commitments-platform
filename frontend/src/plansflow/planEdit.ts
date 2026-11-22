@@ -8,7 +8,7 @@ import { BackendPlan, LEGACY_PLAN_SERVICE_IDS, extractPlanInfo, rampRadioValue }
 import { setupPlanAccountsSection } from './planAccounts';
 import { wirePlanRangeInputs } from './planRanges';
 import { setupRampScheduleHandlers, setCustomRampConfigVisible } from './rampSchedule';
-import { showSelectionGroups, setPlanFieldsLocked, openPlanForm } from '../plans';
+import { showSelectionGroups, setPlanFieldsLocked, openPlanForm } from './planModal';
 
 // editPlan loads the plan and opens the edit modal pre-filled. Returns true
 // when the modal opened, false when the plan could not be loaded (e.g. it was
