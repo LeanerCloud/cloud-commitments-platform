@@ -3,13 +3,10 @@
  */
 
 import * as api from './api';
-import * as state from './state';
 import { escapeHtml, reloadPage } from './utils';
 import { openAuthDialog } from './authDialog';
 import { isAdmin as permissionsIsAdmin } from './permissions';
-import { showToast } from './toast';
 import { describePasswordValidationError, setupPasswordToggle, updatePasswordRequirements } from './authflow/password';
-import { closeProfileModal, emailInitials } from './authflow/profile';
 
 // Login rate limiting
 let lastLoginAttempt = 0;
@@ -854,85 +851,6 @@ function showResetEmailConfirmation(): void {
     reloadPage();
   });
   document.getElementById('reset-confirmation-close')?.focus();
-}
-
-/**
- * Save profile changes
- */
-export async function saveProfile(e: Event): Promise<void> {
-  e.preventDefault();
-  if (document.getElementById('profile-modal')?.dataset.requireAck === 'true') return;
-
-  const email = (document.getElementById('profile-email') as HTMLInputElement).value;
-  const currentPassword = (document.getElementById('profile-current-password') as HTMLInputElement).value;
-  const newPassword = (document.getElementById('profile-new-password') as HTMLInputElement).value;
-  const confirmPassword = (document.getElementById('profile-confirm-password') as HTMLInputElement).value;
-
-  // Clear any stale password-validation error from a prior submit so we
-  // start with a clean slate on every attempt.
-  const passwordErrorDiv = document.getElementById('profile-password-error');
-  if (passwordErrorDiv) {
-    passwordErrorDiv.textContent = '';
-    passwordErrorDiv.classList.add('hidden');
-  }
-
-  if (!currentPassword) {
-    // Use showToast instead of blocking alert() (finding 11-L3).
-    showToast({ message: 'Please enter your current password to save changes', kind: 'error' });
-    return;
-  }
-
-  if (newPassword) {
-    // Password-validation failures render inline (matches reset and
-    // admin-setup flows) so the criterion text appears next to the
-    // requirements indicator the user is already looking at.
-    const requirementError = describePasswordValidationError(newPassword);
-    if (requirementError) {
-      if (passwordErrorDiv) {
-        passwordErrorDiv.textContent = requirementError;
-        passwordErrorDiv.classList.remove('hidden');
-      }
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      if (passwordErrorDiv) {
-        passwordErrorDiv.textContent = 'New passwords do not match';
-        passwordErrorDiv.classList.remove('hidden');
-      }
-      return;
-    }
-  }
-
-  try {
-    // Call API to update profile
-    await api.apiRequest('/auth/profile', {
-      method: 'PUT',
-      body: JSON.stringify({
-        email,
-        current_password: api.base64Encode(currentPassword),
-        new_password: newPassword ? api.base64Encode(newPassword) : undefined
-      })
-    });
-
-    // Update local state
-    const currentUser = state.getCurrentUser();
-    if (currentUser) {
-      state.setCurrentUser({ ...currentUser, email });
-      const userEmailEl = document.getElementById('user-email-display');
-      if (userEmailEl) {
-        userEmailEl.textContent = email;
-        userEmailEl.dataset['initials'] = emailInitials(email);
-      }
-    }
-
-    closeProfileModal();
-    // Use showToast instead of blocking alert() (finding 11-L3).
-    showToast({ message: 'Profile updated successfully', kind: 'success', timeout: 5_000 });
-  } catch (error) {
-    console.error('Failed to update profile:', error);
-    const err = error as Error;
-    showToast({ message: `Failed to update profile: ${err.message}`, kind: 'error' });
-  }
 }
 
 export { describePasswordValidationError } from './authflow/password';
