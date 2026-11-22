@@ -183,7 +183,7 @@ function renderPlannedPurchases(purchases: PlannedPurchase[]): void {
 // renderPlannedPurchasesInternal is the actual render — separate from
 // renderPlannedPurchases() so popover commits can re-render the table
 // against the cached unfiltered set without re-fetching from the API.
-function renderPlannedPurchasesInternal(): void {
+export function renderPlannedPurchasesInternal(): void {
   const container = document.getElementById('planned-purchases-list');
   if (!container) return;
 
@@ -263,7 +263,7 @@ function renderPlannedPurchasesInternal(): void {
 // display precision so filter predicates match what the user sees.
 // ---------------------------------------------------------------------------
 
-function applyPlansColumnFilters(
+export function applyPlansColumnFilters(
   purchases: readonly PlannedPurchase[],
   filters: state.PlansColumnFilters,
 ): PlannedPurchase[] {
@@ -281,7 +281,7 @@ function applyPlansColumnFilters(
   return narrowed.filter(p => values.some(v => rowMatchesProvider(p, v)));
 }
 
-function categoricalCellValueForPlan(p: PlannedPurchase, col: state.PlansColumnId): string {
+export function categoricalCellValueForPlan(p: PlannedPurchase, col: state.PlansColumnId): string {
   switch (col) {
     case 'plan_name':      return p.plan_name ?? '';
     // Keyed by local YYYY-MM-DD: same-day steps share one option and keys sort chronologically.
@@ -300,7 +300,7 @@ function categoricalCellValueForPlan(p: PlannedPurchase, col: state.PlansColumnI
   }
 }
 
-function localDayKey(date: string | null | undefined): string {
+export function localDayKey(date: string | null | undefined): string {
   if (!date) return '';
   if (/^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
   const d = new Date(date);
@@ -309,7 +309,7 @@ function localDayKey(date: string | null | undefined): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-function numericCellValueForPlan(p: PlannedPurchase, col: state.PlansColumnId): number {
+export function numericCellValueForPlan(p: PlannedPurchase, col: state.PlansColumnId): number {
   switch (col) {
     case 'count':              return p.count ?? 0;
     case 'upfront_cost':       return p.upfront_cost ?? Number.NaN;
@@ -330,7 +330,7 @@ function numericCellValueForPlan(p: PlannedPurchase, col: state.PlansColumnId): 
 // value so "exact-match" filters work for rows whose raw value rounds to the
 // typed value. The planned-purchases table renders count as integer and
 // currency cells via formatCurrency (CURRENCY_DEFAULT_DIGITS = 0).
-function displayPrecisionForPlan(col: state.PlansColumnId): number {
+export function displayPrecisionForPlan(col: state.PlansColumnId): number {
   switch (col) {
     case 'count':
       return 0;
@@ -349,7 +349,7 @@ function displayPrecisionForPlan(col: state.PlansColumnId): number {
   }
 }
 
-function roundForDisplay(n: number, precision: number): number {
+export function roundForDisplay(n: number, precision: number): number {
   if (!Number.isFinite(n)) return n;
   return Number(n.toFixed(precision));
 }
@@ -361,22 +361,22 @@ function roundForDisplay(n: number, precision: number): number {
 // column metadata and state accessors.
 // ---------------------------------------------------------------------------
 
-const PLANS_POPOVER_SCOPE = 'plans';
+export const PLANS_POPOVER_SCOPE = 'plans';
 
-const PLANS_NUMERIC_COLUMNS: ReadonlySet<state.PlansColumnId> = new Set<state.PlansColumnId>([
+export const PLANS_NUMERIC_COLUMNS: ReadonlySet<state.PlansColumnId> = new Set<state.PlansColumnId>([
   'count', 'upfront_cost', 'estimated_savings',
 ]);
 
 // A bound plan spanning providers has provider "multiple" and lists its real
 // providers (#1746); the provider options are those providers, never "multiple".
-function plansProviderOptions(purchases: readonly PlannedPurchase[]): string[] {
+export function plansProviderOptions(purchases: readonly PlannedPurchase[]): string[] {
   return sortedDistinctValues(
     purchases.flatMap(p => (p.providers && p.providers.length > 0 ? p.providers : [p.provider ?? ''])),
     (value) => value,
   );
 }
 
-function plansColumnLabel(column: state.PlansColumnId): string {
+export function plansColumnLabel(column: state.PlansColumnId): string {
   switch (column) {
     case 'plan_name':          return 'Plan';
     case 'scheduled_date':     return 'Scheduled Date';
@@ -392,7 +392,7 @@ function plansColumnLabel(column: state.PlansColumnId): string {
   }
 }
 
-function plansCategoricalDisplayLabel(column: state.PlansColumnId, value: string): string {
+export function plansCategoricalDisplayLabel(column: state.PlansColumnId, value: string): string {
   if (value === '') return '(empty)';
   if (column === 'scheduled_date') return formatDate(value);
   if (column === 'term') {
@@ -408,13 +408,13 @@ function plansCategoricalDisplayLabel(column: state.PlansColumnId, value: string
   return value;
 }
 
-function getPlansColumnTriggerButton(column: state.PlansColumnId): HTMLButtonElement | null {
+export function getPlansColumnTriggerButton(column: state.PlansColumnId): HTMLButtonElement | null {
   return document.querySelector<HTMLButtonElement>(
     `#planned-purchases-list th .column-filter-btn[data-column="${column}"]`,
   );
 }
 
-function openPlansColumnPopover(column: state.PlansColumnId, anchor: HTMLElement): void {
+export function openPlansColumnPopover(column: state.PlansColumnId, anchor: HTMLElement): void {
   openColumnFilterPopover({
     scope: PLANS_POPOVER_SCOPE,
     column,
@@ -433,7 +433,7 @@ function openPlansColumnPopover(column: state.PlansColumnId, anchor: HTMLElement
   }, anchor);
 }
 
-function rerenderPlannedPurchases(): void {
+export function rerenderPlannedPurchases(): void {
   renderPlannedPurchasesInternal();
 }
 
