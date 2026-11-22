@@ -1515,7 +1515,7 @@ function setOpportunitiesChromeHidden(hidden: boolean): void {
   }
 }
 
-function rerenderRecommendations(): void {
+export function rerenderRecommendations(): void {
   const loaded = state.getRecommendations() as unknown as LocalRecommendation[];
   renderRecommendationsList(loaded);
 }
