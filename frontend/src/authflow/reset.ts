@@ -5,7 +5,7 @@
 import * as api from '../api';
 import { reloadPage } from '../utils';
 import { openAuthDialog } from '../authDialog';
-import { renderExpiredView, renderUsedView } from '../auth';
+import { showLoginModal } from './login';
 import { describePasswordValidationError, setupPasswordToggle, updatePasswordRequirements } from './password';
 
 /**
@@ -183,4 +183,90 @@ async function handleResetPasswordSubmit(e: Event, token: string): Promise<void>
       errorDiv.classList.remove('hidden');
     }
   }
+}
+
+
+// renderExpiredView replaces the reset modal with a "link expired"
+// view + CTA to request a new reset email (issue #460). The email
+// tied to the expired token is not embedded in the URL, so the CTA
+// hands the user back to the forgot-password form where they re-type
+// their email.
+function renderExpiredView(modal: HTMLElement, flow: string): void {
+  const heading = flow === 'invite'
+    ? 'Invitation link expired'
+    : 'Password reset link expired';
+  const windowCopy = flow === 'invite'
+    ? 'Invitation links are valid for 7 days.'
+    : 'Password reset links are valid for one hour.';
+  modal.innerHTML = `
+    <div class="modal-overlay">
+      <div class="modal-content">
+        <h2>${heading}</h2>
+        <p>${windowCopy}</p>
+        <p>Request a new link to continue.</p>
+        <button type="button" id="reset-expired-request-new" class="primary">Send a new reset email</button>
+        <p><a href="#" id="reset-expired-back-to-login">Back to login</a></p>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('reset-expired-request-new')?.addEventListener('click', () => {
+    void openForgotPasswordFromExpired();
+  });
+  document.getElementById('reset-expired-back-to-login')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    void closeResetModalAndShowLogin();
+  });
+  openAuthDialog(modal, '#reset-expired-request-new');
+}
+
+// renderUsedView covers both consumed and never-existed tokens (the
+// server collapses them into one state because the row is wiped on
+// consumption; issue #461). Offers two exit paths: log in with the
+// password they already set, or restart the forgot-password flow.
+function renderUsedView(modal: HTMLElement, flow: string): void {
+  const heading = flow === 'invite'
+    ? 'Invitation link already used'
+    : 'Password reset link already used';
+  const body = flow === 'invite'
+    ? "This invitation link has already been used. Sign in with the password you set, or use Forgot Password if you do not remember it."
+    : "This password reset link has already been used. Sign in with the password you set, or use Forgot Password if you do not remember it.";
+  modal.innerHTML = `
+    <div class="modal-overlay">
+      <div class="modal-content">
+        <h2>${heading}</h2>
+        <p>${body}</p>
+        <button type="button" id="reset-used-go-to-login" class="primary">Go to login</button>
+        <p><a href="#" id="reset-used-forgot-password">Forgot password?</a></p>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('reset-used-go-to-login')?.addEventListener('click', () => {
+    void closeResetModalAndShowLogin();
+  });
+  document.getElementById('reset-used-forgot-password')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    void openForgotPasswordFromExpired();
+  });
+  openAuthDialog(modal, '#reset-used-go-to-login');
+}
+
+async function closeResetModalAndShowLogin(): Promise<void> {
+  document.getElementById('reset-password-modal')?.remove();
+  // Clear ?token= so a reload does not bounce back into the reset flow.
+  window.history.replaceState({}, document.title, window.location.pathname);
+  await showLoginModal();
+}
+
+async function openForgotPasswordFromExpired(): Promise<void> {
+  document.getElementById('reset-password-modal')?.remove();
+  window.history.replaceState({}, document.title, window.location.pathname);
+  await showLoginModal();
+  // Trigger the forgot-password swap inside the freshly-shown login
+  // modal, matching the path a user would take by clicking the
+  // "Forgot password?" link manually.
+  document.getElementById('forgot-password-link')?.dispatchEvent(
+    new MouseEvent('click', { bubbles: true, cancelable: true })
+  );
 }
