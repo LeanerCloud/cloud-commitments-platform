@@ -6,7 +6,7 @@ import { groupSelection } from '../lib/plan-groups';
 import { plansState } from './plansState';
 import { loadPlans } from './planCards';
 import { parsePlanStepCap } from './planRanges';
-import { editPlan } from '../plans';
+import { editPlan } from './planEdit';
 import { closePlanModal } from '../plans';
 
 // savingPlan is true while a save request is in flight. refreshPlanSaveButtonState

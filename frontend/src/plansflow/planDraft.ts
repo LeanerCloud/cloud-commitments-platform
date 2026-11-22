@@ -3,7 +3,7 @@ import { showToast } from '../toast';
 import { applyPlanForm, clearPlanDraft, loadPlanDraft, savePlanDraft } from '../lib/plan-form-draft';
 import { plansState } from './plansState';
 import { renderPlanAccountChips, updatePlanAccountIdsField } from './planAccounts';
-import { editPlan } from '../plans';
+import { editPlan } from './planEdit';
 import { closePlanModal, openNewPlanModal } from '../plans';
 
 const PLAN_DRAFT_DEBOUNCE_MS = 300;

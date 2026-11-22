@@ -7,7 +7,7 @@ import type { PlannedPurchase } from '../api';
 import { plansState } from './plansState';
 import { loadPlannedPurchases } from './plannedLoad';
 import { loadPlans } from './planCards';
-import { editPlan } from '../plans';
+import { editPlan } from './planEdit';
 
 // Purchase ids whose "Run now" confirm or request is open, so a second click
 // on the row button cannot stack a second dialog or send a second request.
