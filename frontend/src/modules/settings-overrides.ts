@@ -10,7 +10,6 @@ import {
   getCommitmentConfig,
 } from '../commitmentOptions';
 import { openModal, closeModal } from '../modal';
-import { loadRecommendations } from '../recommendations';
 import { showSkeletonText } from '../lib/skeleton';
 import { legacySettingsServiceTarget } from '../lib/settings-service-ids';
 import { buildLastUpdatedStamp } from '../lib/last-updated';
@@ -18,26 +17,9 @@ import { byId, inheritCurrentlyLabel, paymentLabel, setInputValue, termLabel } f
 import type { AccountProvider } from './settings-state';
 import { overridesState } from './settings-overridesflow/state';
 import type { OverrideModalContext } from './settings-overridesflow/state';
+import { refreshRecommendationsAfterOverrideChange } from './settings-overridesflow/refresh';
 
 export { setGlobalDefaultsForTest, setCachedGlobalDefaults } from './settings-overridesflow/state';
-
-/**
- * Issue #196 — after any mutation to an `account_service_overrides` row
- * (create, edit, reset/delete), refresh the cached recommendations list so
- * the read-time filters (`enabled`, include/exclude lists) and the
- * dashboard's coverage cap reflect the new state without a manual reload.
- *
- * Errors are swallowed: the override mutation that just succeeded shouldn't
- * be reported as a failure because the secondary refresh fails. The recs
- * page re-fetches on the next nav event, so a stale list is recoverable.
- */
-async function refreshRecommendationsAfterOverrideChange(): Promise<void> {
-  try {
-    await loadRecommendations();
-  } catch (err) {
-    console.warn('Failed to refresh recommendations after override change:', err);
-  }
-}
 
 // AWS services that can carry a per-account override. Mirrors the AWS-only
 // entries in SERVICE_FIELDS. Issue #109 adds AZURE_OVERRIDE_SERVICES and
