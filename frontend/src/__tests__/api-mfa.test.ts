@@ -155,3 +155,95 @@ describe('regenerateMFARecoveryCodes()', () => {
     expect(res.recovery_codes).toEqual(['NEW1', 'NEW2']);
   });
 });
+
+// Request contract (path, method, body) and response validation for the
+// security-sensitive MFA calls (moved to api/auth-mfa.ts in #210).
+type FetchCall = [string, { method?: string; body?: string }];
+function lastCall(): FetchCall {
+  const calls = (global.fetch as jest.Mock).mock.calls;
+  return calls[calls.length - 1] as FetchCall;
+}
+const VALID_SETUP = { secret: 'S', provisioning_uri: 'otpauth://totp/x' };
+const SETUP_PW = 'p€ss'; // above U+00FF: exercises the UTF-8 branch of base64Encode
+const utf8Base64 = (s: string): string => {
+  let bin = '';
+  for (const b of new TextEncoder().encode(s)) bin += String.fromCharCode(b);
+  return btoa(bin);
+};
+
+describe('MFA request contract', () => {
+  test('setupMFA POSTs /api/auth/mfa/setup with only a base64 password', async () => {
+    mockFetchOk(VALID_SETUP);
+    await setupMFA('pw');
+    const [url, init] = lastCall();
+    expect(url).toBe('/api/auth/mfa/setup');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ password: btoa('pw') });
+  });
+
+  test('setupMFA encodes non-ASCII passwords as UTF-8 base64', async () => {
+    mockFetchOk(VALID_SETUP);
+    await setupMFA(SETUP_PW);
+    expect(JSON.parse(lastCall()[1].body as string)).toEqual({ password: utf8Base64(SETUP_PW) });
+  });
+
+  test('enableMFA POSTs /api/auth/mfa/enable with the raw code only', async () => {
+    mockFetchOk({ recovery_codes: ['A'] });
+    await enableMFA('123456');
+    const [url, init] = lastCall();
+    expect(url).toBe('/api/auth/mfa/enable');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ code: '123456' });
+  });
+
+  test('disableMFA POSTs /api/auth/mfa/disable with base64 password and raw code', async () => {
+    mockFetchOk({});
+    await disableMFA('pw', 'abcd-1234');
+    const [url, init] = lastCall();
+    expect(url).toBe('/api/auth/mfa/disable');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ password: btoa('pw'), code: 'abcd-1234' });
+  });
+
+  test('regenerateMFARecoveryCodes POSTs the raw code to its endpoint', async () => {
+    mockFetchOk({ recovery_codes: ['A'] });
+    await regenerateMFARecoveryCodes('654321');
+    const [url, init] = lastCall();
+    expect(url).toBe('/api/auth/mfa/regenerate-recovery-codes');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ code: '654321' });
+  });
+});
+
+describe('regenerateMFARecoveryCodes() response validation', () => {
+  const MSG = 'regenerateMFARecoveryCodes response missing recovery_codes';
+
+  test.each([
+    ['missing', {}],
+    ['not an array', { recovery_codes: 'AAAA' }],
+    ['array with a non-string', { recovery_codes: ['AAAA', 7] }],
+  ])('rejects recovery_codes that is %s', async (_label, body) => {
+    mockFetchOk(body);
+    await expect(regenerateMFARecoveryCodes('123456')).rejects.toThrow(MSG);
+  });
+
+  test('accepts an empty array', async () => {
+    mockFetchOk({ recovery_codes: [] });
+    await expect(regenerateMFARecoveryCodes('123456')).resolves.toEqual({ recovery_codes: [] });
+  });
+
+  test('rejects a non-object response', async () => {
+    mockFetchOk(null);
+    await expect(regenerateMFARecoveryCodes('123456')).rejects.toThrow('regenerateMFARecoveryCodes response was not an object');
+  });
+});
+
+describe('MFA error mapping', () => {
+  test('server error bodies surface as the thrown message for every call', async () => {
+    mockFetchErr(403, { error: 'invalid password' });
+    await expect(setupMFA('pw')).rejects.toThrow('invalid password');
+    await expect(enableMFA('1')).rejects.toThrow('invalid password');
+    await expect(disableMFA('pw', '1')).rejects.toThrow('invalid password');
+    await expect(regenerateMFARecoveryCodes('1')).rejects.toThrow('invalid password');
+  });
+});
