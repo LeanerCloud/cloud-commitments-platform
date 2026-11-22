@@ -16,6 +16,10 @@ import { legacySettingsServiceTarget } from '../lib/settings-service-ids';
 import { buildLastUpdatedStamp } from '../lib/last-updated';
 import { byId, inheritCurrentlyLabel, paymentLabel, setInputValue, termLabel } from './settings-fields';
 import type { AccountProvider } from './settings-state';
+import { overridesState } from './settings-overridesflow/state';
+import type { OverrideModalContext } from './settings-overridesflow/state';
+
+export { setGlobalDefaultsForTest, setCachedGlobalDefaults } from './settings-overridesflow/state';
 
 /**
  * Issue #196 — after any mutation to an `account_service_overrides` row
@@ -33,27 +37,6 @@ async function refreshRecommendationsAfterOverrideChange(): Promise<void> {
   } catch (err) {
     console.warn('Failed to refresh recommendations after override change:', err);
   }
-}
-
-// Cached global defaults surfaced by loadGlobalSettings. Used by the override
-// modal (issue #112) to show "Inherit (currently: X)" labels so the user can
-// see what they'd be overriding without switching tabs.
-let cachedGlobalDefaults: { term: number; payment: string; coverage: number } = {
-  term: 3,
-  payment: 'no-upfront',
-  coverage: 80,
-};
-
-/**
- * Override the cached global defaults used for the "Inherit (currently: X)"
- * labels. Test-only; production code updates the cache via loadGlobalSettings.
- */
-export function setGlobalDefaultsForTest(defaults: { term: number; payment: string; coverage: number }): void {
-  cachedGlobalDefaults = { ...defaults };
-}
-
-export function setCachedGlobalDefaults(defaults: { term: number; payment: string; coverage: number }): void {
-  cachedGlobalDefaults = defaults;
 }
 
 // AWS services that can carry a per-account override. Mirrors the AWS-only
@@ -131,7 +114,7 @@ function buildPaymentOverrideSelect(
   inheritOpt.value = '';
   // Issue #112: show the current global payment so the user knows what
   // "Inherit" means without switching to the Purchasing tab.
-  inheritOpt.textContent = inheritCurrentlyLabel(paymentLabel(cachedGlobalDefaults.payment));
+  inheritOpt.textContent = inheritCurrentlyLabel(paymentLabel(overridesState.cachedGlobalDefaults.payment));
   select.appendChild(inheritOpt);
 
   // Filter the payment dropdown to only the (term, payment) combinations
@@ -255,7 +238,7 @@ function buildTermOverrideSelect(
   inheritOpt.value = '';
   // Issue #112: show the current global term so the user knows what
   // "Inherit" means without switching to the Purchasing tab.
-  inheritOpt.textContent = inheritCurrentlyLabel(termLabel(String(cachedGlobalDefaults.term)));
+  inheritOpt.textContent = inheritCurrentlyLabel(termLabel(String(overridesState.cachedGlobalDefaults.term)));
   select.appendChild(inheritOpt);
 
   // Filter the term dropdown to the (term, payment) combinations AWS
@@ -773,17 +756,6 @@ export async function loadOverridesPanel(accountId: string, panel: HTMLElement, 
   }
 }
 
-// State carried from openOverrideModal → submitOverrideForm so the form
-// handler knows which account/provider/panel it belongs to without
-// inspecting the DOM. Cleared on close so it can't leak across opens.
-let overrideModalContext: {
-  accountId: string;
-  provider: string;
-  panel: HTMLElement;
-  /** Services available for bulk selection (excludes already-overridden). */
-  availableServices: ReadonlyArray<{ value: string; label: string }>;
-} | null = null;
-
 let overridePaymentOptionsController: AbortController | null = null;
 
 /**
@@ -815,7 +787,7 @@ export function openOverrideModal(
   );
   const available = getOverrideServicesForProvider(provider).filter(s => !used.has(s.value));
 
-  overrideModalContext = { accountId, provider, panel, availableServices: available };
+  overridesState.overrideModalContext = { accountId, provider, panel, availableServices: available };
 
   setInputValue('override-account-id', accountId);
   setInputValue('override-provider', provider);
@@ -832,14 +804,14 @@ export function openOverrideModal(
   // current global default so the user knows what they'd be inheriting.
   const termInheritOpt = document.querySelector<HTMLOptionElement>('#override-term option[value=""]');
   if (termInheritOpt) {
-    termInheritOpt.textContent = inheritCurrentlyLabel(termLabel(String(cachedGlobalDefaults.term)));
+    termInheritOpt.textContent = inheritCurrentlyLabel(termLabel(String(overridesState.cachedGlobalDefaults.term)));
   }
 
   // Issue #112: update the coverage placeholder to show the current global
   // default. Uses .placeholder (plain text assignment), not innerHTML -- safe.
   const coverageInput = document.getElementById('override-coverage') as HTMLInputElement | null;
   if (coverageInput) {
-    coverageInput.placeholder = inheritCurrentlyLabel(`${cachedGlobalDefaults.coverage}%`);
+    coverageInput.placeholder = inheritCurrentlyLabel(`${overridesState.cachedGlobalDefaults.coverage}%`);
   }
 
   // Reset bulk-mode toggle to off so the modal always opens in single-service
@@ -897,7 +869,7 @@ export function openOverrideModal(
   bulkToggle?.addEventListener(
     'change',
     () => {
-      const ctx = overrideModalContext;
+      const ctx = overridesState.overrideModalContext;
       applyOverrideBulkMode(bulkToggle.checked, ctx?.availableServices ?? []);
     },
     { signal: overridePaymentOptionsController.signal },
@@ -909,7 +881,7 @@ export function openOverrideModal(
 }
 
 function resetOverrideModalState(): void {
-  overrideModalContext = null;
+  overridesState.overrideModalContext = null;
   overridePaymentOptionsController?.abort();
   overridePaymentOptionsController = null;
   // Reset bulk toggle so next open always starts in single-service mode.
@@ -982,7 +954,7 @@ function applyOverrideBulkMode(
   // Apply conflict gating for the current term/payment selection immediately
   // after the list is built, so checkboxes are already disabled if the chosen
   // combo is invalid for a service before the user interacts (issue #119).
-  syncBulkServiceConflicts(overrideModalContext?.provider ?? '');
+  syncBulkServiceConflicts(overridesState.overrideModalContext?.provider ?? '');
 }
 
 /**
@@ -1056,7 +1028,7 @@ function syncOverridePaymentOptions(provider: string): void {
   // leaving the field unset on the sparse PUT (issue #112).
   const inheritOpt = document.createElement('option');
   inheritOpt.value = '';
-  inheritOpt.textContent = inheritCurrentlyLabel(paymentLabel(cachedGlobalDefaults.payment));
+  inheritOpt.textContent = inheritCurrentlyLabel(paymentLabel(overridesState.cachedGlobalDefaults.payment));
   paymentSel.appendChild(inheritOpt);
 
   // When service or term is unset, can't run the validity check yet —
@@ -1095,7 +1067,7 @@ export function closeOverrideModal(): void {
  */
 export async function submitOverrideForm(e: Event): Promise<void> {
   e.preventDefault();
-  const ctx = overrideModalContext;
+  const ctx = overridesState.overrideModalContext;
   if (!ctx) return;
 
   const termRaw = (byId<HTMLSelectElement>('override-term')?.value ?? '').trim();
@@ -1179,7 +1151,7 @@ export async function submitOverrideForm(e: Event): Promise<void> {
  * succeeded and which failed.
  */
 async function submitBulkOverrideForm(
-  ctx: NonNullable<typeof overrideModalContext>,
+  ctx: OverrideModalContext,
   req: api.AccountServiceOverrideRequest,
 ): Promise<void> {
   const listDiv = document.getElementById('override-bulk-services-list');
