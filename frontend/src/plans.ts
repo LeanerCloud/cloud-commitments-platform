@@ -542,7 +542,7 @@ export function openNewPlanModal(): void {
 /**
  * Generate a plan name based on the selected ramp schedule
  */
-function generatePlanName(rampSchedule: string, customStepPercent?: number, customIntervalDays?: number): string {
+export function generatePlanName(rampSchedule: string, customStepPercent?: number, customIntervalDays?: number): string {
   const service = (document.getElementById('plan-service') as HTMLSelectElement)?.value || 'EC2';
   const serviceName = serviceLabel(service);
 
@@ -572,7 +572,7 @@ function generatePlanName(rampSchedule: string, customStepPercent?: number, cust
 /**
  * Update plan name field based on current ramp schedule selection
  */
-function updatePlanNameFromSchedule(): void {
+export function updatePlanNameFromSchedule(): void {
   const planNameInput = document.getElementById('plan-name') as HTMLInputElement;
   const planIdInput = document.getElementById('plan-id') as HTMLInputElement;
 
@@ -614,7 +614,7 @@ function updatePlanNameFromSchedule(): void {
  * `max` parameters are used instead of reading HTML attributes so callers are
  * the source of truth and the helper stays self-contained.
  */
-function wireRangeInput(inputId: string, min: number, max: number): void {
+export function wireRangeInput(inputId: string, min: number, max: number): void {
   const input = document.getElementById(inputId) as HTMLInputElement | null;
   if (!input) return;
 
@@ -679,7 +679,7 @@ function wireRangeInput(inputId: string, min: number, max: number): void {
  * Called every time the plan modal opens so validation is active for both
  * the create and edit flows.
  */
-function wirePlanRangeInputs(): void {
+export function wirePlanRangeInputs(): void {
   wireRangeInput('plan-coverage', 0, 100);
   wireRangeInput('ramp-step-percent', 1, 100);
   wireRangeInput('ramp-interval-days', 1, 365);
@@ -696,7 +696,7 @@ function wirePlanRangeInputs(): void {
   void refreshPlanAutomationState();
 }
 
-function parsePlanStepCap(raw: string, automatic: boolean): number | null {
+export function parsePlanStepCap(raw: string, automatic: boolean): number | null {
   if (raw === '') {
     if (automatic) throw new Error('Maximum commitment per step is required for Auto-Purchase');
     return null;
@@ -713,7 +713,7 @@ function parsePlanStepCap(raw: string, automatic: boolean): number | null {
   return value;
 }
 
-async function refreshPlanAutomationState(): Promise<void> {
+export async function refreshPlanAutomationState(): Promise<void> {
   const request = ++plansState.planAutomationRead;
   const banner = document.getElementById('plan-auto-purchase-state');
   if (!banner) return;
