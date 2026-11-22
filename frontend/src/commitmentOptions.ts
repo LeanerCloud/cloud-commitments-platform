@@ -57,11 +57,6 @@ const commitmentConfigs: Record<string, Record<string, CommitmentConfig>> = {
       terms: STANDARD_TERMS,
       payments: AWS_PAYMENTS
     },
-    // Savings Plans - all options available
-    savingsplans: {
-      terms: STANDARD_TERMS,
-      payments: AWS_PAYMENTS
-    },
     // RDS - no 3-year no-upfront option. This is the only AWS service
     // with a hard restriction; the backend validator in
     // cmd/validators.go:warnRDS3YearNoUpfront agrees, and the newer

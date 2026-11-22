@@ -38,6 +38,19 @@ describe('commitmentOptions', () => {
         expect(config.invalidCombinations).toBeUndefined();
       });
 
+      it('resolves every Savings Plans slug through aws._default (#7)', () => {
+        const fallback = getCommitmentConfig('aws', 'no-such-service');
+        for (const slug of [
+          'savingsplans', 'savings-plans-compute', 'savings-plans-ec2instance',
+          'savings-plans-sagemaker', 'savings-plans-database'
+        ]) {
+          expect(getCommitmentConfig('aws', slug)).toBe(fallback);
+        }
+        expect(fallback.terms.map(t => t.value)).toEqual([1, 3]);
+        expect(fallback.payments.map(p => p.value)).toEqual(['no-upfront', 'partial-upfront', 'all-upfront']);
+        expect(fallback.invalidCombinations).toBeUndefined();
+      });
+
       it('should return savingsplans config with all options', () => {
         const config = getCommitmentConfig('aws', 'savingsplans');
 
