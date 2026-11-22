@@ -5,7 +5,8 @@ import { parseNumericFilter } from '../lib/column-filters';
 import { columnLabel, NUMERIC_COLUMNS } from './columnDefs';
 import { saveColumnFilters } from './columnPrefs';
 import { distinctValuesForColumn, categoricalDisplayLabel } from './cellValues';
-import { loadRecommendations, rerenderRecommendations } from '../recommendations';
+import { rerenderRecommendations } from './popover';
+import { loadRecommendations } from '../recommendations';
 
 export interface PopoverState {
   column: state.RecommendationsColumnId;
