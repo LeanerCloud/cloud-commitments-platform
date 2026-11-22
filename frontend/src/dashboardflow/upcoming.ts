@@ -10,7 +10,7 @@ import { serviceLabel } from '../lib/service-labels';
 import { showSkeletonBlock, teardownSkeleton } from '../lib/skeleton';
 import { upcomingEmptyMessage } from '../lib/upcoming-scope';
 import { dashboardState } from './dashboardState';
-import { loadDashboard } from '../dashboard';
+import { loadDashboard } from './load';
 
 // In-memory index of the currently-rendered upcoming purchases, keyed by
 // execution_id. The "View Details" affordance renders from this — the
