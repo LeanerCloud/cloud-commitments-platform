@@ -480,29 +480,44 @@ success and 1 on failure. `--migrate` cannot be combined with `--task`.
   log for the full error, fix the migration, and re-run the workflow.
 - **Dirty migration state.** If a run fails or is killed mid-file,
   `schema_migrations.dirty` stays `true` and every later run refuses to
-  start. The runner never heals this on its own. Each migration file runs in
-  one transaction, so a dirty row at version N normally means N's SQL rolled
-  back and its changes are absent. Recover in this order:
-  1. Read the state with `SELECT version, dirty FROM schema_migrations;`.
-  2. Compare the live schema with the migration file for N (for example,
-     check with `\d <table>` that the columns, indexes or constraints it
-     creates exist). Inspect before you choose a version.
-  3. The normal fix is to force the previous version (the highest version
+  start. The runner never heals this on its own. The lazy `ensureDB` path
+  behaves the same way: it reports the dirty row as a failed migration, does
+  not clear it, and the app keeps serving on the existing schema. Each new
+  instance retries and fails again. Each migration file runs in one
+  transaction, so a dirty row at version N normally means N's SQL rolled back
+  and none of its changes exist. Rarely, N's SQL committed and only the
+  clean-flag update failed, so all of its changes exist. Recover in this
+  order:
+  1. Take a database snapshot.
+  2. Stop writers and traffic, or accept downtime, before you touch the row.
+  3. Read the state with `SELECT version, dirty FROM schema_migrations;`.
+  4. Open the file for N, the `N_*.up.sql` file in
+     `internal/database/postgres/migrations/`, and check every object it
+     creates, alters or drops (tables, columns, indexes, constraints,
+     functions) against the live schema. For example, check a table with
+     `\d <table>`.
+  5. If none of its objects exist, N rolled back. Find and fix the cause of
+     the failure first: the migration file in the deployed image, or the data
+     it failed on. Forcing the previous version re-runs N in the same invoke,
+     so an unfixed cause fails N again and leaves the row dirty again.
+  6. If all of its objects exist, N committed. Force N itself. Forcing N on a
+     rolled-back migration marks it applied and loses its DDL permanently
+     while the schema looks fine.
+  7. If only some of its objects exist, stop and escalate to the owner. A
+     rolled-back file leaves none of its objects, so partial presence means
+     the file was not transactional or someone applied it by hand.
+  8. Force the version: the previous version for step 5 (the highest version
      below N that has a migration file; numbering has gaps, so it is not
-     always N minus 1). The run then applies N again.
-  4. Force N itself only when the schema really contains all of N's changes.
-     Forcing N on a rolled-back migration marks it applied and loses its DDL
-     permanently while the schema looks fine.
+     always N minus 1), or N for step 6.
 
   Force with `force_version` in the Lambda payload
   (`{"action":"migrate","force_version":V}`) or with
   `go run ./cmd/server --migrate --migrate-force-version V`. A forced run
   also applies every pending migration in the same invoke: forcing the
   previous version re-applies N, forcing N skips it for good. Any other
-  value, or a clean database, is refused. Before any `force_version` run,
-  take a database snapshot. In production, `force_version` is owner-only and
-  needs a second reviewer. `CUDLY_FORCE_MIGRATION_VERSION` is refused by the
-  runner when no `force_version` is given with it.
+  value, or a clean database, is refused. In production, `force_version` is
+  owner-only and needs a second reviewer. `CUDLY_FORCE_MIGRATION_VERSION` is
+  refused by the runner when no `force_version` is given with it.
 - **Timeout.** A run that reaches its budget is cancelled, which can leave
   the row dirty (see above). Raise `timeout_seconds` for a long migration, or
   run `--migrate` from a host without the Lambda ceiling.
