@@ -15,7 +15,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"sync"
 	"testing"
 	"time"
@@ -115,7 +114,7 @@ func pollListings(ctx context.Context, t *testing.T, store *PostgresStore, id st
 var acctScope = map[string][]string{"aws": {"acct"}}
 
 // requireTotal asserts the RI's proceeds totals across listings.
-func requireTotal(ctx context.Context, t *testing.T, store *PostgresStore, id string, proceeds, fee float64, settled, unsettled int) {
+func requireTotal(ctx context.Context, t *testing.T, store *PostgresStore, id string, proceedsCents, feeCents int64, settled, unsettled int) {
 	t.Helper()
 	totals, err := store.GetMarketplaceListingProceedsTotals(ctx, []string{id}, nil, acctScope)
 	require.NoError(t, err)
@@ -123,8 +122,8 @@ func requireTotal(ctx context.Context, t *testing.T, store *PostgresStore, id st
 	got := totals[0]
 	assert.Equal(t, id, got.PurchaseID)
 	assert.Equal(t, "USD", got.Currency)
-	assert.Equal(t, int64(math.Round(proceeds*100)), got.ProceedsReceivedCents, "proceeds total")
-	assert.Equal(t, int64(math.Round(fee*100)), got.FeePaidCents, "fee total")
+	assert.Equal(t, proceedsCents, got.ProceedsReceivedCents, "proceeds total")
+	assert.Equal(t, feeCents, got.FeePaidCents, "fee total")
 	assert.Equal(t, settled, got.SettledListings, "settled listings")
 	assert.Equal(t, unsettled, got.UnsettledListings, "unsettled listings")
 	assert.True(t, got.IsEstimate, "proceeds totals are estimates")
@@ -195,7 +194,7 @@ func checkRelistKeepsBothListings(ctx context.Context, t *testing.T, store *Post
 	assert.Equal(t, ListingStateClosed, ph.state)
 	requireRowProceeds(ctx, t, pool, id, 176)
 
-	requireTotal(ctx, t, store, id, 264, 36, 2, 0)
+	requireTotal(ctx, t, store, id, 26400, 3600, 2, 0)
 	assert.Empty(t, pollListings(ctx, t, store, id), "settled listings are not polled again")
 }
 
@@ -221,7 +220,7 @@ func checkRepollIdempotent(ctx context.Context, t *testing.T, store *PostgresSto
 	requireListingProceeds(ctx, t, pool, "ril-mrp-a", 88)
 	requireListingProceeds(ctx, t, pool, "ril-mrp-b", 50)
 	requireRowProceeds(ctx, t, pool, id, 50)
-	requireTotal(ctx, t, store, id, 138, 19, 2, 0)
+	requireTotal(ctx, t, store, id, 13800, 1900, 2, 0)
 }
 
 // A superseded listing whose sale price is not known yet records its state
@@ -247,7 +246,7 @@ func checkUnpricedSuperseded(ctx context.Context, t *testing.T, store *PostgresS
 	require.NoError(t, err)
 	assert.True(t, applied)
 	assert.NotContains(t, pollListings(ctx, t, store, id), "ril-mup-a")
-	requireTotal(ctx, t, store, id, 44, 6, 1, 0)
+	requireTotal(ctx, t, store, id, 4400, 600, 1, 0)
 }
 
 // A failed relist releases its claim, so the RI's row holds listing A again
@@ -272,12 +271,12 @@ func checkReleasedClaimCountsOnce(ctx context.Context, t *testing.T, store *Post
 	assert.True(t, applied)
 	requireRowProceeds(ctx, t, pool, id, 88)
 	requireListingProceeds(ctx, t, pool, "ril-mrl-a", 88)
-	requireTotal(ctx, t, store, id, 88, 12, 1, 0)
+	requireTotal(ctx, t, store, id, 8800, 1200, 1, 0)
 
 	applied, err = store.SettleMarketplaceListing(ctx, canceledSettlement(id, "ril-mrl-a", 88, 12))
 	require.NoError(t, err)
 	assert.False(t, applied)
-	requireTotal(ctx, t, store, id, 88, 12, 1, 0)
+	requireTotal(ctx, t, store, id, 8800, 1200, 1, 0)
 }
 
 // requireMidClaimLeftAlone asserts that while purchase id's row holds listingID
@@ -334,7 +333,7 @@ func checkSettleWaitingOnClaim(ctx context.Context, t *testing.T, store *Postgre
 	require.NoError(t, err)
 	assert.True(t, applied)
 	requireListingProceeds(ctx, t, pool, "ril-mhc-a", 88)
-	requireTotal(ctx, t, store, id, 88, 12, 1, 0)
+	requireTotal(ctx, t, store, id, 8800, 1200, 1, 0)
 }
 
 // A list attempt released with its token kept (an ambiguous AWS outcome) puts
@@ -371,7 +370,7 @@ func checkResumedClaimKeepsListing(ctx context.Context, t *testing.T, store *Pos
 	applied, err := store.SettleMarketplaceListing(ctx, canceledSettlement(id, "ril-mrs-a", 88, 12))
 	require.NoError(t, err)
 	assert.True(t, applied)
-	requireTotal(ctx, t, store, id, 88, 12, 1, 0)
+	requireTotal(ctx, t, store, id, 8800, 1200, 1, 0)
 }
 
 // Many pollers settling the same superseded listing at once record it exactly
@@ -407,7 +406,7 @@ func checkConcurrentSupersededSettles(ctx context.Context, t *testing.T, store *
 		}
 		require.Equal(t, 1, winners, "round %d: exactly one settle applies", round)
 		requireListingProceeds(ctx, t, pool, listingA, float64(100+winner))
-		requireTotal(ctx, t, store, id, float64(100+winner), float64(winner), 1, 0)
+		requireTotal(ctx, t, store, id, int64(100+winner)*100, int64(winner)*100, 1, 0)
 	}
 }
 
@@ -472,7 +471,7 @@ func checkConcurrentRelistAndPoll(ctx context.Context, t *testing.T, store *Post
 		require.NotNil(t, row, "round %d", round)
 		require.NotNil(t, row.proceeds, "round %d", round)
 		assert.Equal(t, ListingStateCancelled, row.status, "round %d", round)
-		requireTotal(ctx, t, store, id, 88, 12, 1, 0)
+		requireTotal(ctx, t, store, id, 8800, 1200, 1, 0)
 		var claimFirst bool
 		require.NoError(t, pool.QueryRow(ctx, `SELECT settled_at > created_at FROM marketplace_listing_settlements
 			WHERE listing_id = $1`, listingA).Scan(&claimFirst))
