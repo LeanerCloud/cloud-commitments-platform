@@ -10,7 +10,7 @@ import { formatIsoTermShort, formatPaymentOption } from '../lib/table-format';
 import { riexState } from './riexState';
 import { renderEmptyState, riAccountLabel } from './shared';
 import { openExchangeModal } from './exchangeModal';
-import { loadRIExchange } from '../riexchange';
+import { loadRIExchange } from './load';
 
 export function hasKnownUtilization(riID: string): boolean {
   const pct = riexState.currentUtilization.get(riID)?.utilization_percent;
