@@ -1,7 +1,7 @@
 import type { HistoryPurchase } from '../types';
 import { showToast } from '../toast';
 import { historyState } from './historyState';
-import { loadHistory } from '../history';
+import { loadHistory } from './load';
 
 const busyHistoryExecutions = new Set<string>();
 
