@@ -47,36 +47,13 @@ import { fetchOverridesForAccounts } from './lib/overrides';
 import { ownValue } from './lib/own-property';
 import { HOURS_PER_MONTH } from './lib/hours-per-month';
 import { anchorInView } from './lib/table-scroll';
+import { clearPurchaseModalRecommendations, recsState } from './recsflow/recsState';
 // Re-export the shared primitives so existing consumers that import from
 // recommendations.ts keep working without import-path churn (issue #166).
 export { parseNumericFilter } from './lib/column-filters';
 export type { ParsedNumericFilter } from './lib/column-filters';
+export { getPurchaseModalSession, getPurchaseModalRecommendations, clearPurchaseModalRecommendations } from './recsflow/recsState';
 
-// Module state for current purchase modal recommendations
-let currentPurchaseRecommendations: LocalRecommendation[] = [];
-// Capacity % the modal's recommendations were scaled at (issue #1903). Used
-// by pricedCellVariant to re-scale a sibling variant swapped in on a
-// Term/Payment change so the row keeps the same capacity as the rest of the
-// modal. Reset to 100 on modal close.
-let currentPurchaseCapacityPercent = 100;
-// Tracks which row indices in currentPurchaseRecommendations the user
-// has kept included (checked). Initialised to all indices on modal open;
-// toggled by per-row checkboxes and the select-all header checkbox.
-// Cleared with currentPurchaseRecommendations on modal close.
-let checkedPurchaseIndices: Set<number> = new Set();
-// True once openPurchaseModal has been called and initialised the
-// checkedPurchaseIndices. Used by getPurchaseModalRecommendations to
-// distinguish "all deselected by user" from "modal never opened".
-let checkedPurchaseModalInitialised = false;
-// Bumped by every openPurchaseModal/openFanOutModal call. Each opener checks
-// it after its override fetch so only the newest open renders and sets
-// submit state (issue #430).
-let purchaseModalOpenToken = 0;
-
-/** Identifies the current purchase-modal session; changes on every open. */
-export function getPurchaseModalSession(): number {
-  return purchaseModalOpenToken;
-}
 // Cache of account ID → name for column display
 let accountNamesCache: Map<string, string> = new Map();
 // Whether the last account-list fetch returned any accounts; null when it
@@ -242,37 +219,6 @@ export function resetCachedGlobalConfig(): void {
 // Region single-value categorical commits also trigger a re-fetch (issue
 // #162) so the backend WHERE clause prunes rows before they hit the wire;
 // multi-value and numeric column filters remain purely client-side.
-
-/**
- * Get the recommendations currently loaded in the purchase modal,
- * filtered to only those rows the user has kept "included" (i.e., checked).
- * Rows the user unchecked via the per-row checkbox are excluded from the
- * returned set, so the execute-purchase code path automatically honours
- * the user's per-row skip decisions without any callers needing to change.
- *
- * Returns all recs when the modal state is pre-#320 (checkedPurchaseModalInitialised
- * is false), which can happen if a caller invokes this without opening the modal
- * first (e.g. a legacy test fixture that sets currentPurchaseRecommendations
- * directly). Once the modal opens, the filter is always authoritative.
- */
-export function getPurchaseModalRecommendations(): LocalRecommendation[] {
-  if (!checkedPurchaseModalInitialised) {
-    // Pre-open / legacy path: no checkbox state initialised — return everything.
-    return [...currentPurchaseRecommendations];
-  }
-  return currentPurchaseRecommendations.filter((_, idx) => checkedPurchaseIndices.has(idx));
-}
-
-/**
- * Clear purchase modal recommendations and checked-indices state
- * (called when modal closes).
- */
-export function clearPurchaseModalRecommendations(): void {
-  currentPurchaseRecommendations = [];
-  checkedPurchaseIndices = new Set();
-  checkedPurchaseModalInitialised = false;
-  currentPurchaseCapacityPercent = 100;
-}
 
 /**
  * True when the Opportunities tab is the currently-visible tab. The reload-
@@ -1221,7 +1167,7 @@ function pricedCellVariant(
 ): LocalRecommendation | null {
   const v = loadedCellVariants(rec).find((c) => c.term === term && normalizeBulkPayment(c.payment) === payment);
   if (!v) return null;
-  // `rec` reached the modal already scaled to currentPurchaseCapacityPercent:
+  // `rec` reached the modal already scaled to recsState.currentPurchaseCapacityPercent:
   // openPurchaseModal's only caller passes handleBulkPurchaseClick's scaled
   // rows. Only the rows read from state.getRecommendations() are unscaled, so
   // re-scaling the fallback push would halve count and cost a second time.
@@ -4592,11 +4538,6 @@ export interface FanOutBucket {
   id?: string;
 }
 
-// Fan-out modal state. app.ts's Send-for-Approval click reads these
-// via getFanOutBuckets() to fire one POST per bucket. Cleared when
-// the modal closes.
-let currentFanOutBuckets: FanOutBucket[] | null = null;
-
 // The renderer promises "This bucket will be skipped" from exactly this
 // check (renderFanOutBucketSection); submit and totals must agree with it
 // (issue #1904) so a bucket the UI marks skipped is never posted.
@@ -4611,12 +4552,12 @@ function isSubmittableBucket(b: FanOutBucket): boolean {
 }
 
 export function getFanOutBuckets(): FanOutBucket[] | null {
-  if (!currentFanOutBuckets) return null;
-  return currentFanOutBuckets.filter(isSubmittableBucket).map((b) => ({ ...b }));
+  if (!recsState.currentFanOutBuckets) return null;
+  return recsState.currentFanOutBuckets.filter(isSubmittableBucket).map((b) => ({ ...b }));
 }
 
 export function clearFanOutBuckets(): void {
-  currentFanOutBuckets = null;
+  recsState.currentFanOutBuckets = null;
 }
 
 /**
@@ -4626,31 +4567,23 @@ export function clearFanOutBuckets(): void {
  * modal header so the email count and totals describe the retry.
  */
 export function retainFanOutBuckets(ids: ReadonlySet<string>): void {
-  if (!currentFanOutBuckets) return;
-  currentFanOutBuckets = currentFanOutBuckets.filter((b) => b.id !== undefined && ids.has(b.id));
+  if (!recsState.currentFanOutBuckets) return;
+  recsState.currentFanOutBuckets = recsState.currentFanOutBuckets.filter((b) => b.id !== undefined && ids.has(b.id));
   refreshFanOutSummary();
 }
 
-// currentExecuteMode holds the mode selected by the execute-mode toggle in
-// the purchase modal (issue #289). "direct" means the session holder has
-// execute-any/execute-own and explicitly chose to bypass the approval email.
-// "" (empty) is the default approval-required path. Cleared when the modal
-// closes. Read by app.ts handleExecutePurchase to set execute_mode in the
-// POST body.
-let currentExecuteMode: '' | 'direct' = '';
-
 export function getExecuteMode(): '' | 'direct' {
-  return currentExecuteMode;
+  return recsState.currentExecuteMode;
 }
 
 export function clearExecuteMode(): void {
-  currentExecuteMode = '';
+  recsState.currentExecuteMode = '';
 }
 
 // Resets the mode and the submit button label together so the label never
 // promises a different action than the radio (issue #754).
 function resetExecuteModeAndLabel(): void {
-  currentExecuteMode = '';
+  recsState.currentExecuteMode = '';
   const executeBtn = document.getElementById('execute-purchase-btn') as HTMLButtonElement | null;
   if (executeBtn && executeBtn.dataset['submitting'] !== 'true') {
     executeBtn.textContent = executeButtonLabel(false);
@@ -4775,7 +4708,7 @@ async function openFanOutModal(
   bucketEntries: Array<[string, LocalRecommendation[]]>,
   toolbar: BulkPurchaseToolbarState,
 ): Promise<void> {
-  const openToken = ++purchaseModalOpenToken;
+  const openToken = ++recsState.purchaseModalOpenToken;
   resetExecuteModeAndLabel();
   // Pre-fetch service-overrides for every distinct account referenced by
   // any rec in any bucket; overridesByAccount seeds the bucket-level
@@ -4790,7 +4723,7 @@ async function openFanOutModal(
     }
   }
   const { byAccount: overridesByAccount, failedIds } = await fetchOverridesForAccounts(allAccountIDs);
-  if (openToken !== purchaseModalOpenToken) return;
+  if (openToken !== recsState.purchaseModalOpenToken) return;
   warnOverrideFetchFailed(failedIds);
 
   const buckets: FanOutBucket[] = bucketEntries
@@ -4845,7 +4778,7 @@ async function openFanOutModal(
         id: `bucket-${openToken}-${index}`,
       };
     });
-  currentFanOutBuckets = buckets;
+  recsState.currentFanOutBuckets = buckets;
 
   const container = document.getElementById('purchase-details');
   const modal = document.getElementById('purchase-modal');
@@ -4947,15 +4880,15 @@ function renderFanOutSummary(summary: HTMLElement, buckets: FanOutBucket[]): voi
   }
 }
 
-// refreshFanOutSummary re-renders #fanout-summary from currentFanOutBuckets.
+// refreshFanOutSummary re-renders #fanout-summary from recsState.currentFanOutBuckets.
 // Called after a bucket's Payment change so a user who repairs a skipped
 // bucket sees the email count, skipped note, and totals follow immediately
 // (issue #1904) rather than only on the next modal open.
 function refreshFanOutSummary(): void {
-  if (!currentFanOutBuckets) return;
+  if (!recsState.currentFanOutBuckets) return;
   const summary = document.getElementById('fanout-summary');
   if (!summary) return;
-  renderFanOutSummary(summary, currentFanOutBuckets);
+  renderFanOutSummary(summary, recsState.currentFanOutBuckets);
 }
 
 function bucketCommitmentLines(b: FanOutBucket): CommitmentLine[] {
@@ -5022,7 +4955,7 @@ function renderFanOutBucketSection(b: FanOutBucket): HTMLElement {
   // filters to the supported (provider, service, term) Payment values
   // — so the user can never pick an unsupported combo here. The
   // change handler updates the bucket's payment in module state
-  // (`currentFanOutBuckets`) so getFanOutBuckets() returns the
+  // (`recsState.currentFanOutBuckets`) so getFanOutBuckets() returns the
   // user's choice and handleFanOutExecute (in app.ts) reads the
   // right value per POST.
   const paymentRow = document.createElement('div');
@@ -5562,8 +5495,8 @@ function resolvePerRecPaymentSeed(
 // No-ops when the callout isn't in the DOM (no direct-execute permission).
 function checkedPurchaseLines(): CommitmentLine[] {
   const lines: CommitmentLine[] = [];
-  for (const idx of checkedPurchaseIndices) {
-    const r = currentPurchaseRecommendations[idx];
+  for (const idx of recsState.checkedPurchaseIndices) {
+    const r = recsState.currentPurchaseRecommendations[idx];
     if (r) lines.push(commitmentLine(r));
   }
   return lines;
@@ -5572,8 +5505,8 @@ function checkedPurchaseLines(): CommitmentLine[] {
 function renderDirectExecuteWarning(): void {
   const directWarning = document.querySelector<HTMLElement>('#purchase-details .direct-execute-warning');
   if (!directWarning) return;
-  directWarning.hidden = currentExecuteMode !== 'direct';
-  if (currentExecuteMode !== 'direct') return;
+  directWarning.hidden = recsState.currentExecuteMode !== 'direct';
+  if (recsState.currentExecuteMode !== 'direct') return;
   const lines = checkedPurchaseLines();
   const totals = commitmentTotals(lines);
   const shown = formatCommitmentTotals(lines);
@@ -5608,7 +5541,7 @@ function renderDirectExecuteWarning(): void {
  *   - Execute Purchase disabled when no rows are checked.
  *
  * Only checked rows are submitted: `getPurchaseModalRecommendations()`
- * filters by `checkedPurchaseIndices` so the existing execute-purchase
+ * filters by `recsState.checkedPurchaseIndices` so the existing execute-purchase
  * code path in app.ts needs no changes.
  *
  * Modal shows monthly totals regardless of the page's cost-period selector
@@ -5619,7 +5552,7 @@ function renderDirectExecuteWarning(): void {
  *   priced override, valid own payment, then a priced legacy fallback.
  *   Rows without a priced payment are explicitly excluded.
  *
- * On change, handlers mutate `currentPurchaseRecommendations[idx]` in
+ * On change, handlers mutate `recsState.currentPurchaseRecommendations[idx]` in
  * place so `getPurchaseModalRecommendations()` returns the user's
  * edits, and `app.ts::handleExecutePurchase` posts those values per row
  * (replacing the historical hardcoded `'all-upfront'` on that path).
@@ -5630,13 +5563,13 @@ function renderDirectExecuteWarning(): void {
  * the account's configured override is not applied in that case.
  */
 export async function openPurchaseModal(recommendations: LocalRecommendation[], capacityPercent = 100): Promise<void> {
-  const openToken = ++purchaseModalOpenToken;
+  const openToken = ++recsState.purchaseModalOpenToken;
   clearFanOutBuckets();
-  currentPurchaseCapacityPercent = capacityPercent;
-  currentPurchaseRecommendations = [];
-  const pendingRows = currentPurchaseRecommendations;
-  checkedPurchaseIndices = new Set();
-  checkedPurchaseModalInitialised = true;
+  recsState.currentPurchaseCapacityPercent = capacityPercent;
+  recsState.currentPurchaseRecommendations = [];
+  const pendingRows = recsState.currentPurchaseRecommendations;
+  recsState.checkedPurchaseIndices = new Set();
+  recsState.checkedPurchaseModalInitialised = true;
 
   const container = document.getElementById('purchase-details');
   if (!container) return;
@@ -5650,13 +5583,13 @@ export async function openPurchaseModal(recommendations: LocalRecommendation[], 
   }
   const { byAccount: overridesByAccount, failedIds } = await fetchOverridesForAccounts(accountIDs);
 
-  if (openToken !== purchaseModalOpenToken || currentPurchaseRecommendations !== pendingRows) return;
+  if (openToken !== recsState.purchaseModalOpenToken || recsState.currentPurchaseRecommendations !== pendingRows) return;
   warnOverrideFetchFailed(failedIds);
 
   const seeds = recommendations.map((r) => resolvePerRecPaymentSeed(r, overridesByAccount, capacityPercent));
   const resolvedSeeds = seeds.filter((seed) => seed !== null);
-  currentPurchaseRecommendations = resolvedSeeds.map((seed) => ({ ...seed.variant, payment: seed.payment }));
-  checkedPurchaseIndices = new Set(currentPurchaseRecommendations.map((_, i) => i));
+  recsState.currentPurchaseRecommendations = resolvedSeeds.map((seed) => ({ ...seed.variant, payment: seed.payment }));
+  recsState.checkedPurchaseIndices = new Set(recsState.currentPurchaseRecommendations.map((_, i) => i));
 
   while (container.firstChild) container.removeChild(container.firstChild);
 
@@ -5739,12 +5672,12 @@ export async function openPurchaseModal(recommendations: LocalRecommendation[], 
 
     // Wire radio changes to update state + show/hide warning.
     const updateExecuteMode = (): void => {
-      currentExecuteMode = directRadio.checked ? 'direct' : '';
+      recsState.currentExecuteMode = directRadio.checked ? 'direct' : '';
       renderDirectExecuteWarning();
       // Update the submit button label to reflect the selected mode.
       const executeBtn = document.getElementById('execute-purchase-btn') as HTMLButtonElement | null;
       if (executeBtn) {
-        executeBtn.textContent = executeButtonLabel(currentExecuteMode === 'direct');
+        executeBtn.textContent = executeButtonLabel(recsState.currentExecuteMode === 'direct');
       }
     };
 
@@ -5795,7 +5728,7 @@ export async function openPurchaseModal(recommendations: LocalRecommendation[], 
   table.appendChild(thead);
 
   const tbody = document.createElement('tbody');
-  for (let i = 0; i < currentPurchaseRecommendations.length; i++) {
+  for (let i = 0; i < recsState.currentPurchaseRecommendations.length; i++) {
     tbody.appendChild(renderPurchaseModalRow(i, resolvedSeeds[i]!.source));
   }
   table.appendChild(tbody);
@@ -5819,11 +5752,11 @@ export async function openPurchaseModal(recommendations: LocalRecommendation[], 
   // Wire the select-all checkbox (must happen after tbody rows are in DOM
   // so per-row checkboxes can be queried).
   selectAllCb.addEventListener('change', () => {
-    const allIndices = currentPurchaseRecommendations.map((_, i) => i);
+    const allIndices = recsState.currentPurchaseRecommendations.map((_, i) => i);
     if (selectAllCb.checked) {
-      checkedPurchaseIndices = new Set(allIndices);
+      recsState.checkedPurchaseIndices = new Set(allIndices);
     } else {
-      checkedPurchaseIndices = new Set();
+      recsState.checkedPurchaseIndices = new Set();
     }
     // Sync each row's checkbox to the new state.
     const rowCheckboxes = container.querySelectorAll<HTMLInputElement>('.purchase-modal-row-include');
@@ -5856,7 +5789,7 @@ export async function openPurchaseModal(recommendations: LocalRecommendation[], 
 
 /**
  * Updates the totals row and Execute button disabled state based on the
- * current `checkedPurchaseIndices` set. Also syncs the select-all
+ * current `recsState.checkedPurchaseIndices` set. Also syncs the select-all
  * checkbox's indeterminate/checked/unchecked state.
  *
  * Called on modal open and on every per-row or select-all checkbox change.
@@ -5875,8 +5808,8 @@ function updatePurchaseModalTotals(selectAllCb: HTMLInputElement): void {
   const checkedRecs: LocalRecommendation[] = [];
   let hasMonthlyCostData = false;
 
-  for (const idx of checkedPurchaseIndices) {
-    const rec = currentPurchaseRecommendations[idx];
+  for (const idx of recsState.checkedPurchaseIndices) {
+    const rec = recsState.currentPurchaseRecommendations[idx];
     if (!rec) continue;
     totalCount += rec.count;
     totalUpfront += rec.upfront_cost;
@@ -5970,7 +5903,7 @@ function updatePurchaseModalTotals(selectAllCb: HTMLInputElement): void {
   // Update Execute button disabled state.
   const executeBtn = document.getElementById('execute-purchase-btn') as HTMLButtonElement | null;
   if (executeBtn) {
-    const noneSelected = checkedPurchaseIndices.size === 0;
+    const noneSelected = recsState.checkedPurchaseIndices.size === 0;
     const submitting = executeBtn.dataset['submitting'] === 'true';
     executeBtn.disabled = submitting || noneSelected;
     executeBtn.title = submitting
@@ -5979,8 +5912,8 @@ function updatePurchaseModalTotals(selectAllCb: HTMLInputElement): void {
   }
 
   // Sync select-all checkbox indeterminate/checked/unchecked state.
-  const total = currentPurchaseRecommendations.length;
-  const checked = checkedPurchaseIndices.size;
+  const total = recsState.currentPurchaseRecommendations.length;
+  const checked = recsState.checkedPurchaseIndices.size;
   if (checked === 0) {
     selectAllCb.checked = false;
     selectAllCb.indeterminate = false;
@@ -5995,8 +5928,8 @@ function updatePurchaseModalTotals(selectAllCb: HTMLInputElement): void {
   const band = document.getElementById('purchase-modal-commitment-band');
   if (band) {
     band.replaceChildren(buildCommitmentBand(checkedPurchaseLines(), { upfrontLabel: 'Upfront' }));
-    const checkedRecs = Array.from(checkedPurchaseIndices, (i) => currentPurchaseRecommendations[i]).filter((r): r is LocalRecommendation => !!r);
-    const spHourly = savingsPlanHourlySummary(checkedRecs, currentPurchaseCapacityPercent, isSavingsPlanService);
+    const checkedRecs = Array.from(recsState.checkedPurchaseIndices, (i) => recsState.currentPurchaseRecommendations[i]).filter((r): r is LocalRecommendation => !!r);
+    const spHourly = savingsPlanHourlySummary(checkedRecs, recsState.currentPurchaseCapacityPercent, isSavingsPlanService);
     if (spHourly) {
       const note = document.createElement('p');
       note.className = 'purchase-modal-sp-hourly';
@@ -6006,13 +5939,13 @@ function updatePurchaseModalTotals(selectAllCb: HTMLInputElement): void {
   }
 
   // Issue #1903: the direct-execute warning's dollar total is derived from
-  // checkedPurchaseIndices too, so it must refresh on every checkbox toggle,
+  // recsState.checkedPurchaseIndices too, so it must refresh on every checkbox toggle,
   // not only when the radio itself changes.
   renderDirectExecuteWarning();
 }
 
 // renderPurchaseModalRow builds one editable <tr> for the per-row
-// purchase modal. Idx is the index into currentPurchaseRecommendations
+// purchase modal. Idx is the index into recsState.currentPurchaseRecommendations
 // — change handlers locate the live rec via that index so subsequent
 // edits to other rows don't stale-close over an outdated array
 // reference. The modal does NOT re-render mid-edit; only the row's own
@@ -6020,11 +5953,11 @@ function updatePurchaseModalTotals(selectAllCb: HTMLInputElement): void {
 //
 // Issue #320: adds Include checkbox (col 0), Account (col 1), and
 // Upfront/Monthly Cost/Eff. Savings/Eff. % columns before Term/Payment.
-// The checkbox change handler updates checkedPurchaseIndices and calls
+// The checkbox change handler updates recsState.checkedPurchaseIndices and calls
 // updatePurchaseModalTotals so the live totals row and Execute button
 // state stay in sync.
 function renderPurchaseModalRow(idx: number, paymentSource: 'override' | 'rec' | 'fallback'): HTMLTableRowElement {
-  const rec = currentPurchaseRecommendations[idx]!;
+  const rec = recsState.currentPurchaseRecommendations[idx]!;
   const tr = document.createElement('tr');
   tr.dataset['recIdx'] = String(idx);
 
@@ -6033,7 +5966,7 @@ function renderPurchaseModalRow(idx: number, paymentSource: 'override' | 'rec' |
   const includeCb = document.createElement('input');
   includeCb.type = 'checkbox';
   includeCb.className = 'purchase-modal-row-include';
-  includeCb.checked = checkedPurchaseIndices.has(idx);
+  includeCb.checked = recsState.checkedPurchaseIndices.has(idx);
   includeCb.setAttribute('aria-label', `Include row ${idx + 1}`);
   includeTd.appendChild(includeCb);
   tr.appendChild(includeTd);
@@ -6116,7 +6049,7 @@ function renderPurchaseModalRow(idx: number, paymentSource: 'override' | 'rec' |
   const paymentCell = document.createElement('td');
   const paymentSelect = document.createElement('select');
   paymentSelect.className = 'purchase-row-payment';
-  rebuildPaymentOptions(paymentSelect, cellPaymentOptions(rec, rec.term as 1 | 3, currentPurchaseCapacityPercent), (rec.payment ?? '') as BulkPurchasePayment | '');
+  rebuildPaymentOptions(paymentSelect, cellPaymentOptions(rec, rec.term as 1 | 3, recsState.currentPurchaseCapacityPercent), (rec.payment ?? '') as BulkPurchasePayment | '');
   paymentCell.appendChild(paymentSelect);
   if (paymentSource === 'override') {
     const sourceNote = document.createElement('span');
@@ -6131,9 +6064,9 @@ function renderPurchaseModalRow(idx: number, paymentSource: 'override' | 'rec' |
   // the handler outlives the initial render call.
   includeCb.addEventListener('change', () => {
     if (includeCb.checked) {
-      checkedPurchaseIndices.add(idx);
+      recsState.checkedPurchaseIndices.add(idx);
     } else {
-      checkedPurchaseIndices.delete(idx);
+      recsState.checkedPurchaseIndices.delete(idx);
     }
     const selectAllCb = document.getElementById('purchase-modal-select-all') as HTMLInputElement | null;
     if (selectAllCb) updatePurchaseModalTotals(selectAllCb);
@@ -6147,21 +6080,21 @@ function renderPurchaseModalRow(idx: number, paymentSource: 'override' | 'rec' |
   const applyVariantChange = (focusSelector: string): void => {
     const term = parseInt(termSelect.value, 10) === 3 ? 3 : 1;
     const payment = paymentSelect.value as BulkPurchasePayment;
-    const live = currentPurchaseRecommendations[idx];
+    const live = recsState.currentPurchaseRecommendations[idx];
     if (!live) return;
-    const variant = pricedCellVariant(live, term, payment, currentPurchaseCapacityPercent);
+    const variant = pricedCellVariant(live, term, payment, recsState.currentPurchaseCapacityPercent);
     if (!variant) {
       // Reachable: a sibling variant with a smaller count can floor to 0 at
       // the modal's capacity. Keep the priced rec and put the selects back.
       showToast({
-        message: `No priced ${formatTerm(term)} / ${payment} option for this row at ${currentPurchaseCapacityPercent}% capacity.`,
+        message: `No priced ${formatTerm(term)} / ${payment} option for this row at ${recsState.currentPurchaseCapacityPercent}% capacity.`,
         kind: 'warning',
       });
       termSelect.value = String(live.term);
-      rebuildPaymentOptions(paymentSelect, cellPaymentOptions(live, live.term as 1 | 3, currentPurchaseCapacityPercent), (live.payment ?? '') as BulkPurchasePayment | '');
+      rebuildPaymentOptions(paymentSelect, cellPaymentOptions(live, live.term as 1 | 3, recsState.currentPurchaseCapacityPercent), (live.payment ?? '') as BulkPurchasePayment | '');
       return;
     }
-    currentPurchaseRecommendations[idx] = { ...variant, payment };
+    recsState.currentPurchaseRecommendations[idx] = { ...variant, payment };
     const fresh = renderPurchaseModalRow(idx, paymentSource);
     tr.replaceWith(fresh);
     fresh.querySelector<HTMLSelectElement>(focusSelector)?.focus();
@@ -6170,13 +6103,13 @@ function renderPurchaseModalRow(idx: number, paymentSource: 'override' | 'rec' |
   };
 
   termSelect.addEventListener('change', () => {
-    const live = currentPurchaseRecommendations[idx];
+    const live = recsState.currentPurchaseRecommendations[idx];
     if (!live) return;
     const newTerm = parseInt(termSelect.value, 10) === 3 ? 3 : 1;
     // Rebuild this row's payment options for the new term before applying —
     // applyVariantChange reads paymentSelect.value, so it must already
     // reflect the new term's loaded options.
-    rebuildPaymentOptions(paymentSelect, cellPaymentOptions(live, newTerm, currentPurchaseCapacityPercent), (live.payment ?? '') as BulkPurchasePayment | '');
+    rebuildPaymentOptions(paymentSelect, cellPaymentOptions(live, newTerm, recsState.currentPurchaseCapacityPercent), (live.payment ?? '') as BulkPurchasePayment | '');
     applyVariantChange('.purchase-row-term');
   });
 
