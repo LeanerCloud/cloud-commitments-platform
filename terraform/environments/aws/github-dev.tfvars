@@ -51,7 +51,7 @@ database_backup_retention_days = 7
 database_deletion_protection   = false
 database_skip_final_snapshot   = true
 database_performance_insights  = false
-database_auto_migrate          = true
+database_auto_migrate          = false # Migrated by the deploy-time step (#31)
 
 # ==============================================
 # Networking
