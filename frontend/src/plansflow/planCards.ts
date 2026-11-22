@@ -12,7 +12,7 @@ import { canAccess } from '../permissions';
 import { BackendPlan, planMatchesProvider, extractPlanInfo, isPlanOverdue, PRESET_RAMPS, rampRadioValue } from './planModel';
 import { healthBadgeHtml } from './planHealth';
 import { loadPlannedPurchases } from './plannedLoad';
-import { editPlan } from '../plans';
+import { editPlan } from './planEdit';
 import { openAddPurchasesModal } from '../plans';
 
 // Request generations for loadPlans / loadPlannedPurchases (#1957). A filter
