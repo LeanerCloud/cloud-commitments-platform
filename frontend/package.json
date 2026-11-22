@@ -19,7 +19,7 @@
     "@babel/core": "8.1.0",
     "@babel/preset-env": "8.0.7",
     "@babel/preset-typescript": "8.0.7",
-    "@playwright/test": "^1.64.1",
+    "@playwright/test": "^1.65.0",
     "@testing-library/dom": "10.4.2",
     "@testing-library/jest-dom": "7.0.1",
     "@types/jest": "30.0.0",
