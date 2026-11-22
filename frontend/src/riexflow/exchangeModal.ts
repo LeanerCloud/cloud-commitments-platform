@@ -9,7 +9,7 @@ import { showToast } from '../toast';
 import { riexState } from './riexState';
 import { exchangePaymentPattern, parseTargetCount, currencyPrefix, formatOfferingCost, riAccountLabel } from './shared';
 import { TargetRow, fillPickerOptions, collectTargets, buildQuoteReq, revealExchangeHistory, setResultText, renderModalQuoteResult, QuoteReqShape } from './modalHelpers';
-import { loadRIExchange } from '../riexchange';
+import { loadRIExchange } from './load';
 
 export function openExchangeModal(riId: string, count: number, suggestedTargetType?: string, alternativeTargets?: OfferingOption[]): void {
   const modalEl = document.getElementById('ri-exchange-modal');
