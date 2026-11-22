@@ -6,7 +6,7 @@ import { confirmDialog } from '../confirmDialog';
 import type { PlannedPurchase } from '../api';
 import { plansState } from './plansState';
 import { loadPlannedPurchases } from './plannedLoad';
-import { loadPlans } from '../plans';
+import { loadPlans } from './planCards';
 import { editPlan } from '../plans';
 
 // Purchase ids whose "Run now" confirm or request is open, so a second click
