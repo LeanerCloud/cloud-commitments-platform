@@ -11,12 +11,24 @@ import {
 import { columnLabel, NUMERIC_COLUMNS } from './columnDefs';
 import { saveColumnFilters } from './columnPrefs';
 import { applyColumnFilters, categoricalDisplayLabel, distinctValuesForColumn } from './cellValues';
-import { getColumnTriggerButton, SERVER_PUSHDOWN_COLUMNS } from './popoverContent';
 import { closeVisibilityPopover } from './visibility';
 import { renderRecommendationsList } from './renderList';
 import { loadRecommendations } from './load';
 
 const RECS_SCOPE = 'recs';
+
+// Columns whose single-value categorical filter is pushed down to the server
+// (issue #162): a commit or clear on one of these re-fetches instead of
+// filtering client-side. 'account' drives account_ids, a server-side hint.
+const SERVER_PUSHDOWN_COLUMNS: ReadonlySet<state.RecommendationsColumnId> = new Set([
+  'service', 'region', 'account',
+]);
+
+function getColumnTriggerButton(column: state.RecommendationsColumnId): HTMLButtonElement | null {
+  return document.querySelector<HTMLButtonElement>(
+    `th .column-filter-btn[data-column="${column}"]`,
+  );
+}
 
 function commitColumnFilter(column: state.RecommendationsColumnId, filter: ColumnFilterKind | null): void {
   state.setRecommendationsColumnFilter(column, filter);
@@ -87,14 +99,6 @@ export function rebindOpenPopoverAnchor(): void {
   rebindColumnFilterPopover(RECS_SCOPE);
 }
 
-// rerenderRecommendations triggers a full re-render from the latest loaded
-// state. Used by popover commits and the Clear-filters badge so the table
-// reflects new column-filter state immediately.
-//
-// #272 (CR follow-up): the summary card is recomputed inside
-// renderRecommendationsList itself (against the post-filter visible set),
-// so this helper doesn't need to call renderRecommendationsSummary
-// separately — every entry to renderRecommendationsList covers it.
 /**
  * Clears every column filter. Re-fetches when a server-pushed-down column
  * (service/region/account) was filtered, since the loaded set itself was
@@ -120,6 +124,14 @@ export function setOpportunitiesChromeHidden(hidden: boolean): void {
   }
 }
 
+// rerenderRecommendations triggers a full re-render from the latest loaded
+// state. Used by popover commits and the Clear-filters badge so the table
+// reflects new column-filter state immediately.
+//
+// #272 (CR follow-up): the summary card is recomputed inside
+// renderRecommendationsList itself (against the post-filter visible set),
+// so this helper doesn't need to call renderRecommendationsSummary
+// separately — every entry to renderRecommendationsList covers it.
 export function rerenderRecommendations(): void {
   const loaded = state.getRecommendations() as unknown as LocalRecommendation[];
   renderRecommendationsList(loaded);
