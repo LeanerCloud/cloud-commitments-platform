@@ -9,27 +9,8 @@ import { formatDate, formatDateTime, escapeHtml, escapeHtmlAttr, formatCurrency 
 import { switchTab, switchSettingsSubTab } from './navigation';
 import { confirmDialog } from './confirmDialog';
 import { buildApproveConfirmBody, buildExchangeConfirmBody, hourlyPriceDelta } from './riexchange-confirm';
-import { applyColumnFilters as applyColumnFiltersLib } from './lib/column-filters';
-import {
-  openColumnFilterPopover,
-  rebindColumnFilterPopover,
-  sortedDistinctValues,
-} from './lib/column-filter-popover';
-import type {
-  ConvertibleRI,
-  ExchangeableAzureRI,
-  RIUtilization,
-  ReshapeRecommendation,
-  ExchangeQuoteSummary,
-  RIExchangeConfig,
-  RIExchangeHistoryRecord,
-  RIExchangeDirectExecution,
-  OfferingOption,
-  TargetOffering,
-  ReshapeRecommendationsResponse,
-  ExcludedRI,
-  Provider,
-} from './api';
+import { openColumnFilterPopover, rebindColumnFilterPopover, sortedDistinctValues } from './lib/column-filter-popover';
+import type { ConvertibleRI, ExchangeableAzureRI, RIUtilization, ReshapeRecommendation, ExchangeQuoteSummary, RIExchangeConfig, RIExchangeHistoryRecord, RIExchangeDirectExecution, OfferingOption, TargetOffering, ReshapeRecommendationsResponse, ExcludedRI, Provider } from './api';
 import { openModal, closeModal, createModalHeader } from './modal';
 import { showSkeletonRows, showSkeletonText, teardownSkeleton } from './lib/skeleton';
 import { statusBadgeHtml } from './lib/status-badge';
@@ -42,24 +23,8 @@ import { approveResultToast } from './riexchange-approve-outcome';
 import { getCurrentUser } from './state';
 import { attachAzureExchangeToolbar, buildAzureSelectCell, buildAzureSelectHeader, canPreviewAzureExchange } from './riexchange-azure';
 import { formatDecimalStringCurrency, formatIsoTermShort, formatPaymentOption } from './lib/table-format';
+import { riexState } from './riexflow/riexState';
 
-// Module state
-let currentRIs: ConvertibleRI[] = [];
-// True once currentRIs holds the convertible-RI list of the scope being
-// shown. The reshape empty state only quotes currentRIs.length while this is
-// set, so it never prints the previous scope's count, or a count from a list
-// that failed to load (issue #1135).
-let currentRIsLoaded = false;
-let currentUtilization: Map<string, RIUtilization> = new Map();
-// An RI missing from currentUtilization is still loading only while this is
-// 'loading'; after that its utilization is unknown (issue #1687).
-let utilizationStatus: 'loading' | 'loaded' | 'failed' = 'loading';
-let currentRecommendations: ReshapeRecommendation[] = [];
-// True once currentRecommendations holds this scope's successfully loaded
-// reshape list, so a late utilization result never overwrites a load error.
-let currentRecsLoaded = false;
-// Registered account names by AWS account ID, for the account label (#1692).
-let riAccountNames: Map<string, string> = new Map();
 const exchangePaymentPattern = /^\d+(?:\.\d+)?$/;
 
 // A target count is a whole number >= 1; anything else (empty, 0, "2.5",
@@ -70,20 +35,6 @@ function parseTargetCount(raw: string): number | null {
   const n = Number(trimmed);
   return Number.isSafeInteger(n) && n >= 1 ? n : null;
 }
-
-// Generation counter to prevent stale utilization data from overwriting fresh data
-let utilizationGeneration = 0;
-
-// Generation counter so a superseded loadRIExchange (chip changed while the
-// account lookup was in flight) never issues its list call.
-let scopeGeneration = 0;
-
-// The AWS account the convertible-RI list is currently scoped to (the
-// single-select account chip value, or undefined for all-accounts). Tracked
-// at module scope so the asynchronous utilization re-render preserves the
-// scoped empty-state copy instead of falling back to the unscoped message
-// (issue #871).
-let currentRIAccountID: string | undefined;
 
 // Human-readable provider labels for empty-state copy and the not-available
 // message. Mirrors the map in inventory.ts.
@@ -125,22 +76,22 @@ const MODE_LABELS: Record<string, string> = { manual: "Manual Approval", auto: "
  *            for GCP" empty state and no list endpoint is called.
  */
 export async function loadRIExchange(): Promise<void> {
-  const generation = ++scopeGeneration;
+  const generation = ++riexState.scopeGeneration;
   // Supersede any in-flight utilization load from the previous scope, before
   // the account lookup, so a late result can't re-render over the new view.
-  utilizationGeneration++;
+  riexState.utilizationGeneration++;
   let scope: Awaited<ReturnType<typeof resolveScope>>;
   try {
     scope = await resolveScope();
   } catch (error) {
-    if (generation !== scopeGeneration) return;
-    currentRIs = [];
-    currentRIsLoaded = false;
-    currentUtilization = new Map();
-    utilizationStatus = 'loading';
-    currentRecommendations = [];
-    currentRecsLoaded = false;
-    currentRIAccountID = undefined;
+    if (generation !== riexState.scopeGeneration) return;
+    riexState.currentRIs = [];
+    riexState.currentRIsLoaded = false;
+    riexState.currentUtilization = new Map();
+    riexState.utilizationStatus = 'loading';
+    riexState.currentRecommendations = [];
+    riexState.currentRecsLoaded = false;
+    riexState.currentRIAccountID = undefined;
     const message = 'Select a valid account to load this section.';
     for (const id of ['ri-exchange-recommendations-list', 'ri-exchange-history-list']) {
       const el = document.getElementById(id);
@@ -154,7 +105,7 @@ export async function loadRIExchange(): Promise<void> {
     }
     return;
   }
-  if (generation !== scopeGeneration) return;
+  if (generation !== riexState.scopeGeneration) return;
   const { provider, accountID } = scope;
 
   if (provider === 'gcp') {
@@ -181,8 +132,8 @@ export async function loadRIExchange(): Promise<void> {
   // RI list, its empty state was written without this scope's RI count, so
   // render it again now that both are in. A failed reshape load keeps its
   // error message (issue #1135).
-  if (generation !== scopeGeneration) return;
-  if (recsLoaded && currentRecommendations.length === 0) rerenderReshape();
+  if (generation !== riexState.scopeGeneration) return;
+  if (recsLoaded && riexState.currentRecommendations.length === 0) rerenderReshape();
 }
 
 /**
@@ -191,13 +142,13 @@ export async function loadRIExchange(): Promise<void> {
  * list endpoint and never leave stale AWS/Azure rows behind.
  */
 function renderGCPEmptyStates(): void {
-  currentRIs = [];
-  currentRIsLoaded = false;
-  currentUtilization = new Map();
-  utilizationStatus = 'loading';
-  currentRecommendations = [];
-  currentRecsLoaded = false;
-  currentRIAccountID = undefined;
+  riexState.currentRIs = [];
+  riexState.currentRIsLoaded = false;
+  riexState.currentUtilization = new Map();
+  riexState.utilizationStatus = 'loading';
+  riexState.currentRecommendations = [];
+  riexState.currentRecsLoaded = false;
+  riexState.currentRIAccountID = undefined;
 
   const instances = document.getElementById('ri-exchange-instances-list');
   if (instances) renderEmptyState(instances, "RI Exchange isn't available for GCP.");
@@ -218,8 +169,8 @@ function renderGCPEmptyStates(): void {
  * apply to Azure (or any non-AWS) provider.
  */
 function renderReshapeNotApplicable(provider: string): void {
-  currentRecommendations = [];
-  currentRecsLoaded = false;
+  riexState.currentRecommendations = [];
+  riexState.currentRecsLoaded = false;
   const container = document.getElementById('ri-exchange-recommendations-list');
   if (container) {
     renderEmptyState(container, `Reshape recommendations are not available for ${providerLabel(provider)}.`);
@@ -330,7 +281,7 @@ function closeExchangeModalIfOpen(): void {
 // Convertible RIs table
 // ──────────────────────────────────────────────
 
-async function loadConvertibleRIs(accountID?: string, generation: number = scopeGeneration): Promise<void> {
+async function loadConvertibleRIs(accountID?: string, generation: number = riexState.scopeGeneration): Promise<void> {
   const container = document.getElementById('ri-exchange-instances-list');
   if (!container) return;
 
@@ -341,23 +292,23 @@ async function loadConvertibleRIs(accountID?: string, generation: number = scope
   // the children on success for a clean handoff.
   showSkeletonRows(container, 3, 8);
 
-  currentRIAccountID = accountID;
-  currentRIsLoaded = false;
+  riexState.currentRIAccountID = accountID;
+  riexState.currentRIsLoaded = false;
 
   try {
     // issue #871: scope to the selected account so the page honours the
     // Main Header global filter.
     const [ris] = await Promise.all([api.listConvertibleRIs(accountID), loadRIAccountNames()]);
-    if (generation !== scopeGeneration) return;
-    currentRIs = ris;
-    currentRIsLoaded = true;
-    utilizationStatus = 'loading';
+    if (generation !== riexState.scopeGeneration) return;
+    riexState.currentRIs = ris;
+    riexState.currentRIsLoaded = true;
+    riexState.utilizationStatus = 'loading';
     renderRIsTable(container, accountID);
     // Load utilization asynchronously (Cost Explorer is slow)
-    utilizationGeneration++;
-    void loadUtilization(utilizationGeneration);
+    riexState.utilizationGeneration++;
+    void loadUtilization(riexState.utilizationGeneration);
   } catch (error) {
-    if (generation !== scopeGeneration) return;
+    if (generation !== riexState.scopeGeneration) return;
     teardownSkeleton(container);
     const err = error as Error;
     container.innerHTML = `<p class="error">Failed to load convertible RIs: ${escapeHtml(err.message)}</p>`;
@@ -381,19 +332,19 @@ async function loadExchangeableAzureRIs(accountID: string | undefined, generatio
 
   // AWS-only module state is irrelevant on the Azure path; reset it so a
   // later provider switch back to AWS starts clean and reshape copy that
-  // reads currentRIs.length isn't skewed by stale AWS rows.
-  currentRIs = [];
-  currentRIsLoaded = false;
-  currentUtilization = new Map();
-  utilizationStatus = 'loading';
-  currentRIAccountID = undefined;
+  // reads riexState.currentRIs.length isn't skewed by stale AWS rows.
+  riexState.currentRIs = [];
+  riexState.currentRIsLoaded = false;
+  riexState.currentUtilization = new Map();
+  riexState.utilizationStatus = 'loading';
+  riexState.currentRIAccountID = undefined;
 
   try {
     const reservations = await api.listExchangeableAzureRIs(accountID);
-    if (generation !== scopeGeneration) return;
+    if (generation !== riexState.scopeGeneration) return;
     renderAzureRIsTable(container, reservations, accountID);
   } catch (error) {
-    if (generation !== scopeGeneration) return;
+    if (generation !== riexState.scopeGeneration) return;
     teardownSkeleton(container);
     const err = error as Error;
     container.innerHTML = `<p class="error">Failed to load Azure reservations: ${escapeHtml(err.message)}</p>`;
@@ -404,17 +355,17 @@ async function loadExchangeableAzureRIs(accountID: string | undefined, generatio
 async function loadRIAccountNames(): Promise<void> {
   try {
     const accounts = (await api.listAccountsMinimal({ provider: 'aws' })) ?? [];
-    riAccountNames = new Map(accounts.map(a => [a.external_id, a.name]));
+    riexState.riAccountNames = new Map(accounts.map(a => [a.external_id, a.name]));
   } catch (error) {
     console.warn('RI Exchange: could not load account names:', error);
-    riAccountNames = new Map();
+    riexState.riAccountNames = new Map();
   }
 }
 
 // "CUDly host (123456789012)": the ID is added only when the name lacks it.
 function riAccountLabel(accountID: string | undefined): string {
   if (!accountID) return 'could not be determined';
-  const name = riAccountNames.get(accountID);
+  const name = riexState.riAccountNames.get(accountID);
   if (!name) return `AWS account ${accountID}`;
   return name.includes(accountID) ? name : `${name} (${accountID})`;
 }
@@ -423,31 +374,31 @@ async function loadUtilization(generation: number): Promise<void> {
   try {
     const utilization = await api.getRIUtilization();
     // Discard if a newer load was started while we were waiting
-    if (generation !== utilizationGeneration) return;
-    currentUtilization = new Map(utilization.map(u => [u.reserved_instance_id, u]));
-    utilizationStatus = 'loaded';
+    if (generation !== riexState.utilizationGeneration) return;
+    riexState.currentUtilization = new Map(utilization.map(u => [u.reserved_instance_id, u]));
+    riexState.utilizationStatus = 'loaded';
   } catch (error) {
-    if (generation !== utilizationGeneration) return;
+    if (generation !== riexState.utilizationGeneration) return;
     console.error('Failed to load RI utilization:', error);
     // Values from an earlier load are no longer current (same-scope reload).
-    currentUtilization = new Map();
-    utilizationStatus = 'failed';
+    riexState.currentUtilization = new Map();
+    riexState.utilizationStatus = 'failed';
   }
   // Re-render table with utilization data, preserving the active account
   // scope so a scoped empty-state message isn't lost (issue #871).
   const container = document.getElementById('ri-exchange-instances-list');
-  if (container) renderRIsTable(container, currentRIAccountID);
+  if (container) renderRIsTable(container, riexState.currentRIAccountID);
   // The reshape empty state depends on which RIs have known utilization.
-  if (currentRecsLoaded && currentRecommendations.length === 0) rerenderReshape();
+  if (riexState.currentRecsLoaded && riexState.currentRecommendations.length === 0) rerenderReshape();
 }
 
 function hasKnownUtilization(riID: string): boolean {
-  const pct = currentUtilization.get(riID)?.utilization_percent;
+  const pct = riexState.currentUtilization.get(riID)?.utilization_percent;
   return typeof pct === 'number' && Number.isFinite(pct);
 }
 
 function renderRIsTable(container: HTMLElement, accountID?: string): void {
-  if (!currentRIs || currentRIs.length === 0) {
+  if (!riexState.currentRIs || riexState.currentRIs.length === 0) {
     // issue #871: name the active scope so the user knows the result is
     // filtered (by the account chip) rather than globally empty.
     const msg = accountID
@@ -467,7 +418,7 @@ function renderRIsTable(container: HTMLElement, accountID?: string): void {
   // renderRecommendations; broken numeric expressions are skipped so
   // the popover can surface the inline error without forcing a clear.
   const filters = state.getActiveRiColumnFilters();
-  const visibleRIs = applyActiveRiColumnFilters(currentRIs, currentUtilization, filters);
+  const visibleRIs = applyActiveRiColumnFilters(riexState.currentRIs, riexState.currentUtilization, filters);
 
   const filterBtn = (column: state.ActiveRiColumnId): string => {
     const active = filters[column] ? ' active' : '';
@@ -476,7 +427,7 @@ function renderRIsTable(container: HTMLElement, accountID?: string): void {
     return `<button type="button" class="column-filter-btn${active}" data-column="${column}" aria-haspopup="dialog" aria-expanded="false" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}">${iconSvg('filter')}</button>`;
   };
 
-  const accountLabels = [...new Set(currentRIs.map(r => riAccountLabel(r.account_id)))];
+  const accountLabels = [...new Set(riexState.currentRIs.map(r => riAccountLabel(r.account_id)))];
   container.innerHTML = `
     <p class="setting-hint" id="ri-exchange-account-label">Account: ${escapeHtml(accountLabels.join(', '))}</p>
     <table class="table-compact${canExchange ? ' table-sticky-end' : ''}">
@@ -496,14 +447,14 @@ function renderRIsTable(container: HTMLElement, accountID?: string): void {
         ${visibleRIs.length === 0 ? `<tr><td colspan="${canExchange ? 8 : 7}" class="empty">No rows match the active column filters. Clear a filter to see them.</td></tr>` : ''}
         ${visibleRIs.map(ri => {
           const utilPct = hasKnownUtilization(ri.reserved_instance_id)
-            ? currentUtilization.get(ri.reserved_instance_id)!.utilization_percent
+            ? riexState.currentUtilization.get(ri.reserved_instance_id)!.utilization_percent
             : null;
           const utilClass = utilPct === null ? '' : utilPct >= 95 ? 'util-green' : utilPct >= 70 ? 'util-yellow' : 'util-red';
           const utilText = utilPct !== null
             ? `${utilPct.toFixed(1)}%`
-            : utilizationStatus === 'loading'
+            : riexState.utilizationStatus === 'loading'
               ? '<span class="loading-inline">...</span>'
-              : `<span class="text-muted" title="${utilizationStatus === 'failed' ? 'Utilization could not be loaded' : 'No utilization data was returned for this RI'}">No data</span>`;
+              : `<span class="text-muted" title="${riexState.utilizationStatus === 'failed' ? 'Utilization could not be loaded' : 'No utilization data was returned for this RI'}">No data</span>`;
           return `
           <tr>
             <td class="monospace">${escapeHtml(ri.reserved_instance_id)}</td>
@@ -621,7 +572,7 @@ function appendAzureCell(tr: HTMLTableRowElement, text: string, numeric = false)
 
 // Resolves true when this call rendered a fresh reshape list (empty or not),
 // false when it was superseded, failed, or had nowhere to render.
-export async function loadReshapeRecommendations(generation: number = scopeGeneration): Promise<boolean> {
+export async function loadReshapeRecommendations(generation: number = riexState.scopeGeneration): Promise<boolean> {
   const container = document.getElementById('ri-exchange-recommendations-list');
   if (!container) return false;
 
@@ -630,19 +581,19 @@ export async function loadReshapeRecommendations(generation: number = scopeGener
   // renderRecommendations: Source RI / Current / Suggested /
   // Alternatives / Utilization / Normalized Units / Reason / Actions.
   showSkeletonRows(container, 3, 8);
-  currentRecsLoaded = false;
+  riexState.currentRecsLoaded = false;
 
   try {
     const resp: ReshapeRecommendationsResponse = await api.getReshapeRecommendations();
-    if (generation !== scopeGeneration) return false;
-    currentRecommendations = resp.recommendations ?? [];
-    currentRecsLoaded = true;
+    if (generation !== riexState.scopeGeneration) return false;
+    riexState.currentRecommendations = resp.recommendations ?? [];
+    riexState.currentRecsLoaded = true;
     renderRecommendations(container);
     renderReshapeStalenessBanner(resp.recs_staleness, resp.recs_collected_at);
     renderExcludedRIsNotice(resp.excluded_ris);
     return true;
   } catch (error) {
-    if (generation !== scopeGeneration) return false;
+    if (generation !== riexState.scopeGeneration) return false;
     teardownSkeleton(container);
     renderExcludedRIsNotice(undefined);
     const err = error as Error;
@@ -964,7 +915,7 @@ const ACTIVE_RI_POPOVER_SCOPE = 'active-ri';
 
 function rerenderRIs(): void {
   const container = document.getElementById('ri-exchange-instances-list');
-  if (container) renderRIsTable(container, currentRIAccountID);
+  if (container) renderRIsTable(container, riexState.currentRIAccountID);
 }
 
 function activeRiTrigger(column: state.ActiveRiColumnId): HTMLButtonElement | null {
@@ -980,7 +931,7 @@ function activeRiOpenPopoverFor(column: state.ActiveRiColumnId, anchor: HTMLElem
     label: activeRiLabelFor(column),
     kind: ACTIVE_RI_NUMERIC_COLUMNS.has(column) ? 'numeric' : 'categorical',
     placeholder: 'e.g. >50, 10..20, 4',
-    distinctValues: sortedDistinctValues(currentRIs, (ri) => activeRiCategoricalCellValue(ri, column)),
+    distinctValues: sortedDistinctValues(riexState.currentRIs, (ri) => activeRiCategoricalCellValue(ri, column)),
     getFilter: () => state.getActiveRiColumnFilters()[column],
     onCommit: (filter) => {
       state.setActiveRiColumnFilter(column, filter);
@@ -1011,7 +962,7 @@ function riexOpenPopoverFor(column: state.RiExchangeColumnId, anchor: HTMLElemen
     label: riexLabelFor(column),
     kind: RIEX_NUMERIC_COLUMNS.has(column) ? 'numeric' : 'categorical',
     placeholder: 'e.g. >50, 70..95, 1',
-    distinctValues: sortedDistinctValues(currentRecommendations, (r) => riexCategoricalCellValue(r, column)),
+    distinctValues: sortedDistinctValues(riexState.currentRecommendations, (r) => riexCategoricalCellValue(r, column)),
     getFilter: () => state.getRiExchangeColumnFilters()[column],
     onCommit: (filter) => {
       state.setRiExchangeColumnFilter(column, filter);
@@ -1029,10 +980,10 @@ function rerenderReshape(): void {
 // Empty-state copy for a loaded, non-empty RI list. Only RIs with known
 // utilization can be said to meet the threshold (issue #1687).
 function reshapeFleetCopy(): string {
-  const total = currentRIs.length;
+  const total = riexState.currentRIs.length;
   const plural = total === 1 ? '' : 's';
-  if (utilizationStatus === 'loading') return 'No reshape recommendations right now.';
-  const unknown = currentRIs.filter(ri => !hasKnownUtilization(ri.reserved_instance_id)).length;
+  if (riexState.utilizationStatus === 'loading') return 'No reshape recommendations right now.';
+  const unknown = riexState.currentRIs.filter(ri => !hasKnownUtilization(ri.reserved_instance_id)).length;
   if (unknown === 0) {
     return `All ${total} convertible RI${plural} meet your utilization threshold. No reshape needed.`;
   }
@@ -1040,16 +991,16 @@ function reshapeFleetCopy(): string {
 }
 
 function renderRecommendations(container: HTMLElement): void {
-  if (!currentRecommendations || currentRecommendations.length === 0) {
+  if (!riexState.currentRecommendations || riexState.currentRecommendations.length === 0) {
     // The "well-utilized" copy is only truthful when the RI fleet actually
     // contains convertibles to be utilized. Prior to this commit the same
     // message fired regardless of fleet presence, so a brand-new tenant saw
     // a claim about utilization of a non-existent fleet.
     // Until this scope's RI list is in (or when it failed to load), say
     // nothing about the fleet rather than quote a stale count (#1135).
-    const copy = !currentRIsLoaded
+    const copy = !riexState.currentRIsLoaded
       ? 'No reshape recommendations right now.'
-      : currentRIs.length === 0
+      : riexState.currentRIs.length === 0
         ? 'Reshape recommendations appear once your accounts have active convertible Reserved Instances — none are registered yet.'
         : reshapeFleetCopy();
     container.innerHTML = `<p class="empty">${escapeHtml(copy)}</p>`;
@@ -1063,7 +1014,7 @@ function renderRecommendations(container: HTMLElement): void {
   // the others; broken numeric expressions are skipped so the popover can
   // surface the error without forcing the user to clear the field first.
   const filters = state.getRiExchangeColumnFilters();
-  const visible = applyRiExchangeColumnFilters(currentRecommendations, filters);
+  const visible = applyRiExchangeColumnFilters(riexState.currentRecommendations, filters);
 
   const filterBtn = (column: state.RiExchangeColumnId): string => {
     const active = filters[column] ? ' active' : '';
@@ -1080,12 +1031,12 @@ function renderRecommendations(container: HTMLElement): void {
   const filterGroup = (...btns: string[]): string => `<span class="th-filter-group">${btns.join('')}</span>`;
 
   // Render an indexable list so per-row Exchange buttons can find the
-  // matching original recommendation (idx into currentRecommendations).
+  // matching original recommendation (idx into riexState.currentRecommendations).
   // Index the full list once instead of an indexOf scan per visible row,
   // which made the row build quadratic (#319). The first index wins, as
   // with indexOf.
   const indexByRec = new Map<ReshapeRecommendation, number>();
-  currentRecommendations.forEach((rec, i) => {
+  riexState.currentRecommendations.forEach((rec, i) => {
     if (!indexByRec.has(rec)) indexByRec.set(rec, i);
   });
   const visibleWithIdx = visible.map((rec) => ({
@@ -1155,7 +1106,7 @@ function renderRecommendations(container: HTMLElement): void {
   container.querySelectorAll<HTMLButtonElement>('[data-action="fill-quote"]').forEach(btn => {
     btn.addEventListener('click', () => {
       const idx = parseInt(btn.dataset['index'] || '0', 10);
-      const rec = currentRecommendations[idx];
+      const rec = riexState.currentRecommendations[idx];
       if (rec) fillQuoteFromRecommendation(rec);
     });
   });
@@ -1296,7 +1247,7 @@ export function openExchangeModal(riId: string, count: number, suggestedTargetTy
   content.appendChild(riRow);
 
   // #1692: name the account before anything is quoted or executed.
-  const sourceRI = currentRIs.find(r => r.reserved_instance_id === riId);
+  const sourceRI = riexState.currentRIs.find(r => r.reserved_instance_id === riId);
   if (sourceRI) {
     const accountRow = document.createElement('div');
     accountRow.className = 'setting-row';
@@ -1765,7 +1716,7 @@ export function openExchangeModal(riId: string, count: number, suggestedTargetTy
         body: buildExchangeConfirmBody({
           quote,
           sources: request.ri_ids.map(id => {
-            const ri = currentRIs.find(r => r.reserved_instance_id === id);
+            const ri = riexState.currentRIs.find(r => r.reserved_instance_id === id);
             return ri ? `${ri.instance_count} \u00d7 ${ri.instance_type} (${id})` : id;
           }),
           targets: targets.map(target => {
@@ -1972,6 +1923,7 @@ function numberAttr(value: number | null | undefined): string {
 // is proposed in both modes; approving refuses while either cap is 0
 // (exchangeCapStrings). 4-eyes runs every mode as manual (fourEyesExchangeMode).
 const DIALOG_NOTE = 'Exchanges started from the Exchange dialog use the limit entered there instead.';
+
 const AUTOMATION_HINTS: Record<string, string> = {
   'ri-exchange-enabled': 'Lets CUDly check convertible RI utilization on its schedule and propose or run exchanges for underutilized RIs, depending on the mode below.',
   'ri-exchange-mode': 'Manual Approval queues each proposed exchange for someone to approve. Fully Automated runs it without approval, within the payment limits below. '
@@ -2194,7 +2146,7 @@ function canApproveRIExchangeRow(rec: RIExchangeHistoryRecord): boolean {
   return canAccess('approve-own', 'purchases') && rec.created_by_user_id === user.id;
 }
 
-async function loadExchangeHistory(generation: number = scopeGeneration): Promise<void> {
+async function loadExchangeHistory(generation: number = riexState.scopeGeneration): Promise<void> {
   const container = document.getElementById('ri-exchange-history-list');
   if (!container) return;
 
@@ -2203,10 +2155,10 @@ async function loadExchangeHistory(generation: number = scopeGeneration): Promis
 
   try {
     const { records, direct_executions } = await api.getRIExchangeHistoryResponse();
-    if (generation !== scopeGeneration) return;
+    if (generation !== riexState.scopeGeneration) return;
     renderExchangeHistory(container, records, direct_executions);
   } catch (error) {
-    if (generation !== scopeGeneration) return;
+    if (generation !== riexState.scopeGeneration) return;
     const err = error as Error;
     container.textContent = '';
     const errorP = document.createElement('p');
