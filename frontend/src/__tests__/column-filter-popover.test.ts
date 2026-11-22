@@ -386,3 +386,105 @@ describe('closeColumnFilterPopoverForScope', () => {
     expect(isColumnFilterPopoverOpen('plans', 'provider')).toBe(true);
   });
 });
+
+describe('closeColumnFilterPopoverForScope listeners', () => {
+  test('detaches every global listener it attached and nothing fires afterwards', () => {
+    const net = (spyAdd: jest.SpyInstance, spyRemove: jest.SpyInstance): number =>
+      spyAdd.mock.calls.length - spyRemove.mock.calls.length;
+    const dAdd = jest.spyOn(document, 'addEventListener');
+    const dRem = jest.spyOn(document, 'removeEventListener');
+    const wAdd = jest.spyOn(window, 'addEventListener');
+    const wRem = jest.spyOn(window, 'removeEventListener');
+    const findTrigger = jest.fn(() => trigger('plans', 'provider'));
+    openColumnFilterPopover({ ...config('plans', 'provider'), followOnScroll: true, findTrigger }, trigger('plans', 'provider'));
+    expect(net(dAdd, dRem)).toBe(2);
+    expect(net(wAdd, wRem)).toBe(2);
+    closeColumnFilterPopoverForScope('plans');
+    expect(net(dAdd, dRem)).toBe(0);
+    expect(net(wAdd, wRem)).toBe(0);
+    findTrigger.mockClear();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    window.dispatchEvent(new Event('resize'));
+    window.dispatchEvent(new Event('scroll'));
+    expect(findTrigger).not.toHaveBeenCalled();
+    expect(onCommit).not.toHaveBeenCalled();
+    jest.restoreAllMocks();
+  });
+});
+
+describe('positionPopover clamps and scroll offsets', () => {
+  const rectOf = (left: number, top: number, width: number, height: number): DOMRect =>
+    ({ left, top, width, height, right: left + width, bottom: top + height, x: left, y: top, toJSON: () => ({}) });
+  const place = (anchor: DOMRect, pop: DOMRect): HTMLElement => {
+    const a = document.createElement('button');
+    a.getBoundingClientRect = () => anchor;
+    const el = document.createElement('div');
+    el.getBoundingClientRect = () => pop;
+    positionPopover(el, a);
+    return el;
+  };
+  const setWin = (w: number, h: number, sx: number, sy: number): void => {
+    Object.defineProperty(window, 'innerWidth', { value: w, configurable: true });
+    Object.defineProperty(window, 'innerHeight', { value: h, configurable: true });
+    Object.defineProperty(window, 'scrollX', { value: sx, configurable: true });
+    Object.defineProperty(window, 'scrollY', { value: sy, configurable: true });
+  };
+  afterEach(() => setWin(1024, 768, 0, 0));
+
+  test('the 8px margin floors left when the popover is wider than the viewport', () => {
+    setWin(1000, 600, 0, 0);
+    const el = place(rectOf(100, 50, 20, 20), rectOf(0, 0, 1200, 100));
+    expect(el.style.left).toBe('8px');
+  });
+
+  test('scroll offsets are added to the viewport coordinates', () => {
+    setWin(1000, 600, 30, 40);
+    const el = place(rectOf(100, 50, 20, 20), rectOf(0, 0, 200, 100));
+    expect(el.style.top).toBe('114px');
+    expect(el.style.left).toBe('130px');
+  });
+});
+
+describe('valueGroups edge cases', () => {
+  const groupBox = (): HTMLInputElement =>
+    document.querySelector<HTMLInputElement>('.column-filter-popover input[data-role="sp-group"]')!;
+  const openWith = (members: string[]): void => {
+    openColumnFilterPopover(
+      { ...config('plans', 'provider'), valueGroups: [{ role: 'sp-group', label: 'G', members }] },
+      trigger('plans', 'provider'),
+    );
+  };
+
+  test('members missing from distinctValues are ignored by tri-state and commits', () => {
+    openWith(['aws', 'azure', 'ghost']);
+    expect(groupBox().checked).toBe(true);
+    expect(groupBox().indeterminate).toBe(false);
+    groupBox().click();
+    expect(box('aws').checked).toBe(false);
+    expect(box('azure').checked).toBe(false);
+    expect(onCommit).toHaveBeenLastCalledWith('plans', 'provider', { kind: 'set', values: [''] });
+    groupBox().click();
+    expect(onCommit).toHaveBeenLastCalledWith('plans', 'provider', null);
+  });
+
+  test('an empty members list stays unchecked and a click commits the unchanged selection', () => {
+    openWith([]);
+    expect(groupBox().checked).toBe(false);
+    expect(groupBox().indeterminate).toBe(false);
+    groupBox().click();
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onCommit).toHaveBeenLastCalledWith('plans', 'provider', null);
+    expect(groupBox().checked).toBe(false);
+  });
+
+  test('clicking from a partial state ticks every member', () => {
+    openWith(['aws', 'azure']);
+    box('aws').click();
+    expect(groupBox().indeterminate).toBe(true);
+    groupBox().click();
+    expect(box('aws').checked).toBe(true);
+    expect(box('azure').checked).toBe(true);
+    expect(onCommit).toHaveBeenLastCalledWith('plans', 'provider', null);
+  });
+});
