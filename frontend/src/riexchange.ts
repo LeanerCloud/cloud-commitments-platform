@@ -8,7 +8,7 @@ import * as state from './state';
 import { formatDate, escapeHtml, formatCurrency } from './utils';
 import { switchTab, switchSettingsSubTab } from './navigation';
 import { confirmDialog } from './confirmDialog';
-import { buildExchangeConfirmBody, hourlyPriceDelta } from './riexchange-confirm';
+import { buildExchangeConfirmBody } from './riexchange-confirm';
 import { openColumnFilterPopover, rebindColumnFilterPopover, sortedDistinctValues } from './lib/column-filter-popover';
 import type { ConvertibleRI, ExchangeableAzureRI, RIUtilization, ReshapeRecommendation, ExchangeQuoteSummary, OfferingOption, TargetOffering, ReshapeRecommendationsResponse, ExcludedRI, Provider } from './api';
 import { openModal, closeModal, createModalHeader } from './modal';
@@ -21,6 +21,7 @@ import { formatIsoTermShort, formatPaymentOption } from './lib/table-format';
 import { riexState } from './riexflow/riexState';
 import { exchangePaymentPattern, parseTargetCount, providerLabel, renderEmptyState, inlineReason, renderTableCallout, currencyPrefix, formatOfferingCost, riAccountLabel } from './riexflow/shared';
 import { loadExchangeHistory } from './riexflow/history';
+import { TargetRow, collectTargets, buildQuoteReq, revealExchangeHistory, setResultText, renderModalQuoteResult, QuoteReqShape } from './riexflow/modalHelpers';
 
 // resolveScope reads the Main Header global Provider/Account chips so every
 // RI Exchange load is scoped consistently with the other Inventory sub-tabs
@@ -1097,26 +1098,6 @@ export function fillQuoteFromRI(riId: string, count: number): void {
   openExchangeModal(riId, count);
 }
 
-// ──────────────────────────────────────────────
-// RI Exchange Modal
-// ──────────────────────────────────────────────
-
-// TargetRow captures the DOM inputs for one target-offering entry in
-// the multi-target modal. Tests assert on the posted request shape by
-// finding inputs through their class attributes.
-//
-// offeringInput is a hidden <input type="hidden"> that holds the resolved
-// AWS ReservedInstancesOfferingId UUID. The visible picker
-// (modal-exchange-target-select) drives this field on change so the
-// submission path always sees a UUID and never a free-text instance type.
-interface TargetRow {
-  offeringInput: HTMLInputElement;  // hidden; holds the UUID
-  pickerSelect: HTMLSelectElement;  // visible; drives offeringInput
-  countInput: HTMLInputElement;
-  chipEl: HTMLSpanElement; // cost chip; shows "$X.XX/mo each" or "—".
-  rowEl: HTMLDivElement;
-}
-
 export function openExchangeModal(riId: string, count: number, suggestedTargetType?: string, alternativeTargets?: OfferingOption[]): void {
   const modalEl = document.getElementById('ri-exchange-modal');
   if (!modalEl) return;
@@ -1677,73 +1658,6 @@ export function openExchangeModal(riId: string, count: number, suggestedTargetTy
       if (!confirmed) executeBtn.focus();
     }
   }
-}
-
-// revealExchangeHistory scrolls the Exchange History card into view and
-// moves focus to its list, where the completed exchange is listed.
-function revealExchangeHistory(): void {
-  const list = document.getElementById('ri-exchange-history-list');
-  if (!list) return;
-  list.tabIndex = -1;
-  (list.closest('section') ?? list).scrollIntoView({ block: 'start' });
-  list.focus({ preventScroll: true });
-}
-
-function setResultText(container: HTMLElement, message: string, cls: string): void {
-  container.textContent = '';
-  const p = document.createElement('p');
-  p.className = cls;
-  // Errors interrupt; progress and success are announced politely by the
-  // container's own role="status".
-  if (cls === 'error') p.setAttribute('role', 'alert');
-  p.textContent = message;
-  container.appendChild(p);
-}
-
-function renderModalQuoteResult(container: HTMLElement, quote: ExchangeQuoteSummary): void {
-  container.textContent = '';
-
-  const div = document.createElement('div');
-  div.className = 'quote-summary ' + (quote.IsValidExchange ? 'quote-valid' : 'quote-invalid');
-
-  const h4 = document.createElement('h4');
-  h4.textContent = quote.IsValidExchange ? 'Valid Exchange' : 'Invalid Exchange';
-  div.appendChild(h4);
-
-  if (quote.ValidationFailureReason) {
-    const p = document.createElement('p');
-    p.className = 'error';
-    p.textContent = quote.ValidationFailureReason;
-    div.appendChild(p);
-  }
-
-  const rows: [string, string][] = [
-    ['Currency', quote.CurrencyCode],
-    ['Payment Due', quote.PaymentDueRaw],
-    ['Source Hourly Price', quote.SourceHourlyPriceRaw],
-    ['Target Hourly Price', quote.TargetHourlyPriceRaw],
-  ];
-  const delta = hourlyPriceDelta(quote);
-  if (delta) rows.push(['Hourly Price Change', delta]);
-  if (quote.OutputReservedInstancesExp) {
-    rows.push(['New RI Expiry', quote.OutputReservedInstancesExp]);
-  }
-
-  const details = document.createElement('div');
-  details.className = 'quote-details';
-  for (const [label, value] of rows) {
-    const row = document.createElement('div');
-    row.className = 'quote-row';
-    const span = document.createElement('span');
-    span.textContent = label + ':';
-    const strong = document.createElement('strong');
-    strong.textContent = value;
-    row.appendChild(span);
-    row.appendChild(strong);
-    details.appendChild(row);
-  }
-  div.appendChild(details);
-  container.appendChild(div);
 }
 
 export { currencyPrefix } from './riexflow/shared';
