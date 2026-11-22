@@ -5,9 +5,12 @@
 import * as api from '../api';
 import * as state from '../state';
 import { reloadPage } from '../utils';
+import { openModal, closeModal } from '../modal';
 import { canAccess, isAdmin as permissionsIsAdmin } from '../permissions';
 import { showToast } from '../toast';
-import { openProfileModal } from '../auth';
+import { saveProfile } from '../auth';
+import { renderMFASection, setProfileSecretPending } from './mfa';
+import { setupPasswordToggle, updatePasswordRequirements } from './password';
 
 /**
  * Up to two letters for the topbar avatar: the first letters of the first
@@ -112,4 +115,150 @@ export async function logout(): Promise<void> {
   }
   state.setCurrentUser(null);
   reloadPage();
+}
+/**
+ * Open profile edit modal
+ */
+async function openProfileModal(): Promise<void> {
+  const currentUser = state.getCurrentUser();
+  if (!currentUser) return;
+
+  // Create modal if it doesn't exist
+  let modal = document.getElementById('profile-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'profile-modal';
+    modal.className = 'modal hidden';
+    modal.innerHTML = `
+      <div class="modal-content">
+        <h2>Edit Profile</h2>
+        <form id="profile-form">
+          <label>
+            Email
+            <input type="email" id="profile-email" autocomplete="email" autocapitalize="none" autocorrect="off" required>
+          </label>
+          <label>
+            Current Password (required to save changes)
+            <div class="password-input-wrapper">
+              <input type="password" id="profile-current-password" placeholder="Enter current password" autocomplete="current-password">
+              <button type="button" class="toggle-password" data-target="profile-current-password" aria-label="Show password">
+                <svg class="eye-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+              </button>
+            </div>
+          </label>
+          <label>
+            New Password (leave blank to keep current)
+            <div class="password-input-wrapper">
+              <input type="password" id="profile-new-password" placeholder="Enter new password" autocomplete="new-password">
+              <button type="button" class="toggle-password" data-target="profile-new-password" aria-label="Show password">
+                <svg class="eye-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+              </button>
+            </div>
+          </label>
+
+          <div id="profile-password-requirements" class="password-requirements">
+            <div class="requirement" id="profile-req-length">
+              <span class="req-icon">&#9675;</span>
+              <span class="req-text">At least 12 characters</span>
+            </div>
+            <div class="requirement" id="profile-req-uppercase">
+              <span class="req-icon">&#9675;</span>
+              <span class="req-text">One uppercase letter (A-Z)</span>
+            </div>
+            <div class="requirement" id="profile-req-lowercase">
+              <span class="req-icon">&#9675;</span>
+              <span class="req-text">One lowercase letter (a-z)</span>
+            </div>
+            <div class="requirement" id="profile-req-number">
+              <span class="req-icon">&#9675;</span>
+              <span class="req-text">One number (0-9)</span>
+            </div>
+            <div class="requirement" id="profile-req-special">
+              <span class="req-icon">&#9675;</span>
+              <span class="req-text">One special character (!@#$%^&*)</span>
+            </div>
+          </div>
+
+          <label>
+            Confirm New Password
+            <div class="password-input-wrapper">
+              <input type="password" id="profile-confirm-password" placeholder="Confirm new password" autocomplete="new-password">
+              <button type="button" class="toggle-password" data-target="profile-confirm-password" aria-label="Show password">
+                <svg class="eye-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+              </button>
+            </div>
+          </label>
+          <div id="profile-password-error" class="error-message hidden"></div>
+          <div class="modal-buttons">
+            <button type="button" id="profile-cancel">Cancel</button>
+            <button type="submit" class="primary">Save Changes</button>
+          </div>
+        </form>
+        <hr class="profile-section-divider">
+        <div id="profile-mfa-section">
+          <!-- Populated by renderMFASection() on open -->
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    // Add event listeners
+    document.getElementById('profile-cancel')?.addEventListener('click', closeProfileModal);
+    document.getElementById('profile-form')?.addEventListener('submit', (e) => void saveProfile(e));
+
+    // Live password-strength indicator. Mirrors the reset / admin-setup
+    // flows so the user sees criterion check-marks as they type instead
+    // of only on submit. Uses a flow-specific prefix so the IDs never
+    // collide with other modals that might be mounted on the same page.
+    const newPasswordInput = document.getElementById('profile-new-password') as HTMLInputElement | null;
+    if (newPasswordInput) {
+      newPasswordInput.addEventListener('input', () => {
+        updatePasswordRequirements(newPasswordInput.value, 'profile-req-');
+      });
+    }
+
+    // Setup password toggle
+    setupPasswordToggle(modal);
+  }
+
+  // Populate with current values
+  (document.getElementById('profile-email') as HTMLInputElement).value = currentUser.email;
+  (document.getElementById('profile-current-password') as HTMLInputElement).value = '';
+  (document.getElementById('profile-new-password') as HTMLInputElement).value = '';
+  (document.getElementById('profile-confirm-password') as HTMLInputElement).value = '';
+
+  // (Re-)render the MFA section so its state reflects whatever the
+  // user's mfa_enabled flag is right now (could have flipped since
+  // the modal was last opened). See renderMFASection below.
+  setProfileSecretPending(false);
+  renderMFASection();
+
+  // Reset live indicators and any stale error so the previous open
+  // doesn't bleed into this one (modal is created once and reused).
+  updatePasswordRequirements('', 'profile-req-');
+  const errorDiv = document.getElementById('profile-password-error');
+  if (errorDiv) {
+    errorDiv.textContent = '';
+    errorDiv.classList.add('hidden');
+  }
+
+  // Show modal
+  openModal(modal);
+}
+
+/**
+ * Close profile modal
+ */
+export function closeProfileModal(): void {
+  const modal = document.getElementById('profile-modal');
+  if (modal) closeModal(modal);
 }
