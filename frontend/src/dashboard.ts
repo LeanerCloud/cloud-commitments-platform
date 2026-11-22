@@ -23,9 +23,10 @@ import { buildKpiTile } from './lib/kpi-tile';
 import { upcomingEmptyMessage } from './lib/upcoming-scope';
 import { formatTrendAxisTick, formatTrendTooltipTitle, formatSparseTrendMessage, MIN_TREND_POINTS, upsertChart } from './modules/chart-utils';
 import { setChartSummary, renderChartTable, removeChartTable } from './lib/chart-a11y';
-import { applyChartDefaults, chartColor, onThemeChange, withAlpha } from './lib/chart-theme';
+import { applyChartDefaults, chartColor, withAlpha } from './lib/chart-theme';
 import { dashboardState } from './dashboardflow/dashboardState';
 import { SAVINGS_BY_SERVICE_MAX, segmentGap, SERVICE_CHART_COMPACT_PX, SERVICE_CHART_ROW_PX, SERVICE_CHART_CHROME_PX, SAVINGS_UNSCALED_NOTE, SAVINGS_BY_SERVICE_TABLE_ID, SAVINGS_TREND_TABLE_ID, SAVINGS_TREND_LOADING_ID, TREND_LOAD_FAILED_TEXT, showChartSkeleton, showChartLoadFailed, savingsLayerColors, buildFilterDesc } from './dashboardflow/chartShared';
+import { watchTheme } from './dashboardflow/themeWatch';
 
 // Re-export for backward compatibility (tests and other callers import from dashboard.ts).
 export { formatTrendAxisTick } from './modules/chart-utils';
@@ -33,17 +34,6 @@ export { formatTrendAxisTick } from './modules/chart-utils';
 let savingsTrendRange: '7' | '30' | '90' | 'all' = '90';
 // Request generation for loadSavingsTrendChart; see the stale guard there (#747).
 let savingsTrendGeneration = 0;
-
-let stopThemeWatch: (() => void) | null = null;
-
-// One module-lifetime subscription, started when the first chart is drawn.
-// Each rebuild is a no-op for a chart that is not on screen.
-function watchTheme(): void {
-  stopThemeWatch ??= onThemeChange(() => {
-    if (dashboardState.savingsByServiceChart && dashboardState.lastSavingsByServiceArgs) renderSavingsByService(...dashboardState.lastSavingsByServiceArgs);
-    if (dashboardState.savingsTrendChart) void loadSavingsTrendChart();
-  });
-}
 
 // In-memory index of the currently-rendered upcoming purchases, keyed by
 // execution_id. The "View Details" affordance renders from this — the
