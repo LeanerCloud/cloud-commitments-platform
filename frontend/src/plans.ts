@@ -104,7 +104,7 @@ export function closePlanModal(): void {
  * whole selection shares provider, service, term and payment (one plan group);
  * a mixed selection lists its groups instead. (#898, #1746)
  */
-function prefillPurchaseConfigFromCommitment(rec: api.Recommendation): void {
+export function prefillPurchaseConfigFromCommitment(rec: api.Recommendation): void {
   const providerSelect = document.getElementById('plan-provider') as HTMLSelectElement | null;
   const serviceSelect = document.getElementById('plan-service') as HTMLSelectElement | null;
   const termSelect = document.getElementById('plan-term') as HTMLSelectElement | null;
