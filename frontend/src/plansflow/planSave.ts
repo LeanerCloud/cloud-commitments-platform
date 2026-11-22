@@ -147,7 +147,19 @@ export async function savePlan(e: Event): Promise<void> {
     if (planId) {
       await api.updatePlan(planId, plan as unknown as api.CreatePlanRequest);
       // Update flow: push the selected account list via the dedicated endpoint.
-      await api.setPlanAccounts(planId, accountIds);
+      // The two writes are separate requests (the owner kept the legacy Save in
+      // #1057), so a failure here means the plan row is already saved.
+      try {
+        await api.setPlanAccounts(planId, accountIds);
+      } catch (accountsError) {
+        console.error('Plan saved but account update failed:', accountsError);
+        showToast({
+          message: `The plan settings were saved, but the account change failed: ${(accountsError as Error).message}. Review the target accounts and save again.`,
+          kind: 'error',
+        });
+        await loadPlans();
+        return;
+      }
     } else {
       await api.createPlan(plan as unknown as api.CreatePlanRequest);
       // Create flow: backend inserted plan_accounts atomically from

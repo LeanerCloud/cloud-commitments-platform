@@ -1893,6 +1893,26 @@ describe('Plans Module', () => {
       expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({ message: 'Plan updated successfully' }));
     });
 
+    test('reports a partial save when the plan row saved but the account write failed (#1057)', async () => {
+      (api.updatePlan as jest.Mock).mockResolvedValue({});
+      (api.setPlanAccounts as jest.Mock).mockRejectedValue(new Error('accounts boom'));
+      (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+      (document.getElementById('plan-id') as HTMLInputElement).value = 'plan-123';
+      console.error = jest.fn();
+      const modal = document.getElementById('plan-modal');
+      modal?.classList.remove('hidden');
+
+      await savePlan({ preventDefault: jest.fn() } as unknown as Event);
+
+      expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({
+        kind: 'error',
+        message: expect.stringContaining('plan settings were saved, but the account change failed: accounts boom'),
+      }));
+      expect(api.getPlans).toHaveBeenCalled();
+      expect(modal?.classList.contains('hidden')).toBe(false);
+    });
+
     test('includes custom ramp settings when custom schedule selected', async () => {
       (api.createPlan as jest.Mock).mockResolvedValue({});
       (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
