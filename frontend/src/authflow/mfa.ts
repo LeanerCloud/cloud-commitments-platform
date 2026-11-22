@@ -5,7 +5,6 @@
 import * as api from '../api';
 import * as state from '../state';
 import { escapeHtml } from '../utils';
-import { downloadRecoveryCodes, renderMFADisableFlow, renderMFARegenerateFlow } from '../auth';
 
 // ----------------------------------------------------------------
 // MFA enrollment / lifecycle UI (issue #497).
@@ -49,11 +48,11 @@ export function renderMFASection(): void {
   }
 }
 
-export function getMFAFlowHost(): HTMLElement | null {
+function getMFAFlowHost(): HTMLElement | null {
   return document.getElementById('mfa-flow-host');
 }
 
-export function setMFAFlowError(message: string): void {
+function setMFAFlowError(message: string): void {
   const errEl = document.getElementById('mfa-flow-error');
   if (errEl) {
     errEl.textContent = message;
@@ -61,7 +60,7 @@ export function setMFAFlowError(message: string): void {
   }
 }
 
-export function clearMFAFlowError(): void {
+function clearMFAFlowError(): void {
   document.getElementById('mfa-flow-error')?.classList.add('hidden');
 }
 
@@ -216,7 +215,7 @@ export function setProfileSecretPending(pending: boolean): void {
  * button so the user has a way to keep them somewhere other than a
  * password manager.
  */
-export function renderMFAEnrollCodesStep(codes: string[]): void {
+function renderMFAEnrollCodesStep(codes: string[]): void {
   const host = getMFAFlowHost();
   if (!host) return;
   const codesList = codes.map((c) => `<li>${escapeHtml(c)}</li>`).join('');
@@ -241,4 +240,126 @@ export function renderMFAEnrollCodesStep(codes: string[]): void {
     setProfileSecretPending(false);
     renderMFASection();
   });
+}
+
+function downloadRecoveryCodes(codes: string[]): void {
+  const body = [
+    'CUDly two-factor recovery codes',
+    `Generated: ${new Date().toISOString()}`,
+    '',
+    'Each code can be used only once. Save these somewhere safe.',
+    '',
+    ...codes,
+  ].join('\n');
+  const blob = new Blob([body], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'cudly-recovery-codes.txt';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Disable flow: prompt for password + (TOTP or recovery code).
+ */
+function renderMFADisableFlow(): void {
+  const host = getMFAFlowHost();
+  if (!host) return;
+  host.innerHTML = `
+    <div class="mfa-panel">
+      <h4>Disable two-factor authentication</h4>
+      <p class="help-text">Enter your password and a current code (or a recovery code) to disable.</p>
+      <label>Password:
+        <input type="password" id="mfa-disable-password" autocomplete="current-password">
+      </label>
+      <label>Authenticator code or recovery code:
+        <input
+          type="text"
+          id="mfa-disable-code"
+          inputmode="numeric"
+          autocomplete="one-time-code"
+          maxlength="16"
+          class="code-input"
+        >
+      </label>
+      <div id="mfa-flow-error" class="error-message hidden" role="alert"></div>
+      <div class="modal-buttons">
+        <button type="button" id="mfa-disable-cancel">Cancel</button>
+        <button type="button" id="mfa-disable-submit" class="primary">Disable</button>
+      </div>
+    </div>
+  `;
+  document.getElementById('mfa-disable-cancel')?.addEventListener('click', () => { host.innerHTML = ''; });
+  document.getElementById('mfa-disable-submit')?.addEventListener('click', () => { void handleMFADisableSubmit(); });
+}
+
+async function handleMFADisableSubmit(): Promise<void> {
+  const pwInput = document.getElementById('mfa-disable-password') as HTMLInputElement | null;
+  const codeInput = document.getElementById('mfa-disable-code') as HTMLInputElement | null;
+  const password = pwInput?.value || '';
+  const code = codeInput?.value.trim() || '';
+  if (password === '') { setMFAFlowError('Enter your password'); return; }
+  if (code === '') { setMFAFlowError('Enter your authenticator code or a recovery code'); return; }
+  clearMFAFlowError();
+  try {
+    await api.disableMFA(password, code);
+    const cur = state.getCurrentUser();
+    if (cur) {
+      state.setCurrentUser({ ...cur, mfa_enabled: false });
+    }
+    renderMFASection();
+  } catch (err) {
+    setMFAFlowError(err instanceof Error ? err.message : String(err));
+  }
+}
+
+/**
+ * Regenerate-recovery-codes flow: prompt for a current TOTP code,
+ * call the endpoint, surface the new plaintext codes.
+ */
+function renderMFARegenerateFlow(): void {
+  const host = getMFAFlowHost();
+  if (!host) return;
+  host.innerHTML = `
+    <div class="mfa-panel">
+      <h4>Regenerate recovery codes</h4>
+      <p class="help-text">Enter a current 6-digit code from your authenticator app. Existing recovery codes will stop working.</p>
+      <label>Code:
+        <input
+          type="text"
+          id="mfa-regen-code"
+          inputmode="numeric"
+          autocomplete="one-time-code"
+          pattern="[0-9]{6}"
+          maxlength="6"
+          class="code-input"
+        >
+      </label>
+      <div id="mfa-flow-error" class="error-message hidden" role="alert"></div>
+      <div class="modal-buttons">
+        <button type="button" id="mfa-regen-cancel">Cancel</button>
+        <button type="button" id="mfa-regen-submit" class="primary">Regenerate</button>
+      </div>
+    </div>
+  `;
+  document.getElementById('mfa-regen-cancel')?.addEventListener('click', () => { host.innerHTML = ''; });
+  document.getElementById('mfa-regen-submit')?.addEventListener('click', () => { void handleMFARegenerateSubmit(); });
+}
+
+async function handleMFARegenerateSubmit(): Promise<void> {
+  const codeInput = document.getElementById('mfa-regen-code') as HTMLInputElement | null;
+  const code = codeInput?.value.trim() || '';
+  if (!/^\d{6}$/.test(code)) { setMFAFlowError('Enter a 6-digit code'); return; }
+  clearMFAFlowError();
+  try {
+    const res = await api.regenerateMFARecoveryCodes(code);
+    // Reuse the codes-display step from enrollment — same UX,
+    // identical contents.
+    renderMFAEnrollCodesStep(res.recovery_codes);
+  } catch (err) {
+    setMFAFlowError(err instanceof Error ? err.message : String(err));
+  }
 }

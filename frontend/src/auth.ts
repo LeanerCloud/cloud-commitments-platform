@@ -9,7 +9,7 @@ import { openModal, closeModal } from './modal';
 import { openAuthDialog } from './authDialog';
 import { canAccess, isAdmin as permissionsIsAdmin } from './permissions';
 import { showToast } from './toast';
-import { clearMFAFlowError, getMFAFlowHost, renderMFAEnrollCodesStep, renderMFASection, setMFAFlowError, setProfileSecretPending } from './authflow/mfa';
+import { renderMFASection, setProfileSecretPending } from './authflow/mfa';
 import { describePasswordValidationError, setupPasswordToggle, updatePasswordRequirements } from './authflow/password';
 
 // Login rate limiting
@@ -1091,128 +1091,6 @@ async function openProfileModal(): Promise<void> {
 function closeProfileModal(): void {
   const modal = document.getElementById('profile-modal');
   if (modal) closeModal(modal);
-}
-
-export function downloadRecoveryCodes(codes: string[]): void {
-  const body = [
-    'CUDly two-factor recovery codes',
-    `Generated: ${new Date().toISOString()}`,
-    '',
-    'Each code can be used only once. Save these somewhere safe.',
-    '',
-    ...codes,
-  ].join('\n');
-  const blob = new Blob([body], { type: 'text/plain' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'cudly-recovery-codes.txt';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
-/**
- * Disable flow: prompt for password + (TOTP or recovery code).
- */
-export function renderMFADisableFlow(): void {
-  const host = getMFAFlowHost();
-  if (!host) return;
-  host.innerHTML = `
-    <div class="mfa-panel">
-      <h4>Disable two-factor authentication</h4>
-      <p class="help-text">Enter your password and a current code (or a recovery code) to disable.</p>
-      <label>Password:
-        <input type="password" id="mfa-disable-password" autocomplete="current-password">
-      </label>
-      <label>Authenticator code or recovery code:
-        <input
-          type="text"
-          id="mfa-disable-code"
-          inputmode="numeric"
-          autocomplete="one-time-code"
-          maxlength="16"
-          class="code-input"
-        >
-      </label>
-      <div id="mfa-flow-error" class="error-message hidden" role="alert"></div>
-      <div class="modal-buttons">
-        <button type="button" id="mfa-disable-cancel">Cancel</button>
-        <button type="button" id="mfa-disable-submit" class="primary">Disable</button>
-      </div>
-    </div>
-  `;
-  document.getElementById('mfa-disable-cancel')?.addEventListener('click', () => { host.innerHTML = ''; });
-  document.getElementById('mfa-disable-submit')?.addEventListener('click', () => { void handleMFADisableSubmit(); });
-}
-
-async function handleMFADisableSubmit(): Promise<void> {
-  const pwInput = document.getElementById('mfa-disable-password') as HTMLInputElement | null;
-  const codeInput = document.getElementById('mfa-disable-code') as HTMLInputElement | null;
-  const password = pwInput?.value || '';
-  const code = codeInput?.value.trim() || '';
-  if (password === '') { setMFAFlowError('Enter your password'); return; }
-  if (code === '') { setMFAFlowError('Enter your authenticator code or a recovery code'); return; }
-  clearMFAFlowError();
-  try {
-    await api.disableMFA(password, code);
-    const cur = state.getCurrentUser();
-    if (cur) {
-      state.setCurrentUser({ ...cur, mfa_enabled: false });
-    }
-    renderMFASection();
-  } catch (err) {
-    setMFAFlowError(err instanceof Error ? err.message : String(err));
-  }
-}
-
-/**
- * Regenerate-recovery-codes flow: prompt for a current TOTP code,
- * call the endpoint, surface the new plaintext codes.
- */
-export function renderMFARegenerateFlow(): void {
-  const host = getMFAFlowHost();
-  if (!host) return;
-  host.innerHTML = `
-    <div class="mfa-panel">
-      <h4>Regenerate recovery codes</h4>
-      <p class="help-text">Enter a current 6-digit code from your authenticator app. Existing recovery codes will stop working.</p>
-      <label>Code:
-        <input
-          type="text"
-          id="mfa-regen-code"
-          inputmode="numeric"
-          autocomplete="one-time-code"
-          pattern="[0-9]{6}"
-          maxlength="6"
-          class="code-input"
-        >
-      </label>
-      <div id="mfa-flow-error" class="error-message hidden" role="alert"></div>
-      <div class="modal-buttons">
-        <button type="button" id="mfa-regen-cancel">Cancel</button>
-        <button type="button" id="mfa-regen-submit" class="primary">Regenerate</button>
-      </div>
-    </div>
-  `;
-  document.getElementById('mfa-regen-cancel')?.addEventListener('click', () => { host.innerHTML = ''; });
-  document.getElementById('mfa-regen-submit')?.addEventListener('click', () => { void handleMFARegenerateSubmit(); });
-}
-
-async function handleMFARegenerateSubmit(): Promise<void> {
-  const codeInput = document.getElementById('mfa-regen-code') as HTMLInputElement | null;
-  const code = codeInput?.value.trim() || '';
-  if (!/^\d{6}$/.test(code)) { setMFAFlowError('Enter a 6-digit code'); return; }
-  clearMFAFlowError();
-  try {
-    const res = await api.regenerateMFARecoveryCodes(code);
-    // Reuse the codes-display step from enrollment — same UX,
-    // identical contents.
-    renderMFAEnrollCodesStep(res.recovery_codes);
-  } catch (err) {
-    setMFAFlowError(err instanceof Error ? err.message : String(err));
-  }
 }
 
 /**
