@@ -2,31 +2,10 @@
  * HTML structure validation tests
  * These tests verify that the HTML structure is correct and accessible
  */
-import fs from 'fs';
-import path from 'path';
-
-// Read HTML content once at module load
-const htmlPath = path.join(__dirname, '..', 'index.html');
-const htmlContent = fs.readFileSync(htmlPath, 'utf8');
-
-// Extract head and body content using regex
-const headMatch = htmlContent.match(/<head[^>]*>([\s\S]*?)<\/head>/i);
-const bodyMatch = htmlContent.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-const headContent = headMatch?.[1] || '';
-const bodyContent = bodyMatch?.[1] || '';
+import { bodyContent, htmlContent, setupHtmlDom } from './html-harness';
 
 describe('HTML Structure', () => {
-  beforeEach(() => {
-    // Restore HTML content before each test (since afterEach in setup clears it)
-    document.head.innerHTML = headContent;
-    document.body.innerHTML = bodyContent;
-
-    // Set lang attribute
-    const langMatch = htmlContent.match(/<html[^>]+lang=["']([^"']+)["']/i);
-    if (langMatch && langMatch[1]) {
-      document.documentElement.setAttribute('lang', langMatch[1]);
-    }
-  });
+  beforeEach(setupHtmlDom);
 
   describe('Document Structure', () => {
     test('has DOCTYPE declaration', () => {
