@@ -26,7 +26,7 @@ import {
 } from './lib/purchase-compatibility';
 import { billsMonthly, buildCommitmentBand, commitmentLine, commitmentTotals, executeButtonLabel, formatCommitmentTotals, paymentLabel, type CommitmentLine } from './commitmentSummary';
 import type { AccountServiceOverride } from './api/accounts';
-import type { RecommendationsResponse, LocalRecommendation, RecommendationsSummary, GlobalConfig } from './types';
+import type { RecommendationsResponse, LocalRecommendation, RecommendationsSummary } from './types';
 import { openModal } from './modal';
 import { showSkeletonRows, teardownSkeleton } from './lib/skeleton';
 import { renderErrorCallout } from './lib/error-callout';
@@ -54,13 +54,6 @@ export { parseNumericFilter } from './lib/column-filters';
 export type { ParsedNumericFilter } from './lib/column-filters';
 export { getPurchaseModalSession, getPurchaseModalRecommendations, clearPurchaseModalRecommendations } from './recsflow/recsState';
 
-// Cache of account ID → name for column display
-let accountNamesCache: Map<string, string> = new Map();
-// Whether the last account-list fetch returned any accounts; null when it
-// failed, so the first-run empty state (issue #756) does not claim "no
-// accounts connected" on a transient error.
-let lastHasAccounts: boolean | null = null;
-
 /**
  * Returns the display name for a cloud account ID, falling back to the raw
  * ID when the name has not been cached yet. Exported so other modules (e.g.
@@ -68,7 +61,7 @@ let lastHasAccounts: boolean | null = null;
  * full recommendations data model.
  */
 export function getAccountName(accountId: string): string {
-  return accountNamesCache.get(accountId) || accountId;
+  return recsState.accountNamesCache.get(accountId) || accountId;
 }
 
 // Buckets are single-account by construction (issue #333), so recs[0] names
@@ -86,28 +79,11 @@ export function fanOutBucketAccountLabel(b: FanOutBucket): string {
 // the top of loadRecommendations). Survives per-column filter/sort/period
 // re-renders, which go through rerenderRecommendations() instead.
 const expandedCells = new Set<string>();
-// Last computed group keys for the visible filtered set — used by the
-// Expand-All button handler to populate expandedCells without re-computing.
-let lastVisibleGroupKeys: string[] = [];
-
 // issue #135: expand/collapse state for SP plan-type group rows.
 // Contains the spGroupKey strings the user has explicitly expanded.
 // Cleared together with expandedCells on every loadRecommendations() entry
 // (see resetExpandedCells); survives column-filter/sort/period re-renders.
 const expandedSpGroups = new Set<string>();
-
-// #272 (CR follow-up): cache of the most-recent API-derived summary so
-// rerenders triggered by column-filter changes can keep total_count /
-// total_upfront_cost / avg_payback_months stable while the savings card
-// itself is recomputed client-side from the *visible* recs (so it stays
-// in sync with the per-cell banner range under the table).
-let lastRecommendationsSummary: RecommendationsSummary | null = null;
-
-// #180: the single-value column filters the last successful fetch sent to the
-// server (#162 pushdown). The loaded list is already narrowed by these, so the
-// unfiltered total is unknown and the savings card must still say "Filtered"
-// even though the visible and loaded counts match.
-let loadedServerFilters: ReadonlyArray<{ column: state.RecommendationsColumnId; value: string }> = [];
 
 // #284 (CR follow-up): guard against concurrent stale-load refreshes. If a
 // background refresh is already in flight, any subsequent stale detection
@@ -141,17 +117,6 @@ let autoRefreshAttempted = false;
  */
 export const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours
 
-// issue #223: resolved GlobalConfig defaults, seeded on page load by
-// loadRecommendations(). Initial values mirror the historical hardcoded
-// defaults so the module is usable before the first API round-trip.
-let cachedGlobalDefaultPayment: CompatPayment = 'no-upfront';
-let cachedGlobalDefaultTerm: 1 | 3 = 1;
-
-// Issue #909: the most-recent full GlobalConfig from /api/config, cached so
-// the Opportunities lookback selector can prefill its value. null until the
-// first successful load.
-let cachedGlobalConfig: GlobalConfig | null = null;
-
 // Issue #909: the AWS Cost Explorer LookbackPeriodInDays enum. The only
 // values the backend accepts; mirrors the Admin > Settings dropdown
 // (#setting-recs-lookback-days) and config.Validate() in the Go layer.
@@ -180,8 +145,8 @@ const LOOKBACK_NO_PERMISSION_TOOLTIP =
  * Exported for testing only — not part of the public API.
  */
 export function seedGlobalDefaults(term: 1 | 3, payment: CompatPayment): void {
-  cachedGlobalDefaultTerm = term;
-  cachedGlobalDefaultPayment = payment;
+  recsState.cachedGlobalDefaultTerm = term;
+  recsState.cachedGlobalDefaultPayment = payment;
 }
 
 /**
@@ -190,7 +155,7 @@ export function seedGlobalDefaults(term: 1 | 3, payment: CompatPayment): void {
  */
 export function resetExpandedCells(): void {
   expandedCells.clear();
-  lastVisibleGroupKeys = [];
+  recsState.lastVisibleGroupKeys = [];
   expandedSpGroups.clear();
 }
 
@@ -209,7 +174,7 @@ export function resetAutoRefreshInFlight(): void {
  * start without a stale config from a prior test.
  */
 export function resetCachedGlobalConfig(): void {
-  cachedGlobalConfig = null;
+  recsState.cachedGlobalConfig = null;
 }
 
 // populateRecommendationsAccountFilter / populateRegionFilter / the legacy
@@ -658,19 +623,19 @@ export async function loadRecommendations(): Promise<void> {
       const g = cfgResponse.global;
       // Issue #909: cache the full config so the lookback selector can
       // prefill and round-trip the complete config on save.
-      cachedGlobalConfig = g;
+      recsState.cachedGlobalConfig = g;
       const t = g.default_term;
-      if (t === 1 || t === 3) cachedGlobalDefaultTerm = t;
+      if (t === 1 || t === 3) recsState.cachedGlobalDefaultTerm = t;
       const validPayments: CompatPayment[] = ['all-upfront', 'partial-upfront', 'no-upfront', 'monthly'];
       if (g.default_payment && (validPayments as string[]).includes(g.default_payment)) {
-        cachedGlobalDefaultPayment = g.default_payment as CompatPayment;
+        recsState.cachedGlobalDefaultPayment = g.default_payment as CompatPayment;
       }
-      // cachedGlobalDefaultPayment is now read directly by loadBulkPurchaseState()
+      // recsState.cachedGlobalDefaultPayment is now read directly by loadBulkPurchaseState()
       // (issue #282 dropped the toolbar dropdown; no longer need to seed
       // defaultBulkPurchaseState — the module-level cache is the source of truth).
     }
-    accountNamesCache = new Map((accounts ?? []).map(a => [a.id, a.name]));
-    lastHasAccounts = accounts ? accounts.length > 0 : null;
+    recsState.accountNamesCache = new Map((accounts ?? []).map(a => [a.id, a.name]));
+    recsState.lastHasAccounts = accounts ? accounts.length > 0 : null;
 
     // Issue #463: gate the Opportunities list by the Settings →
     // General → Enabled Providers preference. The backend currently
@@ -691,7 +656,7 @@ export async function loadRecommendations(): Promise<void> {
 
     state.setRecommendations(visibleByPreference);
     state.clearSelectedRecommendations();
-    loadedServerFilters = [
+    recsState.loadedServerFilters = [
       ...(pushedService !== undefined ? [{ column: 'service' as const, value: pushedService }] : []),
       ...(pushedRegion !== undefined ? [{ column: 'region' as const, value: pushedRegion }] : []),
     ];
@@ -706,7 +671,7 @@ export async function loadRecommendations(): Promise<void> {
     // M-5: propagate null/absent summary rather than collapsing to {} which
     // makes all summary fields read as undefined and silently coerce to 0/--
     // in downstream display code. Callers already guard for empty/null summary.
-    lastRecommendationsSummary = data.summary ?? null;
+    recsState.lastRecommendationsSummary = data.summary ?? null;
     renderRecommendationsList(visibleByPreference as unknown as LocalRecommendation[]);
 
     // Issue #909: render the lookback selector + scope tooltip in the
@@ -739,7 +704,7 @@ export async function loadRecommendations(): Promise<void> {
  * selector never renders a value the backend would reject.
  */
 function currentLookbackDays(): number {
-  const raw = cachedGlobalConfig?.recommendations_lookback_days;
+  const raw = recsState.cachedGlobalConfig?.recommendations_lookback_days;
   return typeof raw === 'number' && (LOOKBACK_OPTIONS as readonly number[]).includes(raw)
     ? raw
     : DEFAULT_LOOKBACK_DAYS;
@@ -848,7 +813,7 @@ async function onLookbackChange(rawValue: string): Promise<void> {
   // lookback: re-sending a stale cached config would revert newer global
   // values (#530). Block the save until the config has loaded, since the
   // selector's current value is unknown before then.
-  if (!cachedGlobalConfig) {
+  if (!recsState.cachedGlobalConfig) {
     showToast({
       message: 'Settings are still loading. Please retry once configuration has loaded.',
       kind: 'error',
@@ -874,8 +839,8 @@ async function onLookbackChange(rawValue: string): Promise<void> {
   // the next renderLookbackToolbar() stay consistent even before reload.
   // Merge onto the current cache, not a pre-await copy: a refresh that landed
   // while the PUT was in flight must not be rolled back.
-  if (cachedGlobalConfig) {
-    cachedGlobalConfig = { ...cachedGlobalConfig, recommendations_lookback_days: parsed };
+  if (recsState.cachedGlobalConfig) {
+    recsState.cachedGlobalConfig = { ...recsState.cachedGlobalConfig, recommendations_lookback_days: parsed };
   }
 
   // Re-collect for the new window, then reload the list. loadRecommendations
@@ -901,9 +866,9 @@ async function onLookbackChange(rawValue: string): Promise<void> {
  */
 function savingsScopeText(visibleCount: number, loadedCount: number): string | null {
   const active = Object.keys(state.getRecommendationsColumnFilters());
-  if (loadedServerFilters.length > 0) {
-    const pushed = loadedServerFilters.map((f) => `${columnLabel(f.column)}: ${categoricalDisplayLabel(f.column, f.value)}`);
-    const others = active.filter((col) => !loadedServerFilters.some((f) => f.column === col)).length;
+  if (recsState.loadedServerFilters.length > 0) {
+    const pushed = recsState.loadedServerFilters.map((f) => `${columnLabel(f.column)}: ${categoricalDisplayLabel(f.column, f.value)}`);
+    const others = active.filter((col) => !recsState.loadedServerFilters.some((f) => f.column === col)).length;
     if (others > 0) pushed.push(`+${others} more ${others === 1 ? 'filter' : 'filters'}`);
     return `Filtered: ${visibleCount} recommendations (${pushed.join(', ')})`;
   }
@@ -1051,7 +1016,7 @@ const SORTABLE_NUMERIC_COLUMNS: Record<string, (r: LocalRecommendation) => numbe
 
 const SORTABLE_STRING_COLUMNS: Record<string, (r: LocalRecommendation) => string> = {
   provider: (r) => r.provider ?? '',
-  account: (r) => accountNamesCache.get(r.cloud_account_id ?? '') ?? r.cloud_account_id ?? '',
+  account: (r) => recsState.accountNamesCache.get(r.cloud_account_id ?? '') ?? r.cloud_account_id ?? '',
   service: (r) => r.service ?? '',
   resource_type: (r) => r.resource_type ?? '',
   region: (r) => r.region ?? '',
@@ -1878,7 +1843,7 @@ export function pickBestVariantPerCell(recs: readonly LocalRecommendation[]): Lo
   for (const group of groups.values()) {
     // Prefer the variant matching the operator's configured defaults.
     const configMatch = group.find(
-      (r) => r.term === cachedGlobalDefaultTerm && r.payment === cachedGlobalDefaultPayment,
+      (r) => r.term === recsState.cachedGlobalDefaultTerm && r.payment === recsState.cachedGlobalDefaultPayment,
     );
     if (configMatch) {
       result.push(configMatch);
@@ -2281,7 +2246,7 @@ function categoricalDisplayLabel(
 ): string {
   if (value === '') return '(empty)';
   if (column === 'account') {
-    return accountNamesCache.get(value) || value;
+    return recsState.accountNamesCache.get(value) || value;
   }
   if (column === 'term') {
     const n = Number(value);
@@ -3062,12 +3027,12 @@ function renderFilterStatusBar(loadedCount: number, visibleCount: number): void 
   }
 
   // issues #225 + #226: Expand-All toggle button. Only render when there
-  // are multi-variant cells to expand (lastVisibleGroupKeys has entries).
+  // are multi-variant cells to expand (recsState.lastVisibleGroupKeys has entries).
   // The button label flips between "Expand all" and "Collapse all"
   // depending on whether all known groups are currently expanded.
   // issues #225 + #226: Expand-All toggle. Only shown when multi-variant cells exist.
   let expandAllBtn = bar.querySelector<HTMLButtonElement>('.expand-all-toggle');
-  const multiVariantGroups = lastVisibleGroupKeys.length > 0;
+  const multiVariantGroups = recsState.lastVisibleGroupKeys.length > 0;
   if (!multiVariantGroups) {
     if (expandAllBtn) expandAllBtn.remove();
   } else {
@@ -3077,19 +3042,19 @@ function renderFilterStatusBar(loadedCount: number, visibleCount: number): void 
       expandAllBtn.className = 'expand-all-toggle';
       bar.appendChild(expandAllBtn);
       expandAllBtn.addEventListener('click', () => {
-        const allExpanded = lastVisibleGroupKeys.every((k) => expandedCells.has(k));
+        const allExpanded = recsState.lastVisibleGroupKeys.every((k) => expandedCells.has(k));
         if (allExpanded) {
           // Collapse all: clear every key that belongs to the current visible set.
-          for (const k of lastVisibleGroupKeys) expandedCells.delete(k);
+          for (const k of recsState.lastVisibleGroupKeys) expandedCells.delete(k);
         } else {
           // Expand all: add every visible group key.
-          for (const k of lastVisibleGroupKeys) expandedCells.add(k);
+          for (const k of recsState.lastVisibleGroupKeys) expandedCells.add(k);
         }
         rerenderRecommendations();
       });
     }
     // Update label to reflect current state.
-    const allExpanded = lastVisibleGroupKeys.every((k) => expandedCells.has(k));
+    const allExpanded = recsState.lastVisibleGroupKeys.every((k) => expandedCells.has(k));
     expandAllBtn.textContent = allExpanded ? 'Collapse all' : 'Expand all';
   }
 
@@ -3371,7 +3336,7 @@ function buildVariantRowMarkup(
   const period = state.getCostPeriod();
   const savingsClass = rec.savings > 1000 ? 'high-savings' : rec.savings > 100 ? 'medium-savings' : '';
   const isSelected = selectedRecs.has(rec.id);
-  const accountName = rec.cloud_account_id ? (accountNamesCache.get(rec.cloud_account_id) || rec.cloud_account_id) : '\u2014';
+  const accountName = rec.cloud_account_id ? (recsState.accountNamesCache.get(rec.cloud_account_id) || rec.cloud_account_id) : '\u2014';
   const badge = renderSuppressionBadge(rec);
   const recId = escapeHtml(rec.id);
   const pct = displaySavingsPct(rec);
@@ -3463,7 +3428,7 @@ function buildListMarkup(
 
   // Update module-level group key cache for the Expand-All button.
   // Only multi-variant cells count — single-variant cells render flat with no chevron.
-  lastVisibleGroupKeys = sortedKeys.filter((k) => (groups.get(k)?.length ?? 0) > 1);
+  recsState.lastVisibleGroupKeys = sortedKeys.filter((k) => (groups.get(k)?.length ?? 0) > 1);
 
   // The "Recommended range" banner that used to live here was redundant
   // with the Potential Monthly Savings card after #272 / #279 brought
@@ -3506,7 +3471,7 @@ function buildListMarkup(
       const childCellKeys = spCellGroups.get(sgk)!;
       const spRep = groups.get(childCellKeys[0]!)![0]!;
       const sgAccountName = spRep.cloud_account_id
-        ? (accountNamesCache.get(spRep.cloud_account_id) || spRep.cloud_account_id)
+        ? (recsState.accountNamesCache.get(spRep.cloud_account_id) || spRep.cloud_account_id)
         : '\u2014';
       const isSpExpanded = expandedSpGroups.has(sgk);
       const spChevron = iconSvg(isSpExpanded ? 'chevron-down' : 'chevron-right');
@@ -3554,7 +3519,7 @@ function buildListMarkup(
         const childSummary = cellSummary(childVariants);
         const childRep = childVariants[0]!;
         const childAccountName = childRep.cloud_account_id
-          ? (accountNamesCache.get(childRep.cloud_account_id) || childRep.cloud_account_id)
+          ? (recsState.accountNamesCache.get(childRep.cloud_account_id) || childRep.cloud_account_id)
           : '\u2014';
         const selectedChildVariant = childVariants.find((r) => selectedRecs.has(r.id));
         const scaledChildSavingsMin = scaleCost(childSummary.savingsMin, period) ?? childSummary.savingsMin;
@@ -3615,7 +3580,7 @@ function buildListMarkup(
     const isExpanded = expandedCells.has(key);
     const summary = cellSummary(variants);
     const rep = variants[0]!;
-    const accountName = rep.cloud_account_id ? (accountNamesCache.get(rep.cloud_account_id) || rep.cloud_account_id) : '\u2014';
+    const accountName = rep.cloud_account_id ? (recsState.accountNamesCache.get(rep.cloud_account_id) || rep.cloud_account_id) : '\u2014';
 
     // Selected variant in this cell (if any) -- used to show selected values on summary row.
     const selectedVariant = variants.find((r) => selectedRecs.has(r.id));
@@ -3826,7 +3791,7 @@ interface BulkPurchaseToolbarState {
 
 // payment follows the global default (no-upfront until the config loads).
 function defaultBulkPurchaseState(): BulkPurchaseToolbarState {
-  return { payment: cachedGlobalDefaultPayment as BulkPurchasePayment, capacity: 100 };
+  return { payment: recsState.cachedGlobalDefaultPayment as BulkPurchasePayment, capacity: 100 };
 }
 
 function loadBulkPurchaseState(): BulkPurchaseToolbarState {
@@ -3843,7 +3808,7 @@ function loadBulkPurchaseState(): BulkPurchaseToolbarState {
     // capacity_percent as a value no UI control can produce (#136).
     const capacity = Number(parsed.capacity);
     return {
-      payment: cachedGlobalDefaultPayment as BulkPurchasePayment,
+      payment: recsState.cachedGlobalDefaultPayment as BulkPurchasePayment,
       capacity: Number.isInteger(capacity) && capacity > 0 ? Math.min(100, capacity) : 100,
     };
   } catch {
@@ -3990,29 +3955,21 @@ export function saveColumnFilters(filters: state.RecommendationsColumnFilters): 
   }
 }
 
-// Seed flag: set to true once column filters are loaded from localStorage
-// on first render so subsequent renders don't overwrite in-session changes.
-let columnFiltersSeeded = false;
-
 /**
  * Reset column-filter seeded state. Exported for tests only — not part of
  * the public API. Call in beforeEach to ensure tests don't share seeding state.
  */
 export function resetColumnFiltersState(): void {
-  columnFiltersSeeded = false;
+  recsState.columnFiltersSeeded = false;
   state.clearAllRecommendationsColumnFilters();
 }
-
-// Seed flag: set to true once column visibility is loaded from localStorage
-// on first render so subsequent renders don't overwrite in-session toggles.
-let columnVisibilitySeeded = false;
 
 /**
  * Reset column-visibility seeded state. Exported for tests only — not part of
  * the public API. Call in beforeEach to ensure tests don't share seeding state.
  */
 export function resetColumnVisibilityState(): void {
-  columnVisibilitySeeded = false;
+  recsState.columnVisibilitySeeded = false;
   state.setHiddenColumns(new Set());
 }
 
@@ -5114,9 +5071,9 @@ function renderRecommendationsList(loadedRecs: LocalRecommendation[]): void {
   if (!container) return;
 
   // Seed column filters from localStorage on the first render (issue #163).
-  // columnFiltersSeeded stays true for the rest of the session so in-session
+  // recsState.columnFiltersSeeded stays true for the rest of the session so in-session
   // changes are not overwritten on subsequent rerenders.
-  if (!columnFiltersSeeded) {
+  if (!recsState.columnFiltersSeeded) {
     const persisted = loadColumnFilters();
     for (const [col, filter] of Object.entries(persisted)) {
       state.setRecommendationsColumnFilter(
@@ -5124,15 +5081,15 @@ function renderRecommendationsList(loadedRecs: LocalRecommendation[]): void {
         filter,
       );
     }
-    columnFiltersSeeded = true;
+    recsState.columnFiltersSeeded = true;
   }
 
   // Seed column visibility from localStorage on the first render.
-  // columnVisibilitySeeded stays true for the rest of the session so
+  // recsState.columnVisibilitySeeded stays true for the rest of the session so
   // in-session toggles (via the "Columns ▾" popover) are not overwritten.
-  if (!columnVisibilitySeeded) {
+  if (!recsState.columnVisibilitySeeded) {
     state.setHiddenColumns(loadColumnVisibility());
-    columnVisibilitySeeded = true;
+    recsState.columnVisibilitySeeded = true;
   }
 
   // Pipeline:
@@ -5149,11 +5106,11 @@ function renderRecommendationsList(loadedRecs: LocalRecommendation[]): void {
   // Keep the savings card in sync with the visible (post-filter) set on
   // every list rerender so the card and the per-cell banner under the
   // table never diverge (#272 CR follow-up). The cached
-  // lastRecommendationsSummary holds the API-derived counts (total_count,
+  // recsState.lastRecommendationsSummary holds the API-derived counts (total_count,
   // total_upfront_cost, avg_payback_months); the savings figure itself is
   // recomputed from `recommendations` inside renderRecommendationsSummary
   // via the same pageLevelRange the banner uses.
-  renderRecommendationsSummary(lastRecommendationsSummary, recommendations, loadedRecs?.length ?? 0);
+  renderRecommendationsSummary(recsState.lastRecommendationsSummary, recommendations, loadedRecs?.length ?? 0);
 
   // Mount once; update is per-render below.
   mountBottomActionBox();
@@ -5167,11 +5124,11 @@ function renderRecommendationsList(loadedRecs: LocalRecommendation[]): void {
     && Object.keys(state.getRecommendationsColumnFilters()).length === 0;
   setOpportunitiesChromeHidden(firstRun);
   if (firstRun) {
-    lastVisibleGroupKeys = [];
+    recsState.lastVisibleGroupKeys = [];
     updateBottomActionBox(0, 0);
     teardownSkeleton(container);
     container.replaceChildren(buildFirstRunEmptyState({
-      hasAccounts: lastHasAccounts,
+      hasAccounts: recsState.lastHasAccounts,
       scopeFiltered: isScopeFiltered(state.getCurrentProvider(), state.getCurrentAccountIDs()),
       onRefresh: () => startRecommendationsRefresh(loadRecommendations),
       loadFreshness: getRecommendationsFreshness,
@@ -5181,7 +5138,7 @@ function renderRecommendationsList(loadedRecs: LocalRecommendation[]): void {
 
   const emptyResult = !recommendations || recommendations.length === 0;
   if (emptyResult) {
-    lastVisibleGroupKeys = [];
+    recsState.lastVisibleGroupKeys = [];
   }
 
   // Compute the visible column set once per render — passed to buildListMarkup
@@ -5197,7 +5154,7 @@ function renderRecommendationsList(loadedRecs: LocalRecommendation[]): void {
   const selectedIDs = state.getSelectedRecommendationIDs();
   // Dynamic table markup: every caller-provided value passes through
   // escapeHtml or is a number. The string is built in buildListMarkup.
-  // NOTE: buildListMarkup also populates lastVisibleGroupKeys, so it MUST
+  // NOTE: buildListMarkup also populates recsState.lastVisibleGroupKeys, so it MUST
   // run before renderFilterStatusBar (which reads it for the Expand-All button).
   // safe: buildListMarkup escapes all API-derived values via escapeHtml.
   // nosec: innerHTML is intentional here; see security note above.
@@ -5238,7 +5195,7 @@ function renderRecommendationsList(loadedRecs: LocalRecommendation[]): void {
   const visibleCount = recommendations?.length ?? 0;
 
   // Filter status: Clear-filters badge + aria-live count + Expand-All toggle.
-  // Rendered AFTER buildListMarkup so lastVisibleGroupKeys is populated.
+  // Rendered AFTER buildListMarkup so recsState.lastVisibleGroupKeys is populated.
   // Mounted as a sibling above the table so it survives the container's
   // innerHTML rewrite without losing aria-live announcements.
   renderFilterStatusBar(loadedRecs?.length ?? 0, visibleCount);
@@ -5475,7 +5432,7 @@ function resolvePerRecPaymentSeed(
   }
 
   const options = cellPaymentOptions(rec, term, capacityPercent);
-  const preferred = normalizeBulkPayment(cachedGlobalDefaultPayment);
+  const preferred = normalizeBulkPayment(recsState.cachedGlobalDefaultPayment);
   if (preferred && options.includes(preferred)) {
     options.splice(options.indexOf(preferred), 1);
     options.unshift(preferred);
@@ -5971,10 +5928,10 @@ function renderPurchaseModalRow(idx: number, paymentSource: 'override' | 'rec' |
   includeTd.appendChild(includeCb);
   tr.appendChild(includeTd);
 
-  // Account (col 1): display name from accountNamesCache, fallback to ID.
+  // Account (col 1): display name from recsState.accountNamesCache, fallback to ID.
   const accountTd = document.createElement('td');
   const accountName = rec.cloud_account_id
-    ? (accountNamesCache.get(rec.cloud_account_id) || rec.cloud_account_id)
+    ? (recsState.accountNamesCache.get(rec.cloud_account_id) || rec.cloud_account_id)
     : '—';
   accountTd.appendChild(document.createTextNode(accountName));
   tr.appendChild(accountTd);

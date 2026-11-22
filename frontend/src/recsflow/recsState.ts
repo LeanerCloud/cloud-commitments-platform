@@ -1,4 +1,6 @@
-import type { LocalRecommendation } from '../types';
+import * as state from '../state';
+import type { Payment as CompatPayment } from '../lib/purchase-compatibility';
+import type { LocalRecommendation, RecommendationsSummary, GlobalConfig } from '../types';
 import type { FanOutBucket } from '../recommendations';
 
 // Mutable state shared by the recommendations modules. One object, never
@@ -10,6 +12,16 @@ export const recsState: {
   checkedPurchaseIndices: Set<number>;
   checkedPurchaseModalInitialised: boolean;
   purchaseModalOpenToken: number;
+  accountNamesCache: Map<string, string>;
+  lastHasAccounts: boolean | null;
+  lastVisibleGroupKeys: string[];
+  lastRecommendationsSummary: RecommendationsSummary | null;
+  loadedServerFilters: ReadonlyArray<{ column: state.RecommendationsColumnId; value: string }>;
+  cachedGlobalDefaultPayment: CompatPayment;
+  cachedGlobalDefaultTerm: 1 | 3;
+  cachedGlobalConfig: GlobalConfig | null;
+  columnFiltersSeeded: boolean;
+  columnVisibilitySeeded: boolean;
   currentFanOutBuckets: FanOutBucket[] | null;
   currentExecuteMode: '' | 'direct';
 } = {
@@ -33,6 +45,41 @@ export const recsState: {
   // it after its override fetch so only the newest open renders and sets
   // submit state (issue #430).
   purchaseModalOpenToken: 0,
+  // Cache of account ID → name for column display
+  accountNamesCache: new Map(),
+  // Whether the last account-list fetch returned any accounts; null when it
+  // failed, so the first-run empty state (issue #756) does not claim "no
+  // accounts connected" on a transient error.
+  lastHasAccounts: null,
+  // Last computed group keys for the visible filtered set — used by the
+  // Expand-All button handler to populate expandedCells without re-computing.
+  lastVisibleGroupKeys: [],
+  // #272 (CR follow-up): cache of the most-recent API-derived summary so
+  // rerenders triggered by column-filter changes can keep total_count /
+  // total_upfront_cost / avg_payback_months stable while the savings card
+  // itself is recomputed client-side from the *visible* recs (so it stays
+  // in sync with the per-cell banner range under the table).
+  lastRecommendationsSummary: null,
+  // #180: the single-value column filters the last successful fetch sent to the
+  // server (#162 pushdown). The loaded list is already narrowed by these, so the
+  // unfiltered total is unknown and the savings card must still say "Filtered"
+  // even though the visible and loaded counts match.
+  loadedServerFilters: [],
+  // issue #223: resolved GlobalConfig defaults, seeded on page load by
+  // loadRecommendations(). Initial values mirror the historical hardcoded
+  // defaults so the module is usable before the first API round-trip.
+  cachedGlobalDefaultPayment: 'no-upfront',
+  cachedGlobalDefaultTerm: 1,
+  // Issue #909: the most-recent full GlobalConfig from /api/config, cached so
+  // the Opportunities lookback selector can prefill its value. null until the
+  // first successful load.
+  cachedGlobalConfig: null,
+  // Seed flag: set to true once column filters are loaded from localStorage
+  // on first render so subsequent renders don't overwrite in-session changes.
+  columnFiltersSeeded: false,
+  // Seed flag: set to true once column visibility is loaded from localStorage
+  // on first render so subsequent renders don't overwrite in-session toggles.
+  columnVisibilitySeeded: false,
   // Fan-out modal state. app.ts's Send-for-Approval click reads these
   // via getFanOutBuckets() to fire one POST per bucket. Cleared when
   // the modal closes.
