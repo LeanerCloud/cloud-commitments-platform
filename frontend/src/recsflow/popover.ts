@@ -5,7 +5,8 @@ import { anchorInView } from '../lib/table-scroll';
 import { saveColumnFilters } from './columnPrefs';
 import { applyColumnFilters } from './cellValues';
 import { type PopoverState, getColumnTriggerButton, positionPopover, SERVER_PUSHDOWN_COLUMNS, buildPopoverContent } from './popoverContent';
-import { loadRecommendations, closeVisibilityPopover, renderRecommendationsList } from '../recommendations';
+import { closeVisibilityPopover } from './visibility';
+import { loadRecommendations, renderRecommendationsList } from '../recommendations';
 
 let openPopover: PopoverState | null = null;
 // Document-level click-outside listener; attached once on first open and
