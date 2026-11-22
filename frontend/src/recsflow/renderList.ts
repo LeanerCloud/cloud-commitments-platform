@@ -16,8 +16,8 @@ import { renderFilterStatusBar } from './statusBar';
 import { buildListMarkup } from './listMarkup';
 import { renderRecommendationsSummary } from './summary';
 import { mountBottomActionBox, updateBottomActionBox, openCreatePlanFromBottomBox } from './bottomBox';
-import { startRecommendationsRefresh } from '../recommendations';
 import { writeSortToUrl, loadRecommendations } from './load';
+import { startRecommendationsRefresh } from './refresh';
 
 export function renderRecommendationsList(loadedRecs: LocalRecommendation[]): void {
   const container = document.getElementById('recommendations-list');

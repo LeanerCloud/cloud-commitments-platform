@@ -8,7 +8,8 @@ import { renderErrorCallout } from '../lib/error-callout';
 import { resetExpandedCells, recsState } from './recsState';
 import { visibleColumns } from './columnPrefs';
 import { renderRecommendationsList } from './renderList';
-import { triggerAutoRefreshIfStale, renderLookbackToolbar } from '../recommendations';
+import { triggerAutoRefreshIfStale } from './refresh';
+import { renderLookbackToolbar } from '../recommendations';
 
 /**
  * Inject resolved GlobalConfig defaults into the module cache.
