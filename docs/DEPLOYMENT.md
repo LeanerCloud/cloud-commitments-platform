@@ -402,6 +402,85 @@ cd terraform/environments/aws
 terraform apply -replace="module.compute_lambda[0].aws_lambda_function.main" -auto-approve
 ```
 
+### Database migrations
+
+Schema migrations run in a one-shot step at deploy time, not on the request
+path (#31). On AWS dev and staging, `.github/workflows/deploy-aws-lambda.yml`
+runs the step "Run database migrations" right after `terraform apply`. It
+invokes the Lambda function with the payload `{"action":"migrate"}`. The
+function handles that event before it opens its lazy database connection, runs
+the runner once and returns `{"status":"ok","from":N,"to":M}`.
+`scripts/check-lambda-migrate-result.sh` fails the step when the invoke
+reports a `FunctionError` or the payload status is not `ok`. A successful run
+writes `migrations ok: from N to M` to the job summary. The step has a
+20-minute timeout. Production is excluded from the step: it migrates only on
+demand (see below).
+
+The lazy path still exists as a safety net. When `DB_AUTO_MIGRATE=true`
+(Terraform variable `database_auto_migrate`: `true` in `github-dev.tfvars` and
+`github-staging.tfvars`, `false` in `github-prod.tfvars`), `ensureDB` also
+runs the migrations on the first database connection of each instance. The
+golang-migrate advisory lock serializes the two paths. The lazy path is
+fail-open: a migration error is logged, reported by the `migrations` check of
+`/health`, and the app keeps serving. Its time limit is
+`CUDLY_MIGRATION_TIMEOUT` (a Go duration such as `180s`, default `120s`); it
+does not apply to the deploy-time runner. With `DB_AUTO_MIGRATE` off, the
+`migrations` check reports `disabled`. GCP and Azure have no runner yet, so
+their stacks still rely on the lazy path (`auto_migrate = true`).
+
+#### Run the migrations by hand
+
+Run the same invoke against any AWS environment, including prod:
+
+```bash
+FUNCTION_NAME=$(cd terraform/environments/aws && terraform output -raw lambda_function_name)
+OUT=$(mktemp -d)
+aws lambda invoke --function-name "$FUNCTION_NAME" --cli-read-timeout 0 \
+  --cli-binary-format raw-in-base64-out --payload '{"action":"migrate"}' \
+  "$OUT/payload.json" > "$OUT/invoke.json"
+scripts/check-lambda-migrate-result.sh "$OUT/invoke.json" "$OUT/payload.json"
+```
+
+The payload accepts two optional fields: `timeout_seconds` (1 up to 900, and
+never more than the invoke time left) and `force_version` (see "Dirty
+migration state" below). Without `timeout_seconds`, the run is bounded by 15
+minutes or by the time left before the Lambda deadline minus a 20-second
+margin, whichever is shorter. The run is refused when less than 30 seconds of
+budget remain.
+
+From a shell that has the app's database environment (`DB_HOST`,
+`DB_PASSWORD` or the secret settings, and so on), the binary runs the same
+code:
+
+```bash
+go run ./cmd/server --migrate
+```
+
+In the container image the binary is `/app/cudly`. The process exits 0 on
+success and 1 on failure. `--migrate` cannot be combined with `--task`.
+
+#### Failure modes
+
+- **Deploy fails at "Run database migrations".** The log shows the reason from
+  `check-lambda-migrate-result.sh`, truncated to 500 bytes. Read the function
+  log for the full error, fix the migration, and re-run the workflow.
+- **Dirty migration state.** If a run is killed or fails mid-statement,
+  `schema_migrations.dirty` stays `true` and every later run refuses to
+  start. The runner never heals this on its own. Check the state with
+  `SELECT version, dirty FROM schema_migrations;`, repair or finish the
+  half-applied statements by hand, then clear the flag with `force_version`
+  in the Lambda payload (`{"action":"migrate","force_version":N}`) or with
+  `go run ./cmd/server --migrate --migrate-force-version N`. N must be the
+  dirty version (its SQL landed) or the highest lower version that has a
+  migration file (it rolled back). Any other value, or a clean database, is
+  refused. The environment variable `CUDLY_FORCE_MIGRATION_VERSION` is
+  refused when no `force_version` is given with it.
+- **Timeout.** A run that reaches its budget is cancelled, which can leave
+  the row dirty (see above). Raise `timeout_seconds` for a long migration, or
+  run `--migrate` from a host without the Lambda ceiling.
+- **Lazy path failing.** A failed lazy attempt does not stop the app. It shows
+  as `failed` in the `migrations` check of `/health`.
+
 ### Release ordering: Redshift re-drive (#1832) after the attempt journal (#1824)
 
 A Redshift purchase dispatched before the attempt journal existed in an
@@ -414,8 +493,9 @@ node. So in every environment (dev, staging, prod, any other):
   migration 000161 is live there.
 - Never ship #1824 and #1832 in the same release, or #1832 within 24h of #1824.
 - Start the 24h clock when migration 000161 is confirmed applied in that
-  environment, not when the deploy finishes. Migrations run at app start and a
-  failed run is only reported by the `migrations` check of `/health` (see
+  environment, not when the deploy finishes. On dev and staging the deploy-time
+  step runs them and fails the deploy on error (see "Database migrations");
+  elsewhere they run at app start and a failed run is only reported by the `migrations` check of `/health` (see
   "Post-deploy gate" for the deploy gate's other `/health` check), so a
   finished deploy is not proof. Confirm with `SELECT version, dirty FROM
   schema_migrations;` (version 161 or higher and `dirty` false). Confirming
@@ -886,7 +966,7 @@ PGPASSWORD="$DB_PASSWORD" migrate -path internal/database/postgres/migrations \
 
 ### Migrations Not Running
 
-Check: `DB_AUTO_MIGRATE=true`, `DB_MIGRATIONS_PATH=/app/internal/database/postgres/migrations`, correct credentials. Run manually:
+See "Database migrations" above for the deploy-time runner and its failure modes. Check: `DB_AUTO_MIGRATE=true`, `DB_MIGRATIONS_PATH=/app/internal/database/postgres/migrations`, correct credentials. Run manually:
 
 ```bash
 DB_PASSWORD=$(aws secretsmanager get-secret-value --secret-id cudly-dev-db-password-* --query SecretString --output text | jq -r .password)
