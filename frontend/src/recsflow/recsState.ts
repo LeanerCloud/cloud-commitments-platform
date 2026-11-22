@@ -1,7 +1,7 @@
 import * as state from '../state';
 import type { Payment as CompatPayment } from '../lib/purchase-compatibility';
 import type { LocalRecommendation, RecommendationsSummary, GlobalConfig } from '../types';
-import type { FanOutBucket } from '../recommendations';
+import type { FanOutBucket } from './fanOutState';
 
 // Mutable state shared by the recommendations modules. One object, never
 // re-created; modules read and write its fields directly (no destructured
