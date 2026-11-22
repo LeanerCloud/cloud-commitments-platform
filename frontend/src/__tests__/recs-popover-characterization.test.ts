@@ -40,6 +40,7 @@ const RECS = [
   rec('r4', 'savings-plans-ec2instance', 'sp2', 'us-east-1', 400),
 ];
 const SP_COMPUTE = 'savings-plans-compute';
+const FILTERS_KEY = 'cudly.recs.columnFilters.v1';
 
 // The tab observer is a module singleton bound to the first #opportunities-tab
 // it sees, so every test must reuse this one element.
@@ -87,6 +88,11 @@ const press = (key: string, target: EventTarget = document.body): KeyboardEvent 
 };
 const mouseDown = (target: EventTarget): void => { target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); };
 const rectAt = (left: number) => () => ({ left, top: 300, width: 24, height: 24, right: left + 24, bottom: 324, x: left, y: 300, toJSON: () => ({}) }) as DOMRect;
+const fetches = (): number => (api.getRecommendations as jest.Mock).mock.calls.length;
+const saved = (): unknown => {
+  const writes = (localStorage.setItem as jest.Mock).mock.calls.filter(([k]) => k === FILTERS_KEY);
+  return writes.length === 0 ? null : JSON.parse(writes[writes.length - 1][1]);
+};
 
 beforeEach(() => {
   document.body.replaceChildren(tab);
@@ -370,5 +376,151 @@ describe('SP All Savings Plans group', () => {
     const f = state.getRecommendationsColumnFilters().service as { kind: string; values: string[] };
     expect(f.kind).toBe('set');
     expect([...f.values].sort()).toEqual(['ec2', SP_COMPUTE, 'savings-plans-ec2instance']);
+  });
+});
+
+describe('commit side effects: pushdown refetch and persistence', () => {
+  test.each(['service', 'region'])('committing a %s filter refetches from the server and persists it', async (col) => {
+    await render();
+    const value = col === 'service' ? 'rds' : 'us-west-2';
+    open(col);
+    const before = fetches();
+    toggle(box(value), false);
+    await flushPromises();
+    expect(fetches()).toBe(before + 1);
+    expect((state.getRecommendationsColumnFilters() as Record<string, { kind: string }>)[col]!.kind).toBe('set');
+    expect((saved() as { filters: Record<string, { values: string[] }> }).filters[col]!.values).not.toContain(value);
+  });
+
+  test('committing a non-pushdown column re-renders client side without a refetch and persists', async () => {
+    await render();
+    const old = open('resource_type');
+    const before = fetches();
+    toggle(box('db.t3'), false);
+    await flushPromises();
+    expect(fetches()).toBe(before);
+    expect(trigger('resource_type')).not.toBe(old);
+    expect((saved() as { filters: Record<string, { values: string[] }> }).filters['resource_type']!.values.sort()).toEqual(['sp', 'sp2', 't3.medium']);
+  });
+
+  test('Select none stores an explicit empty allow-list and refetches for a pushdown column', async () => {
+    await render();
+    open('service');
+    const before = fetches();
+    pop()!.querySelector<HTMLButtonElement>('.column-filter-clear')!.click();
+    await flushPromises();
+    expect(fetches()).toBe(before + 1);
+    expect(state.getRecommendationsColumnFilters().service).toEqual({ kind: 'set', values: [] });
+    expect(pop()!.querySelector<HTMLInputElement>('input[data-role="all"]')!.checked).toBe(false);
+  });
+
+  test('re-checking every value clears the filter (null) and persists the removal', async () => {
+    await render();
+    open('resource_type');
+    toggle(box('db.t3'), false);
+    toggle(box('db.t3'), true);
+    expect(state.getRecommendationsColumnFilters().resource_type).toBeUndefined();
+    expect((saved() as { filters: Record<string, unknown> }).filters['resource_type']).toBeUndefined();
+  });
+});
+
+describe('numeric and set modes', () => {
+  test('numeric column shows an expression input with a Clear button and no checkboxes', async () => {
+    await render();
+    open('savings');
+    expect(pop()!.querySelector('.column-filter-numeric-input')).not.toBeNull();
+    expect(pop()!.querySelector('input[type="checkbox"]')).toBeNull();
+    expect(pop()!.querySelector('.column-filter-clear')!.textContent).toBe('Clear');
+  });
+
+  test('set column shows (All), one checkbox per value and a Select none button, no text input', async () => {
+    await render();
+    open('resource_type');
+    expect(pop()!.querySelector('input[type="text"]')).toBeNull();
+    expect(pop()!.querySelector('.column-filter-all')!.textContent).toBe('(All)');
+    expect(pop()!.querySelectorAll('.column-filter-item input[type="checkbox"]')).toHaveLength(4);
+    expect(pop()!.querySelector('.column-filter-clear')!.textContent).toBe('Select none');
+  });
+
+  test('Enter commits a valid expression; an invalid one shows an error and writes nothing', async () => {
+    await render();
+    open('savings');
+    const input = pop()!.querySelector<HTMLInputElement>('.column-filter-numeric-input')!;
+    const err = pop()!.querySelector('.column-filter-error')!;
+    input.value = '>150';
+    expect(press('Enter', input).defaultPrevented).toBe(true);
+    expect(state.getRecommendationsColumnFilters().savings).toEqual({ kind: 'expr', expr: '>150' });
+    expect(err.textContent).toBe('');
+    expect((saved() as { filters: Record<string, unknown> }).filters['savings']).toEqual({ kind: 'expr', expr: '>150' });
+    const bad = pop()!.querySelector<HTMLInputElement>('.column-filter-numeric-input')!;
+    bad.value = 'abc';
+    press('Enter', bad);
+    expect(pop()!.querySelector('.column-filter-error')!.textContent).not.toBe('');
+    expect(state.getRecommendationsColumnFilters().savings).toEqual({ kind: 'expr', expr: '>150' });
+  });
+
+  test('Clear on a numeric filter empties the input and removes the filter', async () => {
+    state.setRecommendationsColumnFilter('savings', { kind: 'expr', expr: '>150' });
+    await render();
+    open('savings');
+    const input = pop()!.querySelector<HTMLInputElement>('.column-filter-numeric-input')!;
+    expect(input.value).toBe('>150');
+    pop()!.querySelector<HTMLButtonElement>('.column-filter-clear')!.click();
+    expect(state.getRecommendationsColumnFilters().savings).toBeUndefined();
+    expect(pop()!.querySelector<HTMLInputElement>('.column-filter-numeric-input')!.value).toBe('');
+  });
+});
+
+describe('keyboard inside the popover', () => {
+  test('Escape pressed on a checkbox closes it; other keys leave it open and are not prevented', async () => {
+    await render();
+    open('service');
+    const cb = pop()!.querySelector('input[type="checkbox"]')!;
+    expect(press('a', cb).defaultPrevented).toBe(false);
+    expect(press('Tab', cb).defaultPrevented).toBe(false);
+    expect(pop()).not.toBeNull();
+    expect(press('Escape', cb).defaultPrevented).toBe(true);
+    expect(pop()).toBeNull();
+  });
+});
+
+describe('tab switch and the visibility popover', () => {
+  test('removing .active from the tab closes the popover; unrelated class changes do not', async () => {
+    await render();
+    const t = open('service');
+    tab.classList.add('other');
+    await flushPromises();
+    expect(pop()).not.toBeNull();
+    tab.classList.remove('active');
+    await flushPromises();
+    expect(pop()).toBeNull();
+    expect(t.getAttribute('aria-expanded')).toBe('false');
+    tab.classList.add('active');
+    await flushPromises();
+    open('service');
+    tab.classList.remove('active');
+    await flushPromises();
+    expect(pop()).toBeNull();
+  });
+
+  test('hiding the tab also closes an open column-visibility popover', async () => {
+    await render();
+    document.querySelector<HTMLButtonElement>('.column-visibility-btn')!.click();
+    expect(document.querySelector('.column-visibility-popover')).not.toBeNull();
+    tab.classList.remove('active');
+    await flushPromises();
+    expect(document.querySelector('.column-visibility-popover')).toBeNull();
+  });
+
+  test('opening the visibility popover closes an open column popover and resets its trigger', async () => {
+    await render();
+    const t = open('service');
+    const vis = document.querySelector<HTMLButtonElement>('.column-visibility-btn')!;
+    vis.click();
+    expect(pop()).toBeNull();
+    expect(t.getAttribute('aria-expanded')).toBe('false');
+    expect(vis.getAttribute('aria-expanded')).toBe('true');
+    expect(document.querySelector('.column-visibility-popover')!.getAttribute('aria-label')).toBe('Show/hide columns');
+    expect(counts()).toEqual({ ...ZERO, keydown: 1 });
   });
 });
