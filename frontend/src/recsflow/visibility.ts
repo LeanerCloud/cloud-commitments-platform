@@ -1,7 +1,7 @@
 import * as state from '../state';
 import { TOGGLEABLE_COLUMNS, saveColumnVisibility } from './columnPrefs';
-import { positionPopover } from './popoverContent';
-import { closePopover, rerenderRecommendations } from './popover';
+import { positionPopover, closeColumnFilterPopoverForScope } from '../lib/column-filter-popover';
+import { rerenderRecommendations } from './popover';
 
 //
 // Column-visibility popover (issue #318)
@@ -40,7 +40,7 @@ export function closeVisibilityPopover(): void {
 function openVisibilityPopover_(anchor: HTMLElement): void {
   // Close any open filter popover when visibility popover opens (only one popover
   // at a time keeps the UI from getting cluttered).
-  closePopover();
+  closeColumnFilterPopoverForScope('recs');
 
   if (openVisibilityPopover) {
     closeVisibilityPopover();
