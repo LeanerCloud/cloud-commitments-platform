@@ -1,7 +1,7 @@
 import { onThemeChange } from '../lib/chart-theme';
 import { dashboardState } from './dashboardState';
 import { renderSavingsByService } from './byService';
-import { loadSavingsTrendChart } from '../dashboard';
+import { loadSavingsTrendChart } from './trend';
 
 let stopThemeWatch: (() => void) | null = null;
 
