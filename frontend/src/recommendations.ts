@@ -484,7 +484,7 @@ function readSortFromUrl(): void {
  * can refresh / bookmark / share without losing it. Uses replaceState (not
  * pushState) so the back button isn't polluted by every header click.
  */
-function writeSortToUrl(sort: state.RecommendationsSort): void {
+export function writeSortToUrl(sort: state.RecommendationsSort): void {
   if (typeof window === 'undefined' || !window.location || !window.history) return;
   try {
     const url = new URL(window.location.href);
