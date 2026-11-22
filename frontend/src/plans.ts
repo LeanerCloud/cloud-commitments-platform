@@ -192,7 +192,7 @@ let savingPlan = false;
 
 // duplicatePlanId returns the id of the plan that blocked a create, from the
 // backend's plan_name_taken 409, or null for any other error.
-function duplicatePlanId(error: unknown): string | null {
+export function duplicatePlanId(error: unknown): string | null {
   const apiError = error as ApiError;
   if (apiError.status !== 409 || apiError.details?.['code'] !== 'plan_name_taken') return null;
   const id = apiError.details?.['existing_plan_id'];
