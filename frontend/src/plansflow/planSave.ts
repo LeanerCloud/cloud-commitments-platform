@@ -7,7 +7,7 @@ import { plansState } from './plansState';
 import { loadPlans } from './planCards';
 import { parsePlanStepCap } from './planRanges';
 import { editPlan } from './planEdit';
-import { closePlanModal } from '../plans';
+import { closePlanModal } from './planModal';
 
 // savingPlan is true while a save request is in flight. refreshPlanSaveButtonState
 // reads it so the account gate stays the single owner of the Save button.

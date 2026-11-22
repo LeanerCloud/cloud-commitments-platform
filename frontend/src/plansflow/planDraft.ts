@@ -4,7 +4,7 @@ import { applyPlanForm, clearPlanDraft, loadPlanDraft, savePlanDraft } from '../
 import { plansState } from './plansState';
 import { renderPlanAccountChips, updatePlanAccountIdsField } from './planAccounts';
 import { editPlan } from './planEdit';
-import { closePlanModal, openNewPlanModal } from '../plans';
+import { closePlanModal, openNewPlanModal } from './planModal';
 
 const PLAN_DRAFT_DEBOUNCE_MS = 300;
 
