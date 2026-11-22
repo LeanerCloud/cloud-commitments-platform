@@ -2,6 +2,7 @@
  * Plans module for CUDly
  */
 
+
 import * as api from './api';
 import * as state from './state';
 import { buildCommitmentSummary, withIntro } from './commitmentSummary';
@@ -22,11 +23,7 @@ import { canCancelScheduledExecution } from './lib/purchase-cancel-permission';
 import { applyColumnFilters as applyColumnFiltersLib } from './lib/column-filters';
 import { rowMatchesProvider } from './lib/upcoming-scope';
 import { formatPaymentOption, formatTermShort } from './lib/table-format';
-import {
-  openColumnFilterPopover,
-  rebindColumnFilterPopover,
-  sortedDistinctValues,
-} from './lib/column-filter-popover';
+import { openColumnFilterPopover, rebindColumnFilterPopover, sortedDistinctValues } from './lib/column-filter-popover';
 import { suggestedPurchaseStartDate } from './lib/calendar-date';
 import { badgeHtml, statusBadgeHtml } from './lib/status-badge';
 import { isPastScheduledDate } from './lib/purchase-row-guards';
@@ -34,22 +31,8 @@ import { serviceLabel } from './lib/service-labels';
 import { describeGroup, groupSelection } from './lib/plan-groups';
 import { mountPlanEditorPanel } from './plan-editor-panel';
 import { renderPlanFiltersNotice } from './plan-filters-notice';
-import { applyPlanForm, clearPlanDraft, loadPlanDraft, readPlanForm, savePlanDraft } from './lib/plan-form-draft';
-
-// pendingPlanRecommendations holds the resolved plan target captured at
-// "Plan from N selected" button-click time. The Plan flow used to re-derive
-// its target from state.getVisibleRecommendations() + getSelectedRecommendation
-// IDs() at savePlan time, but state mutations between modal-open and
-// modal-Save (Refresh, filter changes, deselections) could silently shrink
-// or replace the planned set. This snapshot is stamped by openCreatePlan-
-// Modal(snapshot) and consumed by savePlan; openNewPlanModal() clears it
-// (the New-Plan-from-scratch path has no pre-resolved target). See #273
-// CR follow-up.
-let pendingPlanRecommendations: api.Recommendation[] = [];
-
-// editingBoundPlan is true while the modal edits a plan bound to selected
-// recommendations (#1746). Its service fields are read-only and never sent.
-let editingBoundPlan = false;
+import { applyPlanForm, clearPlanDraft, loadPlanDraft, savePlanDraft } from './lib/plan-form-draft';
+import { plansState } from './plansflow/plansState';
 
 // showSelectionGroups lists the groups of a mixed selection in place of the
 // service fields, which describe one group only. An empty list restores them.
@@ -187,17 +170,11 @@ async function loadPlannedPurchases(): Promise<void> {
   }
 }
 
-// Cached last-fetched planned purchases. The filter popover commits re-render
-// without re-fetching, so we hold the unfiltered set in module scope. Reset
-// on every successful loadPlannedPurchases() and consumed by
-// rerenderPlannedPurchases() (called by popover commits + Clear button).
-let lastLoadedPurchases: PlannedPurchase[] = [];
-
 /**
  * Render planned purchases list
  */
 function renderPlannedPurchases(purchases: PlannedPurchase[]): void {
-  lastLoadedPurchases = [...purchases];
+  plansState.lastLoadedPurchases = [...purchases];
   renderPlannedPurchasesInternal();
 }
 
@@ -208,7 +185,7 @@ function renderPlannedPurchasesInternal(): void {
   const container = document.getElementById('planned-purchases-list');
   if (!container) return;
 
-  const purchases = lastLoadedPurchases;
+  const purchases = plansState.lastLoadedPurchases;
   if (!purchases || purchases.length === 0) {
     container.innerHTML = '<p class="empty">No planned purchases. Create a purchase plan to schedule automatic purchases.</p>';
     return;
@@ -442,8 +419,8 @@ function openPlansColumnPopover(column: state.PlansColumnId, anchor: HTMLElement
     label: plansColumnLabel(column),
     kind: PLANS_NUMERIC_COLUMNS.has(column) ? 'numeric' : 'categorical',
     distinctValues: column === 'provider'
-      ? plansProviderOptions(lastLoadedPurchases)
-      : sortedDistinctValues(lastLoadedPurchases, (p) => categoricalCellValueForPlan(p, column)),
+      ? plansProviderOptions(plansState.lastLoadedPurchases)
+      : sortedDistinctValues(plansState.lastLoadedPurchases, (p) => categoricalCellValueForPlan(p, column)),
     displayLabel: (value) => plansCategoricalDisplayLabel(column, value),
     getFilter: () => state.getPlansColumnFilters()[column],
     onCommit: (filter) => {
@@ -617,7 +594,7 @@ async function runPlannedPurchaseNow(purchaseId: string): Promise<boolean> {
   if (runNowInFlight.has(purchaseId)) return true;
   runNowInFlight.add(purchaseId);
   try {
-    const target = lastLoadedPurchases.find(p => p.id === purchaseId);
+    const target = plansState.lastLoadedPurchases.find(p => p.id === purchaseId);
     if (target?.has_recommendations === false) {
       showToast({ message: 'This step has no recommendations attached, so there is nothing to run.', kind: 'info', timeout: 5_000 });
       return false;
@@ -1134,7 +1111,7 @@ async function togglePlan(planId: string, enabled: boolean): Promise<void> {
 
 let disposePlanEditor: (() => void) | undefined;
 function openPlanForm(modal: HTMLElement, restartsFromToday = false): void {
-  planModalEpoch++;
+  plansState.planModalEpoch++;
   renderPlanFiltersNotice(modal.querySelector<HTMLElement>('#plan-filters-notice'), undefined);
   disposePlanEditor?.(); disposePlanEditor = undefined;
   const host = modal.querySelector<HTMLElement>('#plan-editor-panel'), form = modal.querySelector<HTMLFormElement>('#plan-form');
@@ -1165,15 +1142,8 @@ function rampRadioValue(ramp: { type?: string; percent_per_step?: number; step_i
   return preset ? preset.value : 'custom';
 }
 
-// editPlan loads the plan and opens the edit modal pre-filled. Returns true
-// when the modal opened, false when the plan could not be loaded (e.g. it was
-// deleted or is no longer accessible). Callers that render the plan in a list
-// use the false result to reconcile a now-stale row (issue #1403).
-// HTTP status of the last failed editPlan load (undefined: none, or not an HTTP error).
-let editPlanFailureStatus: number | undefined;
-
 async function editPlan(planId: string): Promise<boolean> {
-  editPlanFailureStatus = undefined;
+  plansState.editPlanFailureStatus = undefined;
   try {
     const backendPlan = await api.getPlan(planId) as unknown as BackendPlan;
 
@@ -1194,11 +1164,11 @@ async function editPlan(planId: string): Promise<boolean> {
 
     const titleEl = document.getElementById('plan-modal-title');
     if (titleEl) titleEl.textContent = 'Edit Purchase Plan';
-    pendingPlanRecommendations = [];
-    editingBoundPlan = backendPlan.ramp_schedule?.allocation_mode === 'bound_groups';
-    setPlanFieldsLocked(editingBoundPlan, editingBoundPlan);
-    showSelectionGroups(editingBoundPlan ? Object.values(backendPlan.services ?? {}).map((svc) => describeGroup(svc, svc.bound_count ?? 0)) : []);
-    planModalSession += 1;
+    plansState.pendingPlanRecommendations = [];
+    plansState.editingBoundPlan = backendPlan.ramp_schedule?.allocation_mode === 'bound_groups';
+    setPlanFieldsLocked(plansState.editingBoundPlan, plansState.editingBoundPlan);
+    showSelectionGroups(plansState.editingBoundPlan ? Object.values(backendPlan.services ?? {}).map((svc) => describeGroup(svc, svc.bound_count ?? 0)) : []);
+    plansState.planModalSession += 1;
 
     // Edit can be the first modal opened. Install the handlers before any field is filled: the first install rebuilds term/payment (#1536).
     setupRampScheduleHandlers();
@@ -1215,7 +1185,7 @@ async function editPlan(planId: string): Promise<boolean> {
     const planService = LEGACY_PLAN_SERVICE_IDS[`${info.provider}/${info.service}`] ?? info.service;
     const serviceSelect = document.getElementById('plan-service') as HTMLSelectElement;
     serviceSelect.value = planService;
-    if (!editingBoundPlan && (serviceSelect.selectedIndex === -1 || serviceSelect.value === '')) {
+    if (!plansState.editingBoundPlan && (serviceSelect.selectedIndex === -1 || serviceSelect.value === '')) {
       serviceSelect.selectedIndex = -1;
       showToast({
         message: `This plan uses a service that is no longer supported (${info.provider ?? 'unknown provider'}/${info.service}). Recreate the plan, or choose a supported service before saving.`,
@@ -1255,7 +1225,7 @@ async function editPlan(planId: string): Promise<boolean> {
       (document.getElementById('ramp-interval-days') as HTMLInputElement).value = String(rampSchedule.step_interval_days || 7);
     }
 
-    planAccountsLoad = setupPlanAccountsSection(backendPlan.id);
+    plansState.planAccountsLoad = setupPlanAccountsSection(backendPlan.id);
     // Wire live range validation on all five numeric inputs (#702).
     wirePlanRangeInputs();
     const planModal = document.getElementById('plan-modal');
@@ -1271,7 +1241,7 @@ async function editPlan(planId: string): Promise<boolean> {
     // caller can reconcile the stale row. Other errors keep the generic
     // message (network blip, transient 5xx) since the plan may still exist.
     const status = (error as { status?: number }).status;
-    editPlanFailureStatus = status;
+    plansState.editPlanFailureStatus = status;
     const message = status === 404
       ? 'This plan is no longer available. It may have been deleted.'
       : 'Failed to load plan details';
@@ -1326,10 +1296,10 @@ export async function savePlan(e: Event): Promise<void> {
 
   // A bound plan's service fields are read-only and the backend refuses them on
   // edit (#1746), so they are neither validated nor sent.
-  const bound = planId !== '' && editingBoundPlan;
+  const bound = planId !== '' && plansState.editingBoundPlan;
   // The selection defines a from-selection plan's service, term and payment,
   // so only a plan with flat service fields validates the (editable) selects.
-  const flatFields = !bound && pendingPlanRecommendations.length === 0;
+  const flatFields = !bound && plansState.pendingPlanRecommendations.length === 0;
   const service = (document.getElementById('plan-service') as HTMLSelectElement).value;
   if (flatFields && !service) {
     showToast({ message: 'Service is required: choose a supported service before saving the plan', kind: 'error' });
@@ -1406,7 +1376,7 @@ export async function savePlan(e: Event): Promise<void> {
   // openNewPlanModal() clears the snapshot for the New-Plan-from-scratch
   // path (no pre-resolved target — plan submits without `recommendations`).
   if (!bound && !flatFields) {
-    plan.groups = groupSelection(pendingPlanRecommendations, rawCoverage);
+    plan.groups = groupSelection(plansState.pendingPlanRecommendations, rawCoverage);
   } else if (flatFields) {
     plan.provider = (document.getElementById('plan-provider') as HTMLSelectElement).value;
     plan.service = service;
@@ -1478,7 +1448,7 @@ function refreshPlanSaveButtonState(): void {
   if (!form) return;
   const submitBtn = Array.from(form.elements).find((element): element is HTMLButtonElement => element instanceof HTMLButtonElement && element.type === 'submit');
   if (!submitBtn) return;
-  const hasAccounts = planSelectedAccounts.length > 0;
+  const hasAccounts = plansState.planSelectedAccounts.length > 0;
   submitBtn.disabled = !hasAccounts || savingPlan;
   submitBtn.title = savingPlan ? 'Saving…' : hasAccounts ? '' : 'Select at least one Target Account to save the plan';
 }
@@ -1487,11 +1457,11 @@ function refreshPlanSaveButtonState(): void {
  * Close plan modal
  */
 export function closePlanModal(): void {
-  planAutomationRead += 1;
-  planModalEpoch++;
+  plansState.planAutomationRead += 1;
+  plansState.planModalEpoch++;
   // Save, Cancel and every other close end the edit: nothing left to restore.
-  if (planDraftTimer) clearTimeout(planDraftTimer);
-  planDraftTimer = null;
+  if (plansState.planDraftTimer) clearTimeout(plansState.planDraftTimer);
+  plansState.planDraftTimer = null;
   clearPlanDraft();
   const planModal = document.getElementById('plan-modal');
   if (planModal) closeModal(planModal);
@@ -1499,36 +1469,30 @@ export function closePlanModal(): void {
   // so a subsequent flow doesn't accidentally inherit it. The snapshot
   // ties the plan to a specific button-click moment; once the modal
   // closes — by Save, Cancel, or any other path — that moment is over.
-  pendingPlanRecommendations = [];
-  editingBoundPlan = false;
+  plansState.pendingPlanRecommendations = [];
+  plansState.editingBoundPlan = false;
   setPlanFieldsLocked(false, false);
   showSelectionGroups([]);
-  planModalSession += 1; // a late account lookup must not fill the next modal
+  plansState.planModalSession += 1; // a late account lookup must not fill the next modal
 }
 
-// Settles when the account chips of the most recently opened plan modal are loaded.
-let planAccountsLoad: Promise<void> = Promise.resolve();
-
 const PLAN_DRAFT_DEBOUNCE_MS = 300;
-// Bumped by every open, close and user edit of the plan form, so a restore can tell the user moved on.
-let planModalEpoch = 0;
-let planDraftTimer: ReturnType<typeof setTimeout> | null = null;
 
 // Session copy of the open plan form (#1735). Plan-from-selection forms are skipped:
 // their target snapshot is not persisted.
 function schedulePlanDraftSave(): void {
-  planModalEpoch++; // the user edited the form
-  if (planDraftTimer) clearTimeout(planDraftTimer);
-  planDraftTimer = setTimeout(() => {
-    planDraftTimer = null;
+  plansState.planModalEpoch++; // the user edited the form
+  if (plansState.planDraftTimer) clearTimeout(plansState.planDraftTimer);
+  plansState.planDraftTimer = setTimeout(() => {
+    plansState.planDraftTimer = null;
     const form = document.getElementById('plan-form') as HTMLFormElement | null;
     const userId = state.getCurrentUser()?.id;
-    if (!form || !userId || pendingPlanRecommendations.length > 0) return;
+    if (!form || !userId || plansState.pendingPlanRecommendations.length > 0) return;
     savePlanDraft({
       userId,
       planId: (document.getElementById('plan-id') as HTMLInputElement).value,
       ...readPlanForm(form),
-      accounts: planSelectedAccounts.map(a => ({ ...a })),
+      accounts: plansState.planSelectedAccounts.map(a => ({ ...a })),
     });
   }, PLAN_DRAFT_DEBOUNCE_MS);
 }
@@ -1554,19 +1518,19 @@ async function restorePlanDraftUnsafe(stillOnPlans: () => boolean): Promise<bool
     clearPlanDraft();
     return false;
   }
-  const epoch = planModalEpoch;
+  const epoch = plansState.planModalEpoch;
   if (draft.planId) {
     if (!(await editPlan(draft.planId))) {
       // Only a definitely gone or forbidden plan ends the draft; transient failures retry next load.
-      if (editPlanFailureStatus === 404 || editPlanFailureStatus === 403) clearPlanDraft();
+      if (plansState.editPlanFailureStatus === 404 || plansState.editPlanFailureStatus === 403) clearPlanDraft();
       return false;
     }
   } else {
     openNewPlanModal();
   }
-  await Promise.race([planAccountsLoad, new Promise(resolve => setTimeout(resolve, PLAN_DRAFT_ACCOUNTS_WAIT_MS))]);
+  await Promise.race([plansState.planAccountsLoad, new Promise(resolve => setTimeout(resolve, PLAN_DRAFT_ACCOUNTS_WAIT_MS))]);
   // Exactly one open (ours) since the start: otherwise the user opened, closed or typed meanwhile.
-  const mine = planModalEpoch === epoch + 1;
+  const mine = plansState.planModalEpoch === epoch + 1;
   const form = document.getElementById('plan-form') as HTMLFormElement | null;
   if (!mine || !form || !stillOnPlans()) {
     if (mine) closePlanModal();
@@ -1574,21 +1538,12 @@ async function restorePlanDraftUnsafe(stillOnPlans: () => boolean): Promise<bool
     return false;
   }
   applyPlanForm(form, draft);
-  planSelectedAccounts = draft.accounts.map(a => ({ ...a }));
+  plansState.planSelectedAccounts = draft.accounts.map(a => ({ ...a }));
   renderPlanAccountChips();
   updatePlanAccountIdsField();
   showToast({ message: 'Restored your unsaved plan draft. Review it and save.', kind: 'info', timeout: 8_000 });
   return true;
 }
-
-// Selected accounts for the plan modal
-let planSelectedAccounts: Array<{ id: string; name: string; external_id: string }> = [];
-
-// Monotonically incrementing counter scoped to the plan modal lifecycle.
-// Incremented each time the create modal opens so that async callbacks
-// from a previous session (stale promises) can detect they're out-of-date
-// and discard their results rather than mutating state in the new session.
-let planModalSession = 0;
 
 /**
  * Render selected account chips in the plan modal
@@ -1597,7 +1552,7 @@ function renderPlanAccountChips(): void {
   const container = document.getElementById('plan-accounts-selected');
   if (!container) return;
   container.textContent = '';
-  planSelectedAccounts.forEach(acct => {
+  plansState.planSelectedAccounts.forEach(acct => {
     const label = `${acct.name} (${acct.external_id})`;
     const chip = document.createElement('span');
     chip.className = 'account-chip';
@@ -1616,8 +1571,8 @@ function renderPlanAccountChips(): void {
     removeBtn.title = 'Remove';
     removeBtn.appendChild(createIcon('x'));
     removeBtn.addEventListener('click', () => {
-      const removedAt = planSelectedAccounts.findIndex(a => a.id === acct.id);
-      planSelectedAccounts = planSelectedAccounts.filter(a => a.id !== acct.id);
+      const removedAt = plansState.planSelectedAccounts.findIndex(a => a.id === acct.id);
+      plansState.planSelectedAccounts = plansState.planSelectedAccounts.filter(a => a.id !== acct.id);
       renderPlanAccountChips();
       updatePlanAccountIdsField();
       schedulePlanDraftSave();
@@ -1647,7 +1602,7 @@ function focusAfterChipRemoval(removedAt: number): void {
  */
 function updatePlanAccountIdsField(): void {
   const field = document.getElementById('plan-account-ids') as HTMLInputElement | null;
-  if (field) field.value = planSelectedAccounts.map(a => a.id).join(',');
+  if (field) field.value = plansState.planSelectedAccounts.map(a => a.id).join(',');
   // Recalc Save-button disabled state every time the account list changes
   // so the user gets immediate feedback when they remove the last chip.
   refreshPlanSaveButtonState();
@@ -1680,12 +1635,12 @@ async function handlePlanAccountSearch(value: string): Promise<void> {
       return;
     }
     accounts.forEach(a => {
-      if (planSelectedAccounts.some(s => s.id === a.id)) return;
+      if (plansState.planSelectedAccounts.some(s => s.id === a.id)) return;
       const item = document.createElement('div');
       item.className = 'account-suggestion-item';
       item.textContent = `${a.name} (${a.external_id})`;
       item.addEventListener('click', () => {
-        planSelectedAccounts.push({ id: a.id, name: a.name, external_id: a.external_id });
+        plansState.planSelectedAccounts.push({ id: a.id, name: a.name, external_id: a.external_id });
         renderPlanAccountChips();
         updatePlanAccountIdsField();
         schedulePlanDraftSave();
@@ -1704,14 +1659,14 @@ async function handlePlanAccountSearch(value: string): Promise<void> {
 // (a bound plan, or a selection of several groups, whose service fields the form
 // does not show), so its account picker is not restricted to the provider select (#1746).
 function planSpansProviders(): boolean {
-  return editingBoundPlan || groupSelection(pendingPlanRecommendations, 0).length > 1;
+  return plansState.editingBoundPlan || groupSelection(plansState.pendingPlanRecommendations, 0).length > 1;
 }
 
 /**
  * Set up plan accounts section in the modal
  */
 async function setupPlanAccountsSection(planId?: string): Promise<void> {
-  planSelectedAccounts = [];
+  plansState.planSelectedAccounts = [];
 
   const spansProviders = planSpansProviders();
   const planProvider = spansProviders ? undefined : (document.getElementById('plan-provider') as HTMLSelectElement | null)?.value;
@@ -1722,7 +1677,7 @@ async function setupPlanAccountsSection(planId?: string): Promise<void> {
       // Filter out any account whose provider does not match the current plan
       // provider. This prevents stale cross-provider assignments from silently
       // surviving a provider switch on an existing plan.
-      planSelectedAccounts = existingAccounts
+      plansState.planSelectedAccounts = existingAccounts
         .filter(a => !planProvider || a.provider === planProvider)
         .map(a => ({ id: a.id, name: a.name, external_id: a.external_id }));
     } catch {
@@ -1809,15 +1764,15 @@ async function prefillAccountChips(accountIds: readonly string[], session: numbe
     // Session guard: discard the result if the modal was closed and reopened
     // while this promise was in-flight. planModalSession is incremented on
     // each new modal open, so a mismatch means this callback is stale.
-    if (session !== planModalSession) return;
+    if (session !== plansState.planModalSession) return;
     // Guard: only add if the chip is not already present (e.g. a concurrent
     // edit flow somehow set it) and the account record is usable.
     if (accounts.length < accountIds.length) {
       showToast({ message: 'Some selected recommendations belong to accounts you cannot list. Add those accounts under Target accounts before saving.', kind: 'warning' });
     }
     for (const account of accounts) {
-      if (account.id && !planSelectedAccounts.some(a => a.id === account.id)) {
-        planSelectedAccounts.push({ id: account.id, name: account.name, external_id: account.external_id });
+      if (account.id && !plansState.planSelectedAccounts.some(a => a.id === account.id)) {
+        plansState.planSelectedAccounts.push({ id: account.id, name: account.name, external_id: account.external_id });
       }
     }
     renderPlanAccountChips();
@@ -1842,10 +1797,10 @@ export function openCreatePlanModal(snapshot?: readonly api.Recommendation[]): v
   // Bottom Action Box passes the result of resolvePurchaseTarget(); a
   // missing arg falls back to the legacy behaviour (no captured target,
   // savePlan submits a plan without `recommendations`). See #273 CR.
-  pendingPlanRecommendations = snapshot ? [...snapshot] : [];
+  plansState.pendingPlanRecommendations = snapshot ? [...snapshot] : [];
 
   const titleEl = document.getElementById('plan-modal-title');
-  const hasSelection = pendingPlanRecommendations.length > 0;
+  const hasSelection = plansState.pendingPlanRecommendations.length > 0;
   if (titleEl) {
     titleEl.textContent = hasSelection ? 'Create purchase plan' : 'New purchase plan';
   }
@@ -1855,12 +1810,12 @@ export function openCreatePlanModal(snapshot?: readonly api.Recommendation[]): v
   // One plan group (every selected commitment shares provider, service, term
   // and payment): prefill and lock the Purchase Configuration from the first
   // commitment. A mixed selection lists its groups instead. (#770, #898, #1746)
-  const groups = groupSelection(pendingPlanRecommendations, 0);
+  const groups = groupSelection(plansState.pendingPlanRecommendations, 0);
   if (groups.length === 1) {
-    prefillPurchaseConfigFromCommitment(pendingPlanRecommendations[0]!);
+    prefillPurchaseConfigFromCommitment(plansState.pendingPlanRecommendations[0]!);
   }
   showSelectionGroups(groups.length > 1 ? groups.map((g) => describeGroup(g, g.recommendation_ids.length)) : []);
-  editingBoundPlan = false;
+  plansState.editingBoundPlan = false;
   setPlanFieldsLocked(hasSelection, false);
 
   // Set up ramp schedule change handlers for dynamic plan name
@@ -1876,7 +1831,7 @@ export function openCreatePlanModal(snapshot?: readonly api.Recommendation[]): v
   // Stamp a new session so any in-flight prefillAccountChips promise
   // from a prior modal open can detect it belongs to a stale session and
   // discard its result without mutating planSelectedAccounts. (#770 CR)
-  planModalSession += 1;
+  plansState.planModalSession += 1;
 
   // setupPlanAccountsSection clears planSelectedAccounts and re-renders.
   // When every selected commitment carries the SAME cloud_account_id, we look
@@ -1884,12 +1839,12 @@ export function openCreatePlanModal(snapshot?: readonly api.Recommendation[]): v
   // chip. Homogeneity of provider/service/term/payment (enforced by the
   // "Plan from N selected" gate) does not imply a single account, so a
   // multi-account selection leaves the chip empty for the user to fill. (#898)
-  planAccountsLoad = setupPlanAccountsSection();
+  plansState.planAccountsLoad = setupPlanAccountsSection();
   // Every selected recommendation's account must be a target account, or the
   // backend refuses the bound plan, so all of them are pre-selected (#1746).
-  const selectedAccountIds = [...new Set(pendingPlanRecommendations.map((r) => r.cloud_account_id).filter((id): id is string => !!id))];
+  const selectedAccountIds = [...new Set(plansState.pendingPlanRecommendations.map((r) => r.cloud_account_id).filter((id): id is string => !!id))];
   if (selectedAccountIds.length > 0) {
-    void prefillAccountChips(selectedAccountIds, planModalSession);
+    void prefillAccountChips(selectedAccountIds, plansState.planModalSession);
   }
 
   const planModal = document.getElementById('plan-modal');
@@ -1906,11 +1861,11 @@ export function openNewPlanModal(): void {
   // Clear any stale snapshot from a prior openCreatePlanModal call so a
   // subsequent savePlan doesn't accidentally inherit a previous flow's
   // recs. See #273 CR.
-  pendingPlanRecommendations = [];
-  editingBoundPlan = false;
+  plansState.pendingPlanRecommendations = [];
+  plansState.editingBoundPlan = false;
   setPlanFieldsLocked(false, false);
   showSelectionGroups([]);
-  planModalSession += 1;
+  plansState.planModalSession += 1;
 
   const titleEl = document.getElementById('plan-modal-title');
   if (titleEl) titleEl.textContent = 'New purchase plan';
@@ -1927,7 +1882,7 @@ export function openNewPlanModal(): void {
   // Generate initial plan name
   updatePlanNameFromSchedule();
 
-  planAccountsLoad = setupPlanAccountsSection();
+  plansState.planAccountsLoad = setupPlanAccountsSection();
 
   const planModal = document.getElementById('plan-modal');
   if (planModal) {
@@ -2109,22 +2064,20 @@ function parsePlanStepCap(raw: string, automatic: boolean): number | null {
   return value;
 }
 
-let planAutomationRead = 0;
-
 async function refreshPlanAutomationState(): Promise<void> {
-  const request = ++planAutomationRead;
+  const request = ++plansState.planAutomationRead;
   const banner = document.getElementById('plan-auto-purchase-state');
   if (!banner) return;
   banner.textContent = 'Global Auto-Purchase state is unavailable.';
   if (!canAccess('view', 'config')) return;
   try {
     const config = await api.getConfig();
-    if (request !== planAutomationRead) return;
+    if (request !== plansState.planAutomationRead) return;
     const enabled = config.global?.auto_purchase_enabled;
     if (enabled === true) banner.textContent = 'Global Auto-Purchase is enabled. Automatic plans still require a per-step cap and purchase permission.';
     if (enabled === false) banner.textContent = 'Global Auto-Purchase is off. Automatic plans will not execute until it is enabled.';
   } catch {
-    if (request === planAutomationRead) banner.textContent = 'Global Auto-Purchase state could not be loaded.';
+    if (request === plansState.planAutomationRead) banner.textContent = 'Global Auto-Purchase state could not be loaded.';
   }
 }
 
@@ -2172,7 +2125,7 @@ function setupRampScheduleHandlers(): void {
     // an account valid for the old provider is almost never valid for the new
     // one, and it prevents a cross-provider assignment from silently reaching
     // the backend validator.
-    planSelectedAccounts = [];
+    plansState.planSelectedAccounts = [];
     renderPlanAccountChips();
     updatePlanAccountIdsField();
     // Clear and hide any open account suggestion dropdown so stale suggestions
