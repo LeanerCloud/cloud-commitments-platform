@@ -666,7 +666,7 @@ function currentLookbackDays(): number {
  * listener are discarded — no listener stacking (the build-DOM-fresh
  * analogue of removing the old listener before re-adding).
  */
-function renderLookbackToolbar(): void {
+export function renderLookbackToolbar(): void {
   const container = document.getElementById('recommendations-toolbar');
   if (!container) return;
 
