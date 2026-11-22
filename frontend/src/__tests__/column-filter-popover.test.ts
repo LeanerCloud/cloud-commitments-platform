@@ -6,8 +6,10 @@
 
 import {
   closeColumnFilterPopover,
+  closeColumnFilterPopoverForScope,
   isColumnFilterPopoverOpen,
   openColumnFilterPopover,
+  positionPopover,
   rebindColumnFilterPopover,
   sortedDistinctValues,
   type ColumnFilterPopoverConfig,
@@ -253,4 +255,134 @@ describe('opt-in trigger selector, scroll following and open state', () => {
 
 test('sortedDistinctValues puts the empty value first, then locale order', () => {
   expect(sortedDistinctValues(['b', '', 'a', 'b'], (v) => v)).toEqual(['', 'a', 'b']);
+});
+
+describe('valueGroups', () => {
+  const groups = [{ role: 'sp-group', label: 'All Savings Plans', members: ['aws', 'azure'] }];
+  const groupBox = (): HTMLInputElement | null =>
+    document.querySelector<HTMLInputElement>('.column-filter-popover input[data-role="sp-group"]');
+  const openGrouped = (): void => {
+    openColumnFilterPopover({ ...config('plans', 'provider'), valueGroups: groups }, trigger('plans', 'provider'));
+  };
+
+  test('no group element without valueGroups', () => {
+    openFor('plans', 'provider');
+    expect(document.querySelector('.column-filter-group')).toBeNull();
+    expect(document.querySelector('[data-role="sp-group"]')).toBeNull();
+  });
+
+  test('renders one labelled row between (All) and the list', () => {
+    openGrouped();
+    const row = document.querySelector<HTMLElement>('.column-filter-group')!;
+    expect(row.tagName).toBe('LABEL');
+    expect(row.textContent).toBe('All Savings Plans');
+    expect(groupBox()!.type).toBe('checkbox');
+    expect(row.previousElementSibling!.className).toBe('column-filter-all');
+    expect(row.nextElementSibling!.className).toBe('column-filter-list');
+  });
+
+  test('is not rendered for a numeric column', () => {
+    openColumnFilterPopover({ ...config('plans', 'count'), valueGroups: groups }, trigger('plans', 'count'));
+    expect(groupBox()).toBeNull();
+  });
+
+  test('tri-state follows the selected values: all, some, none', () => {
+    openGrouped();
+    expect(groupBox()!.checked).toBe(true);
+    expect(groupBox()!.indeterminate).toBe(false);
+    box('aws').click();
+    expect(groupBox()!.checked).toBe(false);
+    expect(groupBox()!.indeterminate).toBe(true);
+    box('azure').click();
+    expect(groupBox()!.checked).toBe(false);
+    expect(groupBox()!.indeterminate).toBe(false);
+  });
+
+  test('tri-state is recomputed by rebind from external filter state', () => {
+    openGrouped();
+    filters['plans:provider'] = { kind: 'set', values: ['', 'aws'] };
+    rebindColumnFilterPopover('plans');
+    expect(groupBox()!.indeterminate).toBe(true);
+    filters['plans:provider'] = { kind: 'set', values: ['aws', 'azure'] };
+    rebindColumnFilterPopover('plans');
+    expect(groupBox()!.checked).toBe(true);
+    expect(groupBox()!.indeterminate).toBe(false);
+  });
+
+  test('clicking the group unticks every member, leaves others, and commits', () => {
+    openGrouped();
+    groupBox()!.click();
+    expect(box('aws').checked).toBe(false);
+    expect(box('azure').checked).toBe(false);
+    expect(box('').checked).toBe(true);
+    expect(onCommit).toHaveBeenLastCalledWith('plans', 'provider', { kind: 'set', values: [''] });
+    groupBox()!.click();
+    expect(box('aws').checked).toBe(true);
+    expect(box('azure').checked).toBe(true);
+    expect(onCommit).toHaveBeenLastCalledWith('plans', 'provider', null);
+    expect(onCommit).toHaveBeenCalledTimes(2);
+  });
+
+  test('(All) and Select none keep the group in step', () => {
+    openGrouped();
+    document.querySelector<HTMLButtonElement>('.column-filter-clear')!.click();
+    expect(groupBox()!.checked).toBe(false);
+    expect(groupBox()!.indeterminate).toBe(false);
+    allBox().click();
+    expect(groupBox()!.checked).toBe(true);
+  });
+});
+
+describe('positionPopover', () => {
+  const rectOf = (left: number, top: number, width: number, height: number): DOMRect =>
+    ({ left, top, width, height, right: left + width, bottom: top + height, x: left, y: top, toJSON: () => ({}) });
+  const place = (anchor: DOMRect, pop: DOMRect): HTMLElement => {
+    const a = document.createElement('button');
+    a.getBoundingClientRect = () => anchor;
+    const el = document.createElement('div');
+    el.getBoundingClientRect = () => pop;
+    positionPopover(el, a);
+    return el;
+  };
+
+  beforeEach(() => {
+    Object.defineProperty(window, 'innerHeight', { value: 600, configurable: true });
+    Object.defineProperty(window, 'innerWidth', { value: 1000, configurable: true });
+  });
+
+  test('places the popover 4px below the anchor', () => {
+    const el = place(rectOf(100, 50, 20, 20), rectOf(0, 0, 200, 100));
+    expect(el.style.display).toBe('block');
+    expect(el.style.position).toBe('absolute');
+    expect(el.style.top).toBe('74px');
+    expect(el.style.left).toBe('100px');
+  });
+
+  test('flips above when it would overflow the bottom', () => {
+    const el = place(rectOf(100, 500, 20, 20), rectOf(0, 0, 200, 100));
+    expect(el.style.top).toBe('396px');
+  });
+
+  test('clamps against the right edge', () => {
+    const el = place(rectOf(950, 50, 20, 20), rectOf(0, 0, 200, 100));
+    expect(el.style.left).toBe('792px');
+  });
+});
+
+describe('closeColumnFilterPopoverForScope', () => {
+  test('closes the open popover of that scope and restores focus on request', () => {
+    openFor('plans', 'provider');
+    closeColumnFilterPopoverForScope('plans', true);
+    expect(popovers()).toHaveLength(0);
+    expect(trigger('plans', 'provider').getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(trigger('plans', 'provider'));
+  });
+
+  test('is a no-op for another scope and when nothing is open', () => {
+    closeColumnFilterPopoverForScope('plans');
+    openFor('plans', 'provider');
+    closeColumnFilterPopoverForScope('riex');
+    expect(popovers()).toHaveLength(1);
+    expect(isColumnFilterPopoverOpen('plans', 'provider')).toBe(true);
+  });
 });
