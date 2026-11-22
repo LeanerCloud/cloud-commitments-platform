@@ -362,7 +362,7 @@ export async function savePlan(e: Event): Promise<void> {
 // in purchase_plans with no plan_accounts row) are no longer allowed by the
 // API; surfacing the failure in the disabled state is friendlier than
 // letting the user fill in every other field and get rejected at submit.
-function refreshPlanSaveButtonState(): void {
+export function refreshPlanSaveButtonState(): void {
   const form = document.getElementById('plan-form') as HTMLFormElement | null;
   if (!form) return;
   const submitBtn = Array.from(form.elements).find((element): element is HTMLButtonElement => element instanceof HTMLButtonElement && element.type === 'submit');
@@ -437,7 +437,7 @@ export function renderPlanAccountChips(): void {
  * Re-rendering destroys the focused remove button, so keyboard users would
  * lose their place. Focus the next chip, else the previous one, else the search box.
  */
-function focusAfterChipRemoval(removedAt: number): void {
+export function focusAfterChipRemoval(removedAt: number): void {
   const buttons = document.querySelectorAll<HTMLElement>('#plan-accounts-selected .account-chip-remove');
   const target = buttons.item(removedAt) ?? buttons.item(buttons.length - 1);
   if (target) {
@@ -463,7 +463,7 @@ let planAccountSearchTimer: ReturnType<typeof setTimeout> | null = null;
 /**
  * Handle plan account search input
  */
-async function handlePlanAccountSearch(value: string): Promise<void> {
+export async function handlePlanAccountSearch(value: string): Promise<void> {
   const suggestions = document.getElementById('plan-account-suggestions');
   if (!suggestions) return;
 
@@ -508,14 +508,14 @@ async function handlePlanAccountSearch(value: string): Promise<void> {
 // planSpansProviders is true when the plan may hold groups of several providers
 // (a bound plan, or a selection of several groups, whose service fields the form
 // does not show), so its account picker is not restricted to the provider select (#1746).
-function planSpansProviders(): boolean {
+export function planSpansProviders(): boolean {
   return plansState.editingBoundPlan || groupSelection(plansState.pendingPlanRecommendations, 0).length > 1;
 }
 
 /**
  * Set up plan accounts section in the modal
  */
-async function setupPlanAccountsSection(planId?: string): Promise<void> {
+export async function setupPlanAccountsSection(planId?: string): Promise<void> {
   plansState.planSelectedAccounts = [];
 
   const spansProviders = planSpansProviders();
@@ -603,7 +603,7 @@ function prefillPurchaseConfigFromCommitment(rec: api.Recommendation): void {
  *                    the counter will have advanced and the stale result is
  *                    discarded to prevent wrong-modal pollution. (#770 CR)
  */
-async function prefillAccountChips(accountIds: readonly string[], session: number): Promise<void> {
+export async function prefillAccountChips(accountIds: readonly string[], session: number): Promise<void> {
   try {
     // Resolve via the minimal-disclosure list (view:recommendations) instead of
     // GET /api/accounts/:id (view:accounts) so the target prefills for
