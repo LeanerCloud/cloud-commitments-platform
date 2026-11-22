@@ -27,9 +27,20 @@ import (
 // for without an account scope, so the read never covers every account.
 var ErrMarketplaceTotalsScopeRequired = errors.New("marketplace listing proceeds totals require an account scope")
 
+// MarketplaceTerminalPollCutoffDays bounds how long a closed or cancelled
+// listing whose sale price was never determined is polled, counted from
+// terminal_at (when it first became closed or cancelled, migration 000179).
+// Proceeds settle within the AWS Marketplace disbursement cycle (days to
+// weeks), so 180 days is a deliberately conservative upper bound. Past it the
+// listing keeps its terminal state and no proceeds, so totals count it as
+// unsettled (issue #1586). Active and pending listings, and terminal rows
+// with a NULL terminal_at, are always polled.
+const MarketplaceTerminalPollCutoffDays = 180
+
 // marketplaceListingsToPollSQL selects the listings the poller must read, one
 // row per (purchase_id, listing_id). $1..$4 are ListingStateActive,
-// ListingStateClosed, ListingStateCancelled and ListingStatePending.
+// ListingStateClosed, ListingStateCancelled and ListingStatePending; $5 is
+// MarketplaceTerminalPollCutoffDays.
 //
 // The first branch is the RI's current listing on purchase_history. The
 // second is a listing the RI has since moved on from (marketplace_listing_settlements,
@@ -55,6 +66,7 @@ const marketplaceListingsToPollSQL = `
 		           AND listing_client_token IS NULL)
 		       OR (lower(COALESCE(listing_state, '')) IN ($2, $3)
 		           AND listed_at IS NOT NULL
+		           AND (terminal_at IS NULL OR terminal_at >= now() - make_interval(days => $5))
 		           AND listing_proceeds_received IS NULL))
 		UNION ALL
 		SELECT 1, p.created_at, p.id, p.account_id, s.purchase_id, p.provider, p.region,
@@ -64,7 +76,8 @@ const marketplaceListingsToPollSQL = `
 		WHERE p.provider = 'aws'
 		  AND s.proceeds_received IS NULL
 		  AND (lower(s.status) IN ($1, $4)
-		       OR (lower(s.status) IN ($2, $3) AND s.listed_at IS NOT NULL))
+		       OR (lower(s.status) IN ($2, $3) AND s.listed_at IS NOT NULL
+		           AND (s.terminal_at IS NULL OR s.terminal_at >= now() - make_interval(days => $5))))
 		  AND NOT EXISTS (
 			SELECT 1 FROM purchase_history c
 			WHERE c.purchase_id = s.purchase_id AND c.listing_id = s.listing_id
@@ -77,8 +90,9 @@ const marketplaceListingsToPollSQL = `
 // ListMarketplaceListingsToPoll returns the AWS listings the poller must read:
 // every active listing; every listing recorded as pending, i.e. one AWS gave
 // no status for when it was created, or whose rollback cancel failed (issue
-// #1494); and closed or canceled listings the poller has seen (listed_at set)
-// whose proceeds are not recorded yet. It reads both the RI's current listing
+// #1494); and closed or canceled listings the poller has seen (listed_at set) whose
+// proceeds are not recorded yet and whose terminal_at is not older than
+// MarketplaceTerminalPollCutoffDays (or is NULL). It reads both the RI's current listing
 // on purchase_history and the listings the RI was relisted from, which
 // marketplace_listing_settlements keeps (issue #1494). A pending row that
 // holds a list attempt's token is a claim in flight, whose listing_id is the
@@ -91,7 +105,7 @@ const marketplaceListingsToPollSQL = `
 // ListingID and ListingState. One row is returned per (purchase_id,
 // listing_id), the earliest, so legacy duplicate rows cost one AWS call.
 func (s *PostgresStore) ListMarketplaceListingsToPoll(ctx context.Context) ([]PurchaseHistoryRecord, error) {
-	rows, err := s.db.Query(ctx, marketplaceListingsToPollSQL, ListingStateActive, ListingStateClosed, ListingStateCancelled, ListingStatePending)
+	rows, err := s.db.Query(ctx, marketplaceListingsToPollSQL, ListingStateActive, ListingStateClosed, ListingStateCancelled, ListingStatePending, MarketplaceTerminalPollCutoffDays)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list marketplace listings to poll: %w", err)
 	}
