@@ -2,7 +2,7 @@ import * as state from '../state';
 import { showToast } from '../toast';
 import { applyPlanForm, clearPlanDraft, loadPlanDraft, savePlanDraft } from '../lib/plan-form-draft';
 import { plansState } from './plansState';
-import { renderPlanAccountChips, updatePlanAccountIdsField } from '../plans';
+import { renderPlanAccountChips, updatePlanAccountIdsField } from './planAccounts';
 import { editPlan } from '../plans';
 import { closePlanModal, openNewPlanModal } from '../plans';
 
