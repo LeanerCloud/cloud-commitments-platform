@@ -5,7 +5,7 @@ import { showToast } from '../toast';
 import { confirmDialog } from '../confirmDialog';
 import type { PlannedPurchase } from '../api';
 import { plansState } from './plansState';
-import { loadPlannedPurchases } from '../plans';
+import { loadPlannedPurchases } from './plannedLoad';
 import { loadPlans } from '../plans';
 import { editPlan } from '../plans';
 
