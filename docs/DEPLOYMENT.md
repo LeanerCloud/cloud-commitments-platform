@@ -404,7 +404,7 @@ terraform apply -replace="module.compute_lambda[0].aws_lambda_function.main" -au
 
 ### Database migrations
 
-Schema migrations run in a one-shot step at deploy time, not on the request
+Schema migrations also run in a one-shot step at deploy time, off the request
 path (#31). On AWS dev and staging, `.github/workflows/deploy-aws-lambda.yml`
 runs the step "Run database migrations" right after `terraform apply`. It
 invokes the Lambda function with the payload `{"action":"migrate"}`. The
@@ -414,7 +414,9 @@ the runner once and returns `{"status":"ok","from":N,"to":M}`.
 reports a `FunctionError` or the payload status is not `ok`. A successful run
 writes `migrations ok: from N to M` to the job summary. The step has a
 20-minute timeout. Production is excluded from the step: it migrates only on
-demand (see below).
+demand (see below). GCP and Azure have no runner yet (#1966), the
+production rollout is not done (#1967), and the Fargate workflow
+(`deploy-aws-fargate.yml`) has no migrate step.
 
 The lazy path still exists as a safety net. When `DB_AUTO_MIGRATE=true`
 (Terraform variable `database_auto_migrate`: `true` in `github-dev.tfvars` and
@@ -426,11 +428,18 @@ fail-open: a migration error is logged, reported by the `migrations` check of
 `CUDLY_MIGRATION_TIMEOUT` (a Go duration such as `180s`, default `120s`); it
 does not apply to the deploy-time runner. With `DB_AUTO_MIGRATE` off, the
 `migrations` check reports `disabled`. GCP and Azure have no runner yet, so
-their stacks still rely on the lazy path (`auto_migrate = true`).
+their stacks still rely on the lazy path (`auto_migrate = true`). The lazy
+path still honors `CUDLY_FORCE_MIGRATION_VERSION` without the validation the
+deploy-time event applies to `force_version`, so do not set it there.
 
 #### Run the migrations by hand
 
-Run the same invoke against any AWS environment, including prod:
+Run the same invoke against a dev or staging environment. Before invoking
+against production, confirm the AWS account and region
+(`aws sts get-caller-identity`, `aws configure get region`) match the
+production environment, and take a database snapshot first. The sample uses
+the `aws` CLI's current credentials and the Terraform state in your checkout,
+so verify both point at the environment you intend:
 
 ```bash
 FUNCTION_NAME=$(cd terraform/environments/aws && terraform output -raw lambda_function_name)
@@ -450,13 +459,18 @@ budget remain.
 
 From a shell that has the app's database environment (`DB_HOST`,
 `DB_PASSWORD` or the secret settings, and so on), the binary runs the same
-code:
+code. Check which database endpoint, account and region that environment
+points at before you run it; do not run it from a laptop against production
+unless that is intended.
 
 ```bash
 go run ./cmd/server --migrate
 ```
 
-In the container image the binary is `/app/cudly`. The process exits 0 on
+Besides the schema, `--migrate` (and the Lambda event) creates or activates
+the admin user when `ADMIN_EMAIL` is set, and then requires
+`ADMIN_PASSWORD_SECRET` to resolve. Unset `ADMIN_EMAIL` to skip the admin
+step. In the container image the binary is `/app/cudly`. The process exits 0 on
 success and 1 on failure. `--migrate` cannot be combined with `--task`.
 
 #### Failure modes
@@ -464,17 +478,31 @@ success and 1 on failure. `--migrate` cannot be combined with `--task`.
 - **Deploy fails at "Run database migrations".** The log shows the reason from
   `check-lambda-migrate-result.sh`, truncated to 500 bytes. Read the function
   log for the full error, fix the migration, and re-run the workflow.
-- **Dirty migration state.** If a run is killed or fails mid-statement,
+- **Dirty migration state.** If a run fails or is killed mid-file,
   `schema_migrations.dirty` stays `true` and every later run refuses to
-  start. The runner never heals this on its own. Check the state with
-  `SELECT version, dirty FROM schema_migrations;`, repair or finish the
-  half-applied statements by hand, then clear the flag with `force_version`
-  in the Lambda payload (`{"action":"migrate","force_version":N}`) or with
-  `go run ./cmd/server --migrate --migrate-force-version N`. N must be the
-  dirty version (its SQL landed) or the highest lower version that has a
-  migration file (it rolled back). Any other value, or a clean database, is
-  refused. The environment variable `CUDLY_FORCE_MIGRATION_VERSION` is
-  refused when no `force_version` is given with it.
+  start. The runner never heals this on its own. Each migration file runs in
+  one transaction, so a dirty row at version N normally means N's SQL rolled
+  back and its changes are absent. Recover in this order:
+  1. Read the state with `SELECT version, dirty FROM schema_migrations;`.
+  2. Compare the live schema with the migration file for N (for example,
+     check with `\d <table>` that the columns, indexes or constraints it
+     creates exist). Inspect before you choose a version.
+  3. The normal fix is to force the previous version (the highest version
+     below N that has a migration file; numbering has gaps, so it is not
+     always N minus 1). The run then applies N again.
+  4. Force N itself only when the schema really contains all of N's changes.
+     Forcing N on a rolled-back migration marks it applied and loses its DDL
+     permanently while the schema looks fine.
+
+  Force with `force_version` in the Lambda payload
+  (`{"action":"migrate","force_version":V}`) or with
+  `go run ./cmd/server --migrate --migrate-force-version V`. A forced run
+  also applies every pending migration in the same invoke: forcing the
+  previous version re-applies N, forcing N skips it for good. Any other
+  value, or a clean database, is refused. Before any `force_version` run,
+  take a database snapshot. In production, `force_version` is owner-only and
+  needs a second reviewer. `CUDLY_FORCE_MIGRATION_VERSION` is refused by the
+  runner when no `force_version` is given with it.
 - **Timeout.** A run that reaches its budget is cancelled, which can leave
   the row dirty (see above). Raise `timeout_seconds` for a long migration, or
   run `--migrate` from a host without the Lambda ceiling.
@@ -495,9 +523,12 @@ node. So in every environment (dev, staging, prod, any other):
 - Start the 24h clock when migration 000161 is confirmed applied in that
   environment, not when the deploy finishes. On dev and staging the deploy-time
   step runs them and fails the deploy on error (see "Database migrations");
-  elsewhere they run at app start and a failed run is only reported by the `migrations` check of `/health` (see
-  "Post-deploy gate" for the deploy gate's other `/health` check), so a
-  finished deploy is not proof. Confirm with `SELECT version, dirty FROM
+  where `DB_AUTO_MIGRATE` is on they run at app start and a failed run is only
+  reported by the `migrations` check of `/health` (see "Post-deploy gate" for
+  the deploy gate's other `/health` check). In production, `DB_AUTO_MIGRATE`
+  is off (`github-prod.tfvars`), nothing migrates at app start, the check
+  reads `disabled`, and migrations run only by hand. A finished deploy is
+  not proof. Confirm with `SELECT version, dirty FROM
   schema_migrations;` (version 161 or higher and `dirty` false). Confirming
   later only lengthens the wait. The oldest `purchase_attempts` row is not
   proof either: the table stays empty until the first Redshift purchase after
@@ -943,7 +974,7 @@ Multi-account support requires an AES-256-GCM encryption key for stored cloud ac
 
 **Migration 000016** (`000016_aws_wif`) adds `aws_web_identity_token_file` column to `cloud_accounts`, used for AWS Workload Identity Federation (token file path on the host platform).
 
-If `DB_AUTO_MIGRATE=true` (the default), migration 000011 runs automatically on Lambda cold start. To run manually:
+If `DB_AUTO_MIGRATE=true` (the Terraform default; the Go default is false), migration 000011 runs automatically on Lambda cold start. To run manually:
 
 > The URL scheme is `pgx5://`, not `postgres://`. golang-migrate selects its
 > driver by scheme, and `migrate` is built here with `-tags pgx5` so it does not

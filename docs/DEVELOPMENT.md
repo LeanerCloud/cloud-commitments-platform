@@ -117,7 +117,7 @@ Configured in docker-compose.yml:
 - `DB_USER`: Database user (default: `cudly`)
 - `DB_PASSWORD`: Database password (docker-compose: `cudly_local_dev`)
 - `DB_SSL_MODE`: SSL mode (app default: `require`; docker-compose overrides to `disable`)
-- `DB_AUTO_MIGRATE`: Auto-run migrations on startup (default: `true`)
+- `DB_AUTO_MIGRATE`: Auto-run migrations on startup (default: `false`; the Terraform variable `database_auto_migrate` defaults to `true`)
 
 ### Secrets
 
