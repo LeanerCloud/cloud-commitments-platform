@@ -1221,7 +1221,7 @@ let openVisibilityPopover: VisibilityPopoverState | null = null;
 let visOutsideClickHandler: ((e: MouseEvent) => void) | null = null;
 let visEscKeyHandler: ((e: KeyboardEvent) => void) | null = null;
 
-function closeVisibilityPopover(): void {
+export function closeVisibilityPopover(): void {
   if (!openVisibilityPopover) return;
   const { el, trigger } = openVisibilityPopover;
   el.remove();
@@ -2396,7 +2396,7 @@ async function openCreatePlanFromBottomBox(snapshot: LocalRecommendation[]): Pro
   openCreatePlanModal(snapshot as unknown as readonly api.Recommendation[]);
 }
 
-function renderRecommendationsList(loadedRecs: LocalRecommendation[]): void {
+export function renderRecommendationsList(loadedRecs: LocalRecommendation[]): void {
   const container = document.getElementById('recommendations-list');
   if (!container) return;
 
