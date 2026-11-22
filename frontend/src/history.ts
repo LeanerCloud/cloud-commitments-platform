@@ -29,7 +29,7 @@ import { hasNoCommitments, isRealTerm, NO_RECOMMENDATIONS_LABEL, NO_RECOMMENDATI
 import { openHistoryColumnPopover, renderHistoryFilterButton, closeOpenHistoryPopover } from './lib/history-filter-popover';
 import type { PurchaseHistoryColumnId, ApprovalQueueColumnId } from './state';
 import { historyState } from './historyflow/historyState';
-import { REVOCATION_PENDING_CONFIRMATION_COPY, AWS_MARKETPLACE_FEE_PERCENT, AWS_MARKETPLACE_NET_FACTOR, AWS_MARKETPLACE_BUYER_DISCOUNT_PERCENT, AWS_MARKETPLACE_BUYER_DISCOUNT } from './history';
+import { REVOCATION_PENDING_CONFIRMATION_COPY, AWS_MARKETPLACE_FEE_PERCENT, AWS_MARKETPLACE_NET_FACTOR, AWS_MARKETPLACE_BUYER_DISCOUNT_PERCENT, AWS_MARKETPLACE_BUYER_DISCOUNT } from './historyflow/constants';
 import { VALID_PROVIDERS, NO_SAVINGS_STATUSES, boughtNothing, noSavingsCell, STATUS_CLAMP_CHARS, statusFullTextHtml, normalizeStatus, isInFlightStatus, historyDisplayStatus, statusBadgeHTML, buildStatusChipRowHTML, MUTED_DASH, NO_RECS_HTML, termCell, historyDate, providerCell, upfrontCell, roundForDisplay } from './history';
 import type { StatusFilter } from './history';
 import { _fourEyesMode, refreshFourEyesMode, canCancelPendingRow, canApproveUnder4Eyes, rbacAllowsApprove, canApprovePendingRow, canRetryFailedRow, canRevokeCompletedRow, RETRY_THRESHOLD, retryThresholdReached, canSellOnMarketplace, canCancelMarketplaceListing } from './history';
@@ -44,27 +44,9 @@ import { APPROVAL_QUEUE_FILTER_SCOPE, isPendingRow, APPROVAL_QUEUE_NUMERIC_COLUM
 import { historyLoadGeneration, historyPaging, loadMoreInFlight, viewPlanHistory, snapDateInputsToPurchases, loadHistory, resetHistoryPaging, updateHistoryPaging, loadMoreHistory, renderTruncationNotices, renderHistorySummary } from './history';
 import { setupHistoryHandlers, initHistoryDateRange } from './history';
 
-// Copy for a revoke whose Azure Return is not proven (#1522, #1584); keep it equal to
-// revokePendingConfirmationMessage in internal/api/handler_purchases_revoke.go.
-const REVOCATION_PENDING_CONFIRMATION_COPY =
-  'We could not confirm whether the refund for this purchase went through. Check the reservation in the Azure portal before trying again: if it still shows as active after about 90 minutes, you can revoke again.';
-
 // Mirrors the concrete providers of backend validProviders in internal/api/validation.go;
 // keep the two in sync.
 const VALID_PROVIDERS: api.Provider[] = ['aws', 'azure', 'gcp'];
-
-// AWS Marketplace fee/pricing constants (must stay in sync with handler_marketplace.go).
-// awsMarketplaceFeePercent: transaction fee deducted from listing proceeds (published by AWS).
-const AWS_MARKETPLACE_FEE_PERCENT = 12;
-
-// awsMarketplaceNetFactor: fraction of list price the seller receives after the fee.
-const AWS_MARKETPLACE_NET_FACTOR = 1 - AWS_MARKETPLACE_FEE_PERCENT / 100;
-
-// Discount off residual RI value for the default list price; 1 - 5/100 mirrors
-// awsMarketplaceBuyerDiscountFactor (0.95) in internal/api/handler_marketplace.go.
-const AWS_MARKETPLACE_BUYER_DISCOUNT_PERCENT = 5;
-
-const AWS_MARKETPLACE_BUYER_DISCOUNT = 1 - AWS_MARKETPLACE_BUYER_DISCOUNT_PERCENT / 100;
 
 type StatusFilter = 'all' | 'pending' | 'completed' | 'failed' | 'expired' | 'cancelled';
 
