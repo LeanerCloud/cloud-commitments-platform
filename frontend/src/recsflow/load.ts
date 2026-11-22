@@ -9,7 +9,7 @@ import { resetExpandedCells, recsState } from './recsState';
 import { visibleColumns } from './columnPrefs';
 import { renderRecommendationsList } from './renderList';
 import { triggerAutoRefreshIfStale } from './refresh';
-import { renderLookbackToolbar } from '../recommendations';
+import { renderLookbackToolbar } from './lookback';
 
 /**
  * Inject resolved GlobalConfig defaults into the module cache.
