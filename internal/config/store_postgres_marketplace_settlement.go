@@ -339,8 +339,8 @@ func (s *PostgresStore) GetMarketplaceListingProceedsTotals(ctx context.Context,
 	}
 	query := `
 		SELECT purchase_id, currency,
-		       COALESCE(SUM(proceeds_received), 0)::float8,
-		       COALESCE(SUM(fee_paid), 0)::float8,
+		       (COALESCE(SUM(proceeds_received), 0) * 100)::bigint,
+		       (COALESCE(SUM(fee_paid), 0) * 100)::bigint,
 		       count(proceeds_received),
 		       count(*) - count(proceeds_received)
 		FROM marketplace_listing_settlements
@@ -358,7 +358,7 @@ func (s *PostgresStore) GetMarketplaceListingProceedsTotals(ctx context.Context,
 	var out []MarketplaceListingProceedsTotal
 	for rows.Next() {
 		var t MarketplaceListingProceedsTotal
-		if err := rows.Scan(&t.PurchaseID, &t.Currency, &t.ProceedsReceived, &t.FeePaid,
+		if err := rows.Scan(&t.PurchaseID, &t.Currency, &t.ProceedsReceivedCents, &t.FeePaidCents,
 			&t.SettledListings, &t.UnsettledListings); err != nil {
 			return nil, fmt.Errorf("failed to scan marketplace listing proceeds total: %w", err)
 		}

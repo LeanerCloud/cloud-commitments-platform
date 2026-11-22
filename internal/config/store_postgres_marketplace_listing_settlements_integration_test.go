@@ -15,6 +15,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sync"
 	"testing"
 	"time"
@@ -122,8 +123,8 @@ func requireTotal(ctx context.Context, t *testing.T, store *PostgresStore, id st
 	got := totals[0]
 	assert.Equal(t, id, got.PurchaseID)
 	assert.Equal(t, "USD", got.Currency)
-	assert.InDelta(t, proceeds, got.ProceedsReceived, 1e-9, "proceeds total")
-	assert.InDelta(t, fee, got.FeePaid, 1e-9, "fee total")
+	assert.Equal(t, int64(math.Round(proceeds*100)), got.ProceedsReceivedCents, "proceeds total")
+	assert.Equal(t, int64(math.Round(fee*100)), got.FeePaidCents, "fee total")
 	assert.Equal(t, settled, got.SettledListings, "settled listings")
 	assert.Equal(t, unsettled, got.UnsettledListings, "unsettled listings")
 	assert.True(t, got.IsEstimate, "proceeds totals are estimates")
@@ -143,6 +144,7 @@ func TestMarketplaceListingSettlements_Postgres(t *testing.T) {
 	t.Run("ResumedClaimKeepsListing", func(t *testing.T) { checkResumedClaimKeepsListing(ctx, t, store, pool) })
 	t.Run("ConcurrentPollsSettleSupersededOnce", func(t *testing.T) { checkConcurrentSupersededSettles(ctx, t, store, pool) })
 	t.Run("ConcurrentRelistAndPollKeepProceedsOnce", func(t *testing.T) { checkConcurrentRelistAndPoll(ctx, t, store, pool) })
+	t.Run("TotalsAreExactCents", func(t *testing.T) { checkTotalsExactCents(ctx, t, store) })
 	t.Run("TotalsOfUnknownPurchases", func(t *testing.T) { checkTotalsOfUnknownPurchases(ctx, t, store) })
 	t.Run("TotalsScopedToAccount", func(t *testing.T) { checkTotalsScopedToAccount(ctx, t, store) })
 }
@@ -510,4 +512,23 @@ func checkTotalsScopedToAccount(ctx context.Context, t *testing.T, store *Postgr
 	assert.Empty(t, other, "another account's scope must not see the purchase")
 	_, err = store.GetMarketplaceListingProceedsTotals(ctx, []string{id}, nil, nil)
 	require.ErrorIs(t, err, ErrMarketplaceTotalsScopeRequired)
+}
+
+// Issue #1586: totals are integer cents, so sums of amounts a float cannot
+// hold exactly (0.10 + 0.20, 440.09 + 60.01) come back exact.
+func checkTotalsExactCents(ctx context.Context, t *testing.T, store *PostgresStore) {
+	const id = "mls-cents"
+	seedCanceledSeenListing(ctx, t, store, id, "ril-cents-a")
+	relist(ctx, t, store, id, "ril-cents-b")
+	applied, err := store.SettleMarketplaceListing(ctx, canceledSettlement(id, "ril-cents-a", 0.10, 440.09))
+	require.NoError(t, err)
+	require.True(t, applied)
+	applied, err = store.SettleMarketplaceListing(ctx, closedSettlement(id, "ril-cents-b", 0.20, 60.01))
+	require.NoError(t, err)
+	require.True(t, applied)
+	totals, err := store.GetMarketplaceListingProceedsTotals(ctx, []string{id}, nil, acctScope)
+	require.NoError(t, err)
+	require.Len(t, totals, 1)
+	assert.Equal(t, int64(30), totals[0].ProceedsReceivedCents)
+	assert.Equal(t, int64(50010), totals[0].FeePaidCents)
 }

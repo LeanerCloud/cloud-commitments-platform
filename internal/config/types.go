@@ -1400,10 +1400,11 @@ type MarketplaceListingProceedsTotal struct {
 	PurchaseID string
 	// Currency is the ISO code of the amounts; the poller records USD only.
 	Currency string
-	// ProceedsReceived is the seller's net proceeds and FeePaid the AWS fee,
-	// summed over the settled listings.
-	ProceedsReceived float64
-	FeePaid          float64
+	// ProceedsReceivedCents is the seller's net proceeds and FeePaidCents the
+	// AWS fee, summed over the settled listings, in whole cents of Currency
+	// (integer minor units: money is never summed or carried as a float).
+	ProceedsReceivedCents int64
+	FeePaidCents          int64
 	// SettledListings counts the listings whose amounts are recorded, and
 	// UnsettledListings those still without amounts (not ended yet, ended
 	// with an unknown price, or ended before the poller saw them).

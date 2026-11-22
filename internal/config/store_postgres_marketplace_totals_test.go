@@ -18,11 +18,13 @@ func TestGetMarketplaceListingProceedsTotalsScopesToAccountAndLabelsEstimate(t *
 	pool.ExpectQuery(`purchase_history_id IN \(SELECT id FROM purchase_history WHERE \(cloud_account_id = ANY\(\$2\)`).
 		WithArgs([]string{"ri-1"}, []string{"uuid-1"}).
 		WillReturnRows(pgxmock.NewRows([]string{"purchase_id", "currency", "p", "f", "s", "u"}).
-			AddRow("ri-1", "USD", 88.0, 12.0, 1, 0))
+			AddRow("ri-1", "USD", int64(8800), int64(1200), 1, 0))
 	totals, err := storeWith(pool).GetMarketplaceListingProceedsTotals(context.Background(), []string{"ri-1"}, []string{"uuid-1"}, nil)
 	require.NoError(t, err)
 	require.Len(t, totals, 1)
 	assert.True(t, totals[0].IsEstimate)
+	assert.Equal(t, int64(8800), totals[0].ProceedsReceivedCents)
+	assert.Equal(t, int64(1200), totals[0].FeePaidCents)
 	require.NoError(t, pool.ExpectationsWereMet())
 }
 
