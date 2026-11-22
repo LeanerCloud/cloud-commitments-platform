@@ -13,7 +13,7 @@ import { BackendPlan, planMatchesProvider, extractPlanInfo, isPlanOverdue, PRESE
 import { healthBadgeHtml } from './planHealth';
 import { loadPlannedPurchases } from './plannedLoad';
 import { editPlan } from './planEdit';
-import { openAddPurchasesModal } from '../plans';
+import { openAddPurchasesModal } from './addPurchases';
 
 // Request generations for loadPlans / loadPlannedPurchases (#1957). A filter
 // change starts a new load while an older one may still be in flight; only the
