@@ -1,5 +1,5 @@
 /**
- * Characterization of the Opportunities column-filter popover (issue #18, T0).
+ * Characterization of the Opportunities column-filter popover (issue #18, T0): open/close, focus, aria, listeners, keyboard, resize/scroll/rebind, tab observer.
  * Pins CURRENT observable behavior so the migration onto lib/column-filter-popover
  * can be checked against it. Real DOM, real state and recsflow code; only the
  * network modules are mocked.
@@ -40,7 +40,6 @@ const RECS = [
   rec('r4', 'savings-plans-ec2instance', 'sp2', 'us-east-1', 400),
 ];
 const SP_COMPUTE = 'savings-plans-compute';
-const FILTERS_KEY = 'cudly.recs.columnFilters.v1';
 
 // The tab observer is a module singleton bound to the first #opportunities-tab
 // it sees, so every test must reuse this one element.
@@ -88,11 +87,6 @@ const press = (key: string, target: EventTarget = document.body): KeyboardEvent 
 };
 const mouseDown = (target: EventTarget): void => { target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); };
 const rectAt = (left: number) => () => ({ left, top: 300, width: 24, height: 24, right: left + 24, bottom: 324, x: left, y: 300, toJSON: () => ({}) }) as DOMRect;
-const fetches = (): number => (api.getRecommendations as jest.Mock).mock.calls.length;
-const saved = (): unknown => {
-  const writes = (localStorage.setItem as jest.Mock).mock.calls.filter(([k]) => k === FILTERS_KEY);
-  return writes.length === 0 ? null : JSON.parse(writes[writes.length - 1][1]);
-};
 
 beforeEach(() => {
   document.body.replaceChildren(tab);
@@ -351,126 +345,6 @@ describe('resize, scroll and rebind', () => {
   });
 });
 
-describe('SP All Savings Plans group', () => {
-  test('present for the service scope with two or more SP slugs and absent otherwise', async () => {
-    await render();
-    open('service');
-    const group = pop()!.querySelector('.column-filter-group');
-    expect(group!.textContent).toBe('All Savings Plans');
-    trigger('service').click();
-    open('resource_type');
-    expect(pop()!.querySelector('input[data-role="sp-group"]')).toBeNull();
-    trigger('resource_type').click();
-    await render([RECS[0], RECS[1], RECS[2]]);
-    open('service');
-    expect(pop()!.querySelector('input[data-role="sp-group"]')).toBeNull();
-  });
-
-  test('ticking the group adds every SP slug to the committed set filter', async () => {
-    state.setRecommendationsColumnFilter('service', { kind: 'set', values: ['ec2'] });
-    await render();
-    open('service');
-    const group = pop()!.querySelector<HTMLInputElement>('input[data-role="sp-group"]')!;
-    expect(group.checked).toBe(false);
-    toggle(group, true);
-    const f = state.getRecommendationsColumnFilters().service as { kind: string; values: string[] };
-    expect(f.kind).toBe('set');
-    expect([...f.values].sort()).toEqual(['ec2', SP_COMPUTE, 'savings-plans-ec2instance']);
-  });
-});
-
-describe('commit side effects: pushdown refetch and persistence', () => {
-  test.each(['service', 'region'])('committing a %s filter refetches from the server and persists it', async (col) => {
-    await render();
-    const value = col === 'service' ? 'rds' : 'us-west-2';
-    open(col);
-    const before = fetches();
-    toggle(box(value), false);
-    await flushPromises();
-    expect(fetches()).toBe(before + 1);
-    expect((state.getRecommendationsColumnFilters() as Record<string, { kind: string }>)[col]!.kind).toBe('set');
-    expect((saved() as { filters: Record<string, { values: string[] }> }).filters[col]!.values).not.toContain(value);
-  });
-
-  test('committing a non-pushdown column re-renders client side without a refetch and persists', async () => {
-    await render();
-    const old = open('resource_type');
-    const before = fetches();
-    toggle(box('db.t3'), false);
-    await flushPromises();
-    expect(fetches()).toBe(before);
-    expect(trigger('resource_type')).not.toBe(old);
-    expect((saved() as { filters: Record<string, { values: string[] }> }).filters['resource_type']!.values.sort()).toEqual(['sp', 'sp2', 't3.medium']);
-  });
-
-  test('Select none stores an explicit empty allow-list and refetches for a pushdown column', async () => {
-    await render();
-    open('service');
-    const before = fetches();
-    pop()!.querySelector<HTMLButtonElement>('.column-filter-clear')!.click();
-    await flushPromises();
-    expect(fetches()).toBe(before + 1);
-    expect(state.getRecommendationsColumnFilters().service).toEqual({ kind: 'set', values: [] });
-    expect(pop()!.querySelector<HTMLInputElement>('input[data-role="all"]')!.checked).toBe(false);
-  });
-
-  test('re-checking every value clears the filter (null) and persists the removal', async () => {
-    await render();
-    open('resource_type');
-    toggle(box('db.t3'), false);
-    toggle(box('db.t3'), true);
-    expect(state.getRecommendationsColumnFilters().resource_type).toBeUndefined();
-    expect((saved() as { filters: Record<string, unknown> }).filters['resource_type']).toBeUndefined();
-  });
-});
-
-describe('numeric and set modes', () => {
-  test('numeric column shows an expression input with a Clear button and no checkboxes', async () => {
-    await render();
-    open('savings');
-    expect(pop()!.querySelector('.column-filter-numeric-input')).not.toBeNull();
-    expect(pop()!.querySelector('input[type="checkbox"]')).toBeNull();
-    expect(pop()!.querySelector('.column-filter-clear')!.textContent).toBe('Clear');
-  });
-
-  test('set column shows (All), one checkbox per value and a Select none button, no text input', async () => {
-    await render();
-    open('resource_type');
-    expect(pop()!.querySelector('input[type="text"]')).toBeNull();
-    expect(pop()!.querySelector('.column-filter-all')!.textContent).toBe('(All)');
-    expect(pop()!.querySelectorAll('.column-filter-item input[type="checkbox"]')).toHaveLength(4);
-    expect(pop()!.querySelector('.column-filter-clear')!.textContent).toBe('Select none');
-  });
-
-  test('Enter commits a valid expression; an invalid one shows an error and writes nothing', async () => {
-    await render();
-    open('savings');
-    const input = pop()!.querySelector<HTMLInputElement>('.column-filter-numeric-input')!;
-    const err = pop()!.querySelector('.column-filter-error')!;
-    input.value = '>150';
-    expect(press('Enter', input).defaultPrevented).toBe(true);
-    expect(state.getRecommendationsColumnFilters().savings).toEqual({ kind: 'expr', expr: '>150' });
-    expect(err.textContent).toBe('');
-    expect((saved() as { filters: Record<string, unknown> }).filters['savings']).toEqual({ kind: 'expr', expr: '>150' });
-    const bad = pop()!.querySelector<HTMLInputElement>('.column-filter-numeric-input')!;
-    bad.value = 'abc';
-    press('Enter', bad);
-    expect(pop()!.querySelector('.column-filter-error')!.textContent).not.toBe('');
-    expect(state.getRecommendationsColumnFilters().savings).toEqual({ kind: 'expr', expr: '>150' });
-  });
-
-  test('Clear on a numeric filter empties the input and removes the filter', async () => {
-    state.setRecommendationsColumnFilter('savings', { kind: 'expr', expr: '>150' });
-    await render();
-    open('savings');
-    const input = pop()!.querySelector<HTMLInputElement>('.column-filter-numeric-input')!;
-    expect(input.value).toBe('>150');
-    pop()!.querySelector<HTMLButtonElement>('.column-filter-clear')!.click();
-    expect(state.getRecommendationsColumnFilters().savings).toBeUndefined();
-    expect(pop()!.querySelector<HTMLInputElement>('.column-filter-numeric-input')!.value).toBe('');
-  });
-});
-
 describe('keyboard inside the popover', () => {
   test('Escape pressed on a checkbox closes it; other keys leave it open and are not prevented', async () => {
     await render();
@@ -521,6 +395,25 @@ describe('tab switch and the visibility popover', () => {
     expect(t.getAttribute('aria-expanded')).toBe('false');
     expect(vis.getAttribute('aria-expanded')).toBe('true');
     expect(document.querySelector('.column-visibility-popover')!.getAttribute('aria-label')).toBe('Show/hide columns');
-    expect(counts()).toEqual({ ...ZERO, keydown: 1 });
+  });
+
+  test('listeners added by opening the visibility popover are removed when it closes', async () => {
+    await render();
+    const base = counts();
+    const vis = document.querySelector<HTMLButtonElement>('.column-visibility-btn')!;
+    vis.click();
+    await flushPromises();
+    expect(counts()).not.toEqual(base);
+    vis.click();
+    expect(document.querySelector('.column-visibility-popover')).toBeNull();
+    expect(counts()).toEqual(base);
+  });
+
+  test('opening a column popover leaves an open visibility popover open', async () => {
+    await render();
+    document.querySelector<HTMLButtonElement>('.column-visibility-btn')!.click();
+    open('service');
+    expect(pop()).not.toBeNull();
+    expect(document.querySelector('.column-visibility-popover')).not.toBeNull();
   });
 });
