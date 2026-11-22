@@ -1,5 +1,5 @@
 import type { Chart } from 'chart.js';
-import type { renderSavingsByService } from '../dashboard';
+import type { renderSavingsByService } from './byService';
 
 export const dashboardState = {
   // Separate Chart instance for the trend widget so it doesn't conflict with
