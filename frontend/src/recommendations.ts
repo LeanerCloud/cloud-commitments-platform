@@ -1,7 +1,8 @@
 /**
- * Recommendations module for CUDly
+ * Recommendations module entry point for CUDly. The implementation lives in
+ * ./recsflow/*; this file only re-exports the public API so existing
+ * importers keep working (issue #210).
  */
-
 
 // Re-export the shared primitives so existing consumers that import from
 // recommendations.ts keep working without import-path churn (issue #166).
