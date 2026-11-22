@@ -47,12 +47,12 @@ import { fetchOverridesForAccounts } from './lib/overrides';
 import { ownValue } from './lib/own-property';
 import { HOURS_PER_MONTH } from './lib/hours-per-month';
 import { anchorInView } from './lib/table-scroll';
-import { clearPurchaseModalRecommendations, recsState } from './recsflow/recsState';
+import { expandedCells, expandedSpGroups, resetExpandedCells, clearPurchaseModalRecommendations, recsState } from './recsflow/recsState';
 // Re-export the shared primitives so existing consumers that import from
 // recommendations.ts keep working without import-path churn (issue #166).
 export { parseNumericFilter } from './lib/column-filters';
 export type { ParsedNumericFilter } from './lib/column-filters';
-export { getPurchaseModalSession, getPurchaseModalRecommendations, clearPurchaseModalRecommendations } from './recsflow/recsState';
+export { getPurchaseModalSession, getPurchaseModalRecommendations, clearPurchaseModalRecommendations, resetExpandedCells } from './recsflow/recsState';
 
 /**
  * Returns the display name for a cloud account ID, falling back to the raw
@@ -70,20 +70,6 @@ export function fanOutBucketAccountLabel(b: FanOutBucket): string {
   const accountId = b.recs[0]?.cloud_account_id;
   return accountId ? getAccountName(accountId) : 'Unattributed';
 }
-
-// issues #225 + #226: expand/collapse state for cell grouping.
-// Contains the cellKey strings of cells the user has explicitly expanded.
-// Cleared on every loadRecommendations() entry (page load, tab switch back
-// to Opportunities, provider/account Global filter change, manual refresh,
-// lookback change, stale auto-refresh — see resetExpandedCells() call at
-// the top of loadRecommendations). Survives per-column filter/sort/period
-// re-renders, which go through rerenderRecommendations() instead.
-const expandedCells = new Set<string>();
-// issue #135: expand/collapse state for SP plan-type group rows.
-// Contains the spGroupKey strings the user has explicitly expanded.
-// Cleared together with expandedCells on every loadRecommendations() entry
-// (see resetExpandedCells); survives column-filter/sort/period re-renders.
-const expandedSpGroups = new Set<string>();
 
 // #284 (CR follow-up): guard against concurrent stale-load refreshes. If a
 // background refresh is already in flight, any subsequent stale detection
@@ -147,16 +133,6 @@ const LOOKBACK_NO_PERMISSION_TOOLTIP =
 export function seedGlobalDefaults(term: 1 | 3, payment: CompatPayment): void {
   recsState.cachedGlobalDefaultTerm = term;
   recsState.cachedGlobalDefaultPayment = payment;
-}
-
-/**
- * Reset cell and SP-group expand/collapse state. Exported for testing only.
- * Call in beforeEach to ensure tests don't share module-level state.
- */
-export function resetExpandedCells(): void {
-  expandedCells.clear();
-  recsState.lastVisibleGroupKeys = [];
-  expandedSpGroups.clear();
 }
 
 /**

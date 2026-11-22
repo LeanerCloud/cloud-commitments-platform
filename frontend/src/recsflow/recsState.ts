@@ -98,6 +98,31 @@ export function getPurchaseModalSession(): number {
   return recsState.purchaseModalOpenToken;
 }
 
+// issues #225 + #226: expand/collapse state for cell grouping.
+// Contains the cellKey strings of cells the user has explicitly expanded.
+// Cleared on every loadRecommendations() entry (page load, tab switch back
+// to Opportunities, provider/account Global filter change, manual refresh,
+// lookback change, stale auto-refresh — see resetExpandedCells() call at
+// the top of loadRecommendations). Survives per-column filter/sort/period
+// re-renders, which go through rerenderRecommendations() instead.
+export const expandedCells = new Set<string>();
+
+// issue #135: expand/collapse state for SP plan-type group rows.
+// Contains the spGroupKey strings the user has explicitly expanded.
+// Cleared together with expandedCells on every loadRecommendations() entry
+// (see resetExpandedCells); survives column-filter/sort/period re-renders.
+export const expandedSpGroups = new Set<string>();
+
+/**
+ * Reset cell and SP-group expand/collapse state. Exported for testing only.
+ * Call in beforeEach to ensure tests don't share module-level state.
+ */
+export function resetExpandedCells(): void {
+  expandedCells.clear();
+  recsState.lastVisibleGroupKeys = [];
+  expandedSpGroups.clear();
+}
+
 /**
  * Get the recommendations currently loaded in the purchase modal,
  * filtered to only those rows the user has kept "included" (i.e., checked).
