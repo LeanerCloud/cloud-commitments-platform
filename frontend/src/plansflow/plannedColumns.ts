@@ -6,7 +6,7 @@ import { rowMatchesProvider } from '../lib/upcoming-scope';
 import { formatPaymentOption, formatTermShort } from '../lib/table-format';
 import { openColumnFilterPopover, sortedDistinctValues } from '../lib/column-filter-popover';
 import { plansState } from './plansState';
-import { renderPlannedPurchasesInternal } from '../plans';
+import { renderPlannedPurchasesInternal } from './plannedLoad';
 
 // ---------------------------------------------------------------------------
 // Per-column filter pipeline (issue #166 follow-up to #570).
