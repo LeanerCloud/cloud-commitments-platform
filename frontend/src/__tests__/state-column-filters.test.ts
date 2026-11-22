@@ -124,6 +124,48 @@ describe('slice isolation', () => {
   });
 });
 
+describe('cross-slice clearing', () => {
+  const populate = (): void => {
+    cf.setRiExchangeColumnFilter('reason', { kind: 'set', values: ['x'] });
+    cf.setActiveRiColumnFilter('instance_type', { kind: 'expr', expr: '>1' });
+    cf.setPurchaseHistoryColumnFilter('region', { kind: 'set', values: ['y'] });
+    cf.setApprovalQueueColumnFilter('account', { kind: 'expr', expr: '<9' });
+  };
+  const expected: Record<string, Record<string, unknown>> = {
+    riExchange: { reason: { kind: 'set', values: ['x'] } },
+    activeRi: { instance_type: { kind: 'expr', expr: '>1' } },
+    purchaseHistory: { region: { kind: 'set', values: ['y'] } },
+    approvalQueue: { account: { kind: 'expr', expr: '<9' } },
+  };
+  const clearers: Array<[string, () => void]> = [
+    ['riExchange', cf.clearAllRiExchangeColumnFilters],
+    ['activeRi', cf.clearAllActiveRiColumnFilters],
+    ['purchaseHistory', cf.clearAllPurchaseHistoryColumnFilters],
+    ['approvalQueue', cf.clearAllApprovalQueueColumnFilters],
+  ];
+  const nullers: Array<[string, () => void]> = [
+    ['riExchange', () => cf.setRiExchangeColumnFilter('reason', null)],
+    ['activeRi', () => cf.setActiveRiColumnFilter('instance_type', null)],
+    ['purchaseHistory', () => cf.setPurchaseHistoryColumnFilter('region', null)],
+    ['approvalQueue', () => cf.setApprovalQueueColumnFilter('account', null)],
+  ];
+  const actual = (): Record<string, unknown> => ({
+    riExchange: cf.getRiExchangeColumnFilters(),
+    activeRi: cf.getActiveRiColumnFilters(),
+    purchaseHistory: cf.getPurchaseHistoryColumnFilters(),
+    approvalQueue: cf.getApprovalQueueColumnFilters(),
+  });
+
+  test.each([...clearers.map(([n, f]) => ['clearAll', n, f] as const), ...nullers.map(([n, f]) => ['set null', n, f] as const)])(
+    '%s on %s empties only that slice',
+    (_kind, name, act) => {
+      populate();
+      act();
+      expect(actual()).toEqual({ ...expected, [name]: {} });
+    },
+  );
+});
+
 describe('../state re-exports', () => {
   test('are the same functions, sharing the same state', () => {
     expect(state.getRiExchangeColumnFilters).toBe(cf.getRiExchangeColumnFilters);
