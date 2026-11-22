@@ -543,7 +543,7 @@ export function openNewPlanModal(): void {
  * Guarded by rampHandlersInstalled so re-opening the plan modal does not
  * stack duplicate listeners on the static modal elements (H3, feedback_event_listener_dedup).
  */
-function setupRampScheduleHandlers(): void {
+export function setupRampScheduleHandlers(): void {
   if (rampHandlersInstalled) return;
   rampHandlersInstalled = true;
 
@@ -620,7 +620,7 @@ function setupRampScheduleHandlers(): void {
 /**
  * Update term and payment options based on current provider/service selection
  */
-function updateCommitmentOptions(): void {
+export function updateCommitmentOptions(): void {
   const providerSelect = document.getElementById('plan-provider') as HTMLSelectElement | null;
   const serviceSelect = document.getElementById('plan-service') as HTMLSelectElement | null;
   const termSelect = document.getElementById('plan-term') as HTMLSelectElement | null;
@@ -642,7 +642,7 @@ function updateCommitmentOptions(): void {
 /**
  * Update payment options based on selected term
  */
-function updatePaymentOptionsForTerm(): void {
+export function updatePaymentOptionsForTerm(): void {
   const providerSelect = document.getElementById('plan-provider') as HTMLSelectElement | null;
   const serviceSelect = document.getElementById('plan-service') as HTMLSelectElement | null;
   const termSelect = document.getElementById('plan-term') as HTMLSelectElement | null;
@@ -660,7 +660,7 @@ function updatePaymentOptionsForTerm(): void {
 /**
  * Update term options based on selected payment
  */
-function updateTermOptionsForPayment(): void {
+export function updateTermOptionsForPayment(): void {
   const providerSelect = document.getElementById('plan-provider') as HTMLSelectElement | null;
   const serviceSelect = document.getElementById('plan-service') as HTMLSelectElement | null;
   const termSelect = document.getElementById('plan-term') as HTMLSelectElement | null;
@@ -678,7 +678,7 @@ function updateTermOptionsForPayment(): void {
 /**
  * Validate and fix invalid term/payment combinations
  */
-function validateAndFixCombination(): void {
+export function validateAndFixCombination(): void {
   const providerSelect = document.getElementById('plan-provider') as HTMLSelectElement | null;
   const serviceSelect = document.getElementById('plan-service') as HTMLSelectElement | null;
   const termSelect = document.getElementById('plan-term') as HTMLSelectElement | null;
@@ -698,7 +698,7 @@ function validateAndFixCombination(): void {
   }
 }
 
-function syncCustomRampConfigToSelection(): void {
+export function syncCustomRampConfigToSelection(): void {
   const checked = document.querySelector<HTMLInputElement>('input[name="ramp-schedule"]:checked');
   setCustomRampConfigVisible(checked?.value === 'custom');
 }
@@ -708,7 +708,7 @@ function syncCustomRampConfigToSelection(): void {
  * which a preset fills with 0 days, is skipped by native validation instead of
  * blocking Save on a control the user cannot reach (#1536).
  */
-function setCustomRampConfigVisible(visible: boolean): void {
+export function setCustomRampConfigVisible(visible: boolean): void {
   document.getElementById('custom-ramp-config')?.classList.toggle('hidden', !visible);
   for (const id of ['ramp-step-percent', 'ramp-interval-days']) {
     const input = document.getElementById(id) as HTMLInputElement | null;
@@ -719,7 +719,7 @@ function setCustomRampConfigVisible(visible: boolean): void {
 /**
  * Update custom config fields based on the selected ramp schedule preset
  */
-function updateCustomConfigFromPreset(rampSchedule: string): void {
+export function updateCustomConfigFromPreset(rampSchedule: string): void {
   const stepPercentInput = document.getElementById('ramp-step-percent') as HTMLInputElement;
   const intervalDaysInput = document.getElementById('ramp-interval-days') as HTMLInputElement;
 
