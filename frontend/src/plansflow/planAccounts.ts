@@ -4,7 +4,7 @@ import { createIcon } from '../icons';
 import { groupSelection } from '../lib/plan-groups';
 import { plansState } from './plansState';
 import { schedulePlanDraftSave } from './planDraft';
-import { refreshPlanSaveButtonState } from '../plans';
+import { refreshPlanSaveButtonState } from './planSave';
 
 /**
  * Render selected account chips in the plan modal
