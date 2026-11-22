@@ -122,6 +122,7 @@ func (r *Router) registerRoutes() {
 		{ExactPath: "/api/recommendations", Method: "GET", Handler: r.getRecommendationsHandler, Auth: AuthUser},
 		{ExactPath: "/api/insurance/comparison", Method: "GET", Handler: r.getInsuranceComparisonHandler, Auth: AuthUser},
 		{ExactPath: "/api/insurance/status", Method: "GET", Handler: r.getInsuranceStatusHandler, Auth: AuthUser},
+		{PathPrefix: "/api/insurance/recommendations/", Method: "GET", Handler: r.getInsuranceRecommendationHandler, Auth: AuthUser},
 		{ExactPath: "/api/recommendations/freshness", Method: "GET", Handler: r.getRecommendationsFreshnessHandler, Auth: AuthUser},
 		// AuthUser: any signed-in user can trigger refresh; the handler
 		// then enforces requirePermission(view, recommendations) so

@@ -52,6 +52,10 @@ func (r *Router) getInsuranceComparisonHandler(ctx context.Context, req *events.
 	return r.h.getInsuranceComparison(ctx, req)
 }
 
+func (r *Router) getInsuranceRecommendationHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
+	return r.h.getInsuranceRecommendation(ctx, req, params["id"])
+}
+
 func (r *Router) getRecommendationsFreshnessHandler(ctx context.Context, req *events.LambdaFunctionURLRequest, params map[string]string) (any, error) {
 	return r.h.getRecommendationsFreshness(ctx, req)
 }

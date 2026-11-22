@@ -117,6 +117,73 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
 
+  /api/insurance/recommendations/{id}:
+    get:
+      operationId: getInsuranceRecommendation
+      security:
+        - bearerAuth: []
+        - apiKeyAuth: []
+      tags: [Insurance]
+      summary: Read the Archera quote for one recommendation
+      description: >
+        Requires view:recommendations and unrestricted account scope; scoped
+        sessions receive 404 before any lookup. Same configuration gate as the
+        plan comparison. The stored recommendation is matched to exactly one
+        Archera line item; with no match the response has status "unavailable"
+        and no figures, and more than one match is a 409. Read-only: it does not
+        purchase, bind insurance or change recommendation eligibility. Vendor
+        errors are mapped to fixed client messages, without implicit retries.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Stored recommendation id.
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Quote for the recommendation, or an unavailable status with no figures.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ArcheraRecommendationComparison'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: More than one Archera line item matches the recommendation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '422':
+          description: The stored recommendation cannot be projected to a supported savings plan identity.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '429':
+          description: Vendor rate limit; Retry-After is present only for a positive vendor delay, rounded up to seconds.
+          headers:
+            Retry-After:
+              description: Seconds before retrying; no automatic retry is performed.
+              schema: {type: integer, minimum: 1}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '502':
+          description: Vendor authentication, missing organization/plan, service or transport failure, or an inexact decimal.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '503':
+          description: Missing configuration, unsupported vendor client, or the configured key could not be resolved.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '504':
+          description: The vendor reads did not finish before the deadline.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+
   # ---- Dashboard ----------------------------------------------------------
   /api/dashboard/summary:
     get:
@@ -6386,7 +6453,7 @@ components:
 
     ArcheraRecommendationComparison:
       type: object
-      description: Existing internal recommendation DTO contract; no HTTP operation is advertised here. Resource association does not establish comparable economics.
+      description: Returned by GET /api/insurance/recommendations/{id}. Resource association does not establish comparable economics.
       required: [recommendation_id, status, reason, amount_provenance, economic_status, fetched_at, currency, currency_note, comparable_delta, premium_included, current, candidates, non_gating_disclosure, sponsorship_disclosure]
       properties:
         recommendation_id: {type: string}
