@@ -2,6 +2,7 @@
  * History module for CUDly
  */
 
+
 import * as api from './api';
 import * as state from './state';
 import { formatCurrency, escapeHtml, escapeHtmlAttr, amortizedMonthly, NO_VALUE } from './utils';
@@ -15,12 +16,7 @@ import { showToast } from './toast';
 import { iconSvg } from './icons';
 import { formatPaymentOption, formatTermShort } from './lib/table-format';
 import { serviceLabel } from './lib/service-labels';
-import {
-  historyTruncationMessage,
-  mergeHistoryPages,
-  nextHistoryCursor,
-  renderLoadMoreControl,
-} from './history-paging';
+import { historyTruncationMessage, mergeHistoryPages, nextHistoryCursor, renderLoadMoreControl } from './history-paging';
 import { renderApprovalQueueLink, wireApprovalQueueLinks } from './history-queue-link';
 import { getCurrentUser } from './state';
 import { canAccess } from './permissions';
@@ -30,15 +26,9 @@ import { localDayRangeToUtcDays, toLocalDateInputValue } from './lib/local-date'
 import { getAccountName } from './recommendations';
 import { applyColumnFilters } from './lib/column-filters';
 import { hasNoCommitments, isRealTerm, NO_RECOMMENDATIONS_LABEL, NO_RECOMMENDATIONS_TITLE } from './lib/purchase-row-guards';
-import {
-  openHistoryColumnPopover,
-  renderHistoryFilterButton,
-  closeOpenHistoryPopover,
-} from './lib/history-filter-popover';
-import type {
-  PurchaseHistoryColumnId,
-  ApprovalQueueColumnId,
-} from './state';
+import { openHistoryColumnPopover, renderHistoryFilterButton, closeOpenHistoryPopover } from './lib/history-filter-popover';
+import type { PurchaseHistoryColumnId, ApprovalQueueColumnId } from './state';
+import { historyState } from './historyflow/historyState';
 
 // Copy for a revoke whose Azure Return is not proven (#1522, #1584); keep it equal to
 // revokePendingConfirmationMessage in internal/api/handler_purchases_revoke.go.
@@ -52,20 +42,20 @@ const VALID_PROVIDERS: api.Provider[] = ['aws', 'azure', 'gcp'];
 // AWS Marketplace fee/pricing constants (must stay in sync with handler_marketplace.go).
 // awsMarketplaceFeePercent: transaction fee deducted from listing proceeds (published by AWS).
 const AWS_MARKETPLACE_FEE_PERCENT = 12;
+
 // awsMarketplaceNetFactor: fraction of list price the seller receives after the fee.
 const AWS_MARKETPLACE_NET_FACTOR = 1 - AWS_MARKETPLACE_FEE_PERCENT / 100;
+
 // Discount off residual RI value for the default list price; 1 - 5/100 mirrors
 // awsMarketplaceBuyerDiscountFactor (0.95) in internal/api/handler_marketplace.go.
 const AWS_MARKETPLACE_BUYER_DISCOUNT_PERCENT = 5;
+
 const AWS_MARKETPLACE_BUYER_DISCOUNT = 1 - AWS_MARKETPLACE_BUYER_DISCOUNT_PERCENT / 100;
 
 type StatusFilter = 'all' | 'pending' | 'completed' | 'failed' | 'expired' | 'cancelled';
 
-// Cache of the last-rendered purchase list so the status-chip click handler
-// can re-render without re-fetching. Cleared on each loadHistory / viewPlanHistory.
-let lastPurchases: HistoryPurchase[] = [];
 const busyHistoryExecutions = new Set<string>();
-let historyMutationEpoch = 0;
+
 let activeStatusFilter: StatusFilter = 'all';
 
 // Load more paging (issue #676). historyLoadGeneration is bumped by every
@@ -74,7 +64,9 @@ let activeStatusFilter: StatusFilter = 'all';
 // to the new result set. historyPaging holds the filters of the first page and
 // the cursor of the last page loaded; null when there is nothing more to load.
 let historyLoadGeneration = 0;
+
 let historyPaging: { filters: api.HistoryFilters; cursor: string } | null = null;
+
 let loadMoreInFlight = false;
 
 // _fourEyesMode mirrors GlobalConfig.require_different_approver (issue #1005).
@@ -237,8 +229,8 @@ export function setupHistoryHandlers(): void {
   state.subscribeAccount(() => void loadHistory());
   // Re-render both tables when the amortize toggle flips (issue #1112).
   state.subscribeAmortizeUpfront(() => {
-    renderHistoryList(lastPurchases);
-    renderApprovalQueue(lastPurchases);
+    renderHistoryList(historyState.lastPurchases);
+    renderApprovalQueue(historyState.lastPurchases);
     syncAmortizeCheckbox('history-amortize-checkbox');
     syncAmortizeCheckbox('approval-queue-amortize-checkbox');
   });
@@ -319,7 +311,7 @@ export function initHistoryDateRange(): void {
  * would be misleading.
  */
 export async function viewPlanHistory(planId: string): Promise<void> {
-  const requestEpoch = historyMutationEpoch;
+  const requestEpoch = historyState.historyMutationEpoch;
   resetHistoryPaging();
   // skipDefaultLoad: the tab's own unscoped fetch would land after the
   // plan-scoped one below and overwrite it, and its date-range seeding is
@@ -336,7 +328,7 @@ export async function viewPlanHistory(planId: string): Promise<void> {
       api.getHistory(filters) as unknown as Promise<HistoryResponse>,
       refreshFourEyesMode(),
     ]);
-    if (requestEpoch !== historyMutationEpoch) return;
+    if (requestEpoch !== historyState.historyMutationEpoch) return;
     renderHistorySummary(data.summary ?? null);
     renderTruncationNotices(data);
     const purchases = data.purchases || [];
@@ -345,7 +337,7 @@ export async function viewPlanHistory(planId: string): Promise<void> {
     snapDateInputsToPurchases(purchases);
     updateHistoryPaging(generation, filters, data);
   } catch (error) {
-    if (requestEpoch !== historyMutationEpoch) return;
+    if (requestEpoch !== historyState.historyMutationEpoch) return;
     console.error('Failed to load plan history:', error);
     renderTruncationNotices({});
     const err = error as Error;
@@ -388,7 +380,7 @@ function snapDateInputsToPurchases(purchases: HistoryPurchase[]): void {
  * Load history with filters
  */
 export async function loadHistory(): Promise<void> {
-  const requestEpoch = historyMutationEpoch;
+  const requestEpoch = historyState.historyMutationEpoch;
   resetHistoryPaging();
   const generation = historyLoadGeneration;
   // Issue #344 T3: skeleton rows for the purchase-history table. 8
@@ -443,7 +435,7 @@ export async function loadHistory(): Promise<void> {
       api.getHistory(filters) as unknown as Promise<HistoryResponse>,
       refreshFourEyesMode(),
     ]);
-    if (requestEpoch !== historyMutationEpoch || generation !== historyLoadGeneration) return;
+    if (requestEpoch !== historyState.historyMutationEpoch || generation !== historyLoadGeneration) return;
     renderHistorySummary(data.summary ?? null);
     renderTruncationNotices(data);
     const purchases = data.purchases || [];
@@ -451,7 +443,7 @@ export async function loadHistory(): Promise<void> {
     renderHistoryList(purchases);
     updateHistoryPaging(generation, filters, data);
   } catch (error) {
-    if (requestEpoch !== historyMutationEpoch || generation !== historyLoadGeneration) return;
+    if (requestEpoch !== historyState.historyMutationEpoch || generation !== historyLoadGeneration) return;
     console.error('Failed to load history:', error);
     renderTruncationNotices({});
     const err = error as Error;
@@ -498,7 +490,7 @@ export async function loadMoreHistory(): Promise<void> {
   const paging = historyPaging;
   if (!paging || loadMoreInFlight) return;
   const generation = historyLoadGeneration;
-  const requestEpoch = historyMutationEpoch;
+  const requestEpoch = historyState.historyMutationEpoch;
   loadMoreInFlight = true;
   renderLoadMoreControl(true, true);
   try {
@@ -506,11 +498,11 @@ export async function loadMoreHistory(): Promise<void> {
     if (generation !== historyLoadGeneration) return;
     // A mutation landed mid-flight and its reload will replace the rows; keep
     // the cursor so the button still works if that reload has not started.
-    if (requestEpoch !== historyMutationEpoch) {
+    if (requestEpoch !== historyState.historyMutationEpoch) {
       renderLoadMoreControl(true);
       return;
     }
-    const purchases = mergeHistoryPages(lastPurchases, data.purchases || []);
+    const purchases = mergeHistoryPages(historyState.lastPurchases, data.purchases || []);
     renderTruncationNotices(data);
     renderApprovalQueue(purchases);
     renderHistoryList(purchases);
@@ -699,6 +691,7 @@ function buildStatusChipRowHTML(purchases: HistoryPurchase[], active: StatusFilt
 }
 
 const MUTED_DASH = `<span class="muted">${NO_VALUE}</span>`;
+
 const NO_RECS_HTML = `<span class="no-recommendations" title="${NO_RECOMMENDATIONS_TITLE}">${NO_RECOMMENDATIONS_LABEL}</span>`;
 
 // #181: a row with no commitments has placeholder count/term/costs (0, "0
@@ -919,6 +912,7 @@ function canRevokeCompletedRow(p: HistoryPurchase): boolean {
 // with the server, the API surfaces a structured 409 with retry_attempt_n
 // + threshold and the toast falls back to the server message.
 const RETRY_THRESHOLD = 5;
+
 function retryThresholdReached(p: HistoryPurchase): boolean {
   return (p.retry_attempt_n ?? 0) >= RETRY_THRESHOLD;
 }
@@ -1033,7 +1027,7 @@ function sameRowActions(btn: HTMLButtonElement): HTMLButtonElement[] {
 
 /** The loaded History or Approval queue row for an execution ID. */
 function findHistoryRow(id: string): HistoryPurchase | undefined {
-  return lastPurchases.find(p => p.purchase_id === id) ?? lastPendingForQueue.find(p => p.purchase_id === id);
+  return historyState.lastPurchases.find(p => p.purchase_id === id) ?? historyState.lastPendingForQueue.find(p => p.purchase_id === id);
 }
 
 async function runHistoryRowAction(
@@ -1049,9 +1043,9 @@ async function runHistoryRowAction(
   try {
     await action(() => {
       mutationSucceeded = true;
-      historyMutationEpoch++;
-      lastPurchases = lastPurchases.filter(purchase => purchase.purchase_id !== id);
-      lastPendingForQueue = lastPendingForQueue.filter(purchase => purchase.purchase_id !== id);
+      historyState.historyMutationEpoch++;
+      historyState.lastPurchases = historyState.lastPurchases.filter(purchase => purchase.purchase_id !== id);
+      historyState.lastPendingForQueue = historyState.lastPendingForQueue.filter(purchase => purchase.purchase_id !== id);
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -1342,6 +1336,7 @@ function purchaseHistoryDisplayLabel(
 // tables render buttons with the same bare column ids, so the popover keys
 // and resolves its anchor by (scope, column).
 const PURCHASE_HISTORY_FILTER_SCOPE = 'history';
+
 const APPROVAL_QUEUE_FILTER_SCOPE = 'queue';
 
 function wirePurchaseHistoryFilterButtons(
@@ -1370,7 +1365,7 @@ function wirePurchaseHistoryFilterButtons(
         displayLabel: (v) => purchaseHistoryDisplayLabel(column, v),
         onCommit: (filter) => {
           state.setPurchaseHistoryColumnFilter(column, filter);
-          renderHistoryList(lastPurchases);
+          renderHistoryList(historyState.lastPurchases);
         },
       });
     });
@@ -1381,7 +1376,7 @@ function renderHistoryList(purchases: HistoryPurchase[]): void {
   const container = document.getElementById('history-list');
   if (!container) return;
 
-  lastPurchases = purchases;
+  historyState.lastPurchases = purchases;
 
   // Issue #923: inject a read-only notice for sessions that lack the
   // carved-out spending verbs the buttons in this table need. Approve /
@@ -1531,7 +1526,7 @@ function renderHistoryList(purchases: HistoryPurchase[]): void {
       const next = btn.dataset['historyStatus'] as StatusFilter | undefined;
       if (!next || next === activeStatusFilter) return;
       activeStatusFilter = next;
-      renderHistoryList(lastPurchases);
+      renderHistoryList(historyState.lastPurchases);
     });
   });
 
@@ -1782,7 +1777,7 @@ function wireRowActionHandlers(container: HTMLElement): void {
       if (!id) return;
 
       // Look up the purchase record so we can show a meaningful price summary.
-      const purchase = lastPurchases.find(p => p.purchase_id === id);
+      const purchase = historyState.lastPurchases.find(p => p.purchase_id === id);
 
       if (!purchase || purchase.upfront_cost == null) {
         btn.disabled = true;
@@ -2087,23 +2082,19 @@ function wireApprovalQueueFilterButtons(
         displayLabel: (v) => approvalQueueDisplayLabel(column, v),
         onCommit: (filter) => {
           state.setApprovalQueueColumnFilter(column, filter);
-          renderApprovalQueue(lastPendingForQueue);
+          renderApprovalQueue(historyState.lastPendingForQueue);
         },
       });
     });
   });
 }
 
-// Cache of the last pre-column-filter pending list so the popover-driven
-// re-render path can rebuild the table without re-fetching.
-let lastPendingForQueue: HistoryPurchase[] = [];
-
 export function renderApprovalQueue(purchases: HistoryPurchase[]): void {
   const container = document.getElementById('purchases-approval-queue');
   if (!container) return;
 
   const pending = (purchases || []).filter(isPendingRow);
-  lastPendingForQueue = pending;
+  historyState.lastPendingForQueue = pending;
 
   if (pending.length === 0) {
     container.innerHTML = '<p class="empty">No pending approvals.</p>';
