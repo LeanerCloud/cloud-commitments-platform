@@ -210,3 +210,21 @@ describe('Login two-step MFA flow', () => {
     expect(reloadPage).toHaveBeenCalled();
   });
 });
+
+describe('Login rate-limit cooldown', () => {
+  test('rejects an attempt inside the cooldown without calling api.login, allows one after it', async () => {
+    (api.login as jest.Mock).mockRejectedValue(new Error('server down'));
+    await showLoginModal();
+    await submitLogin('user@x.com', 'pw');
+    expect(api.login).toHaveBeenCalledTimes(1);
+
+    (Date.now as jest.Mock).mockReturnValue(mockTime + 1999);
+    await submitLogin('user@x.com', 'pw');
+    expect(api.login).toHaveBeenCalledTimes(1);
+    expect(document.getElementById('login-error')?.textContent).toBe('Please wait before trying again');
+
+    (Date.now as jest.Mock).mockReturnValue(mockTime + 2000);
+    await submitLogin('user@x.com', 'pw');
+    expect(api.login).toHaveBeenCalledTimes(2);
+  });
+});
