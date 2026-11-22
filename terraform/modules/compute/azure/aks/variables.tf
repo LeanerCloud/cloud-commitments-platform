@@ -184,7 +184,7 @@ variable "tags" {
 }
 
 variable "private_cluster_enabled" {
-  description = "Disable the AKS API server's public endpoint. Defaults to true (private cluster). Set to false only alongside a real, non-empty var.authorized_ip_ranges allowlist -- an operator who disables this without one gets a plan-time error, not a public-by-accident cluster. CONSEQUENCE: with this true (the default), the API server is reachable only from inside the VNet, so terraform apply itself cannot reach it from a standard GitHub-hosted runner (ubuntu-latest) unless that runner has VNet connectivity (self-hosted runner, VPN, or a peered network) -- and the kubernetes/helm providers this module's deploy_kubernetes_resources=true path configures (see environments/azure/main.tf) will time out trying to reach a private endpoint from a non-VNet runner. Only set var.deploy_kubernetes_resources=true from a VNet-reachable apply context."
+  description = "Disable the AKS API server's public endpoint. Defaults to true (private cluster). Set to false only alongside a real, non-empty var.authorized_ip_ranges allowlist -- an operator who disables this without one gets a plan-time error, not a public-by-accident cluster. CONSEQUENCE: with this true (the default), AKS issues no client certificate/key. environments/azure/main.tf therefore configures the kubernetes and helm providers with this module's host and cluster_ca_certificate outputs plus a kubelogin exec block, so client-certificate auth is not needed. That exec flow is verified only by an apply (see #372 and tracker #1413)."
   type        = bool
   default     = true
 

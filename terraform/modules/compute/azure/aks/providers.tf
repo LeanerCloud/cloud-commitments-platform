@@ -31,20 +31,7 @@ terraform {
 }
 
 # Note: Provider configurations removed from module
-# To use kubernetes/helm providers with this cluster, configure them at the root level:
-#
-# provider "kubernetes" {
-#   host                   = module.compute_aks[0].kube_config.host
-#   client_certificate     = base64decode(module.compute_aks[0].kube_config.client_certificate)
-#   client_key             = base64decode(module.compute_aks[0].kube_config.client_key)
-#   cluster_ca_certificate = base64decode(module.compute_aks[0].kube_config.cluster_ca_certificate)
-# }
-#
-# provider "helm" {
-#   kubernetes {
-#     host                   = module.compute_aks[0].kube_config.host
-#     client_certificate     = base64decode(module.compute_aks[0].kube_config.client_certificate)
-#     client_key             = base64decode(module.compute_aks[0].kube_config.client_key)
-#     cluster_ca_certificate = base64decode(module.compute_aks[0].kube_config.cluster_ca_certificate)
-#   }
-# }
+# The kubernetes/helm providers for this cluster are configured at the root level
+# (terraform/environments/azure/main.tf) from this module's host and
+# cluster_ca_certificate outputs with a kubelogin exec block. Do not read
+# kube_config: it is the raw kubeconfig YAML string, not an object.
