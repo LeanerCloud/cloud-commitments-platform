@@ -137,7 +137,7 @@ export async function loadPlans(): Promise<void> {
 // type, percent AND interval match the preset, the same rule Edit uses
 // (rampRadioValue), so the list never says "Weekly 20%" for a plan Edit opens
 // as Custom 20% / 7 days, or hides a 14-day interval behind "Weekly 25%" (#1185).
-function formatBackendRampSchedule(ramp: BackendPlan['ramp_schedule'] | undefined): string {
+export function formatBackendRampSchedule(ramp: BackendPlan['ramp_schedule'] | undefined): string {
   if (!ramp) return 'Immediate';
   if (!['immediate', 'weekly', 'monthly', 'custom'].includes(ramp.type)) return ramp.type || 'Unknown';
   const value = rampRadioValue(ramp);
@@ -148,7 +148,7 @@ function formatBackendRampSchedule(ramp: BackendPlan['ramp_schedule'] | undefine
   return days ? `Custom ${ramp.percent_per_step}% every ${days} day${days === 1 ? '' : 's'}` : `Custom ${ramp.percent_per_step}%`;
 }
 
-async function loadPlanAccountNames(planId: string, cardEl: Element): Promise<void> {
+export async function loadPlanAccountNames(planId: string, cardEl: Element): Promise<void> {
   try {
     const accounts = await api.listPlanAccounts(planId);
     if (accounts.length === 0) return;
@@ -170,13 +170,13 @@ async function loadPlanAccountNames(planId: string, cardEl: Element): Promise<vo
 // — only History and Delete remain — and a read-only "Unassigned" badge
 // is shown so operators can identify and re-scope the plan.
 /** "n/m steps", or NO_VALUE when the step count is missing or not positive (#136). */
-function formatRampProgress(ramp: { current_step?: number; total_steps?: number } | undefined): string {
+export function formatRampProgress(ramp: { current_step?: number; total_steps?: number } | undefined): string {
   const total = ramp?.total_steps;
   if (typeof total !== 'number' || !Number.isFinite(total) || total <= 0) return NO_VALUE;
   return `${ramp?.current_step || 0}/${total} steps`;
 }
 
-function renderPlanCard(plan: BackendPlan, canManagePlan: boolean, canDeletePlan: boolean, canAddPurchases: boolean): string {
+export function renderPlanCard(plan: BackendPlan, canManagePlan: boolean, canDeletePlan: boolean, canAddPurchases: boolean): string {
   const info = extractPlanInfo(plan);
   const status = getStatusBadge(plan.enabled, plan.auto_purchase);
   const rampSchedule = plan.ramp_schedule;
@@ -260,7 +260,7 @@ function renderPlanCard(plan: BackendPlan, canManagePlan: boolean, canDeletePlan
   `;
 }
 
-function renderPlans(plans: LocalPlan[]): void {
+export function renderPlans(plans: LocalPlan[]): void {
   const container = document.getElementById('plans-list');
   if (!container) return;
 
@@ -338,7 +338,7 @@ function renderPlans(plans: LocalPlan[]): void {
   });
 }
 
-async function togglePlan(planId: string, enabled: boolean): Promise<void> {
+export async function togglePlan(planId: string, enabled: boolean): Promise<void> {
   try {
     await api.patchPlan(planId, { enabled } as Partial<api.CreatePlanRequest>);
     await loadPlans();
@@ -481,7 +481,7 @@ export async function editPlan(planId: string): Promise<boolean> {
   }
 }
 
-async function deletePlanAction(planId: string): Promise<void> {
+export async function deletePlanAction(planId: string): Promise<void> {
   const ok = await confirmDialog({
     title: 'Delete this plan?',
     body: 'This removes the plan and cancels all its scheduled purchases. This action cannot be undone.',
