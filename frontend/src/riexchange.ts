@@ -25,25 +25,7 @@ import { getCurrentUser } from './state';
 import { attachAzureExchangeToolbar, buildAzureSelectCell, buildAzureSelectHeader, canPreviewAzureExchange } from './riexchange-azure';
 import { formatDecimalStringCurrency, formatIsoTermShort, formatPaymentOption } from './lib/table-format';
 import { riexState } from './riexflow/riexState';
-
-const exchangePaymentPattern = /^\d+(?:\.\d+)?$/;
-
-// A target count is a whole number >= 1; anything else (empty, 0, "2.5",
-// "3abc") is null so the form can refuse it instead of quoting one unit.
-function parseTargetCount(raw: string): number | null {
-  const trimmed = raw.trim();
-  if (!/^\d+$/.test(trimmed)) return null;
-  const n = Number(trimmed);
-  return Number.isSafeInteger(n) && n >= 1 ? n : null;
-}
-
-// Human-readable provider labels for empty-state copy and the not-available
-// message. Mirrors the map in inventory.ts.
-const PROVIDER_LABELS: Record<string, string> = { aws: 'AWS', azure: 'Azure', gcp: 'GCP' };
-
-function providerLabel(provider: string): string {
-  return PROVIDER_LABELS[provider] ?? provider.toUpperCase();
-}
+import { exchangePaymentPattern, parseTargetCount, providerLabel, MODE_LABELS, renderEmptyState, inlineReason, renderTableCallout, currencyPrefix, formatOfferingCost, riAccountLabel } from './riexflow/shared';
 
 // resolveScope reads the Main Header global Provider/Account chips so every
 // RI Exchange load is scoped consistently with the other Inventory sub-tabs
@@ -60,9 +42,6 @@ async function resolveScope(): Promise<{ provider: Provider | ''; accountID?: st
   if (!account.external_id) throw new Error(`Selected account ${accountIDs[0]} has no provider account ID`);
   return { provider, accountID: account.external_id };
 }
-
-// Mode label mapping — single source of truth
-const MODE_LABELS: Record<string, string> = { manual: "Manual Approval", auto: "Fully Automated" };
 
 /**
  * Load the RI Exchange tab — called when tab is activated and whenever the
@@ -178,19 +157,6 @@ function renderReshapeNotApplicable(provider: string): void {
   }
   renderReshapeStalenessBanner('', null);
   renderExcludedRIsNotice(undefined);
-}
-
-/**
- * Render a plain `.empty` paragraph via textContent (no innerHTML) so backend
- * or provider-derived strings can never inject markup. Wipes any prior
- * children (skeleton, stale table) for a clean handoff.
- */
-function renderEmptyState(container: HTMLElement, message: string): void {
-  container.textContent = '';
-  const p = document.createElement('p');
-  p.className = 'empty';
-  p.textContent = message;
-  container.appendChild(p);
 }
 
 /**
@@ -361,14 +327,6 @@ async function loadRIAccountNames(): Promise<void> {
     console.warn('RI Exchange: could not load account names:', error);
     riexState.riAccountNames = new Map();
   }
-}
-
-// "CUDly host (123456789012)": the ID is added only when the name lacks it.
-function riAccountLabel(accountID: string | undefined): string {
-  if (!accountID) return 'could not be determined';
-  const name = riexState.riAccountNames.get(accountID);
-  if (!name) return `AWS account ${accountID}`;
-  return name.includes(accountID) ? name : `${name} (${accountID})`;
 }
 
 async function loadUtilization(generation: number): Promise<void> {
@@ -638,33 +596,6 @@ export function renderExcludedRIsNotice(excluded: ExcludedRI[] | undefined): voi
   const lines = [...byReason]
     .map(([reason, ids]) => `${ids.length} convertible RI${ids.length === 1 ? ' was' : 's were'} left out because ${inlineReason(reason)}: ${ids.join(', ')}`);
   renderTableCallout(notice, 'warning', lines);
-}
-
-/** "Expires in 35 days; extend the term." -> "expires in 35 days; extend the term". */
-function inlineReason(reason: string): string {
-  const trimmed = reason.trim().replace(/[.\s]+$/, '');
-  // Lower-case a capitalised first word, but leave acronyms ("AWS") alone.
-  return /^[A-Z][a-z]/.test(trimmed) ? trimmed[0]!.toLowerCase() + trimmed.slice(1) : trimmed;
-}
-
-/**
- * Fill `el` as a table callout: an alert icon and a muted body, one line
- * per entry. Used for the reshape staleness and excluded-RI notices, which
- * used to be bold run-on paragraphs with a "!" prefix.
- */
-function renderTableCallout(el: HTMLElement, tone: 'warning' | 'error', lines: string[]): void {
-  el.className = `freshness-banner ${tone} table-callout`;
-  el.setAttribute('role', 'note');
-  el.textContent = '';
-  el.appendChild(createIcon('alert-triangle'));
-  const body = document.createElement('div');
-  body.className = 'table-callout-body';
-  for (const line of lines) {
-    const p = document.createElement('p');
-    p.textContent = line;
-    body.appendChild(p);
-  }
-  el.appendChild(body);
 }
 
 /**
@@ -1111,21 +1042,6 @@ function renderRecommendations(container: HTMLElement): void {
       if (rec) fillQuoteFromRecommendation(rec);
     });
   });
-}
-
-// currencyPrefix is the prefix formatCurrency puts before an amount in
-// `code`. USD keeps the app-wide "$"; any other ISO-4217 code is shown
-// as "EUR " so a non-USD price is never read as dollars (issue #284). An
-// absent code keeps "$": exchanges are USD-only end to end (the backend
-// refuses non-USD quotes), so a missing code is a USD offering.
-export function currencyPrefix(code: string | undefined): string {
-  const c = code?.trim().toUpperCase();
-  return !c || c === 'USD' ? '$' : `${c} `;
-}
-
-// formatOfferingCost renders an offering's monthly cost in its own currency.
-function formatOfferingCost(alt: OfferingOption, cost: number = alt.effective_monthly_cost): string {
-  return formatCurrency(cost, currencyPrefix(alt.currency_code), 2);
 }
 
 // renderAlternativesCell formats the cross-family alternative targets
@@ -2275,3 +2191,5 @@ async function handleRIExchangeApproveClick(btn: HTMLButtonElement, record: RIEx
     showToast({ kind: 'error', message: 'Approved, but failed to refresh history: ' + msg });
   }
 }
+
+export { currencyPrefix } from './riexflow/shared';
