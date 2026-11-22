@@ -7,7 +7,7 @@ import { applyColumnFilters } from './cellValues';
 import { type PopoverState, getColumnTriggerButton, positionPopover, SERVER_PUSHDOWN_COLUMNS, buildPopoverContent } from './popoverContent';
 import { closeVisibilityPopover } from './visibility';
 import { renderRecommendationsList } from './renderList';
-import { loadRecommendations } from '../recommendations';
+import { loadRecommendations } from './load';
 
 let openPopover: PopoverState | null = null;
 // Document-level click-outside listener; attached once on first open and

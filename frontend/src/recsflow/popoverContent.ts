@@ -6,7 +6,7 @@ import { columnLabel, NUMERIC_COLUMNS } from './columnDefs';
 import { saveColumnFilters } from './columnPrefs';
 import { distinctValuesForColumn, categoricalDisplayLabel } from './cellValues';
 import { rerenderRecommendations } from './popover';
-import { loadRecommendations } from '../recommendations';
+import { loadRecommendations } from './load';
 
 export interface PopoverState {
   column: state.RecommendationsColumnId;
