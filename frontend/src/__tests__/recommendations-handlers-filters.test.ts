@@ -459,4 +459,16 @@ describe('parseNumericFilter', () => {
     expect(accept('  >  10  ', 11)).toBe(true);
     expect(accept('10 .. 20', 15)).toBe(true);
   });
+
+  test('invalid expression returns ok:false with an error message', () => {
+    const r1 = parseNumericFilter('>>5');
+    expect(r1.ok).toBe(false);
+    if (!r1.ok) expect(r1.error).toMatch(/Invalid filter term/);
+
+    const r2 = parseNumericFilter('not a number');
+    expect(r2.ok).toBe(false);
+
+    const r3 = parseNumericFilter('1..');
+    expect(r3.ok).toBe(false);
+  });
 });
