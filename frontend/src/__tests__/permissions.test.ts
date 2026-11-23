@@ -17,32 +17,11 @@
  * getRolePermissions() is kept for the effective-permissions display in
  * the admin Users page and still returns the same sets as before.
  */
+// The harness registers the ../state mock, so it must be imported first.
+import { ADMIN_GID, STD_GID, RO_GID, mockUserWithGroups, mockNoUser } from './permissions-harness';
 import { canAccess, getRolePermissions, isAdmin, isPurchaser, isRIExchanger, ADMINISTRATORS_GROUP_ID, PURCHASER_GROUP_ID, RI_EXCHANGER_GROUP_ID } from '../permissions';
 import type { PermissionEntry } from '../api/types';
-
-jest.mock('../state', () => ({
-  getCurrentUser: jest.fn(),
-}));
-
 import * as state from '../state';
-
-const ADMIN_GID = ADMINISTRATORS_GROUP_ID;
-// Standard Users group seeded by migration 000057. Must NOT collide with
-// PURCHASER_GROUP_ID ('...005'); otherwise the fallback path (effectivePermissions
-// absent) would treat the standard-user fixture as a Purchaser and let the
-// carved-out money-spending verbs through (CR finding, PR #924).
-const STD_GID = '00000000-0000-5000-8000-000000000002';
-const RO_GID = '00000000-0000-5000-8000-000000000006';
-
-const mockUserWithGroups = (groups: string[], effectivePermissions?: PermissionEntry[]) => {
-  (state.getCurrentUser as jest.Mock).mockReturnValue(
-    { id: 'u1', email: 'u@example.com', groups, effectivePermissions },
-  );
-};
-
-const mockNoUser = () => {
-  (state.getCurrentUser as jest.Mock).mockReturnValue(null);
-};
 
 describe('permissions', () => {
   describe('ADMINISTRATORS_GROUP_ID', () => {
