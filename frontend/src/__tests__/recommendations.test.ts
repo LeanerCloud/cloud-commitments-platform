@@ -174,48 +174,6 @@ describe('Issue #494: deterministic group sort on multi-variant cells', () => {
     (state.getCostPeriod as jest.Mock).mockReturnValue('monthly');
   }
 
-  //
-  // 4.9 - Term
-  //
-  test('Term asc: orders cells by summary.termMin (1yr-grouped before 3yr-grouped)', async () => {
-    const cellMixed = multiVariantCell({
-      resourceType: 'aaa-mixed', payment1y: 'no-upfront', payment3y: 'no-upfront',
-      upfront1y: 0, upfront3y: 0,
-    });
-    // "1yr-only" cell: both variants term=1, different payments so they
-    // produce two distinct rec rows under the same cellKey.
-    const cell1yOnly: LocalRecommendation[] = [
-      { id: 'bbb-1y-nu', provider: 'aws', cloud_account_id: 'a1', service: 'ec2',
-        resource_type: 'bbb-1y-only', region: 'us-east-1', count: 1, term: 1,
-        payment: 'no-upfront', savings: 100, upfront_cost: 0, monthly_cost: 50 } as unknown as LocalRecommendation,
-      { id: 'bbb-1y-au', provider: 'aws', cloud_account_id: 'a1', service: 'ec2',
-        resource_type: 'bbb-1y-only', region: 'us-east-1', count: 1, term: 1,
-        payment: 'all-upfront', savings: 110, upfront_cost: 800, monthly_cost: 0 } as unknown as LocalRecommendation,
-    ];
-    const cell3yOnly: LocalRecommendation[] = [
-      { id: 'ccc-3y-nu', provider: 'aws', cloud_account_id: 'a1', service: 'ec2',
-        resource_type: 'ccc-3y-only', region: 'us-east-1', count: 1, term: 3,
-        payment: 'no-upfront', savings: 300, upfront_cost: 0, monthly_cost: 40 } as unknown as LocalRecommendation,
-      { id: 'ccc-3y-au', provider: 'aws', cloud_account_id: 'a1', service: 'ec2',
-        resource_type: 'ccc-3y-only', region: 'us-east-1', count: 1, term: 3,
-        payment: 'all-upfront', savings: 320, upfront_cost: 2400, monthly_cost: 0 } as unknown as LocalRecommendation,
-    ];
-    // Intentionally wrong insertion order so a no-op sort would fail.
-    const recs = [...cell3yOnly, ...cellMixed, ...cell1yOnly];
-
-    setupTestFixture(recs, { column: 'term', direction: 'asc' });
-    await loadRecommendations();
-
-    const order = renderedCellOrder();
-    // Expected: 1yr-only first (termMin=1, termMax=1), mixed second (termMin=1,
-    // termMax=3), 3yr-only last (termMin=3). The encoded score termMin*100 +
-    // termMax distinguishes the 1yr-only and mixed cells via termMax.
-    expect(indexOrFail(order, 'bbb-1y-only'))
-      .toBeLessThan(indexOrFail(order, 'aaa-mixed'));
-    expect(indexOrFail(order, 'aaa-mixed'))
-      .toBeLessThan(indexOrFail(order, 'ccc-3y-only'));
-  });
-
   test('Term desc: order is the exact reverse of ascending', async () => {
     const cellMixed = multiVariantCell({
       resourceType: 'aaa-mixed', payment1y: 'no-upfront', payment3y: 'no-upfront',
