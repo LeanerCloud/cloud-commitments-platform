@@ -4,7 +4,7 @@
 
 // The harness registers the module mocks, so it must be imported first.
 import { mockShowToast, mockConfirmDialog, mockGroupRecsByCell, mockPageLevelRange, mockFormatSavingsRange } from './dashboard-harness';
-import { loadDashboard, loadYtdSparkline, setupSavingsTrendHandlers, setupDashboardHandlers, formatTrendAxisTick } from '../dashboard';
+import { loadDashboard, loadYtdSparkline, setupSavingsTrendHandlers, formatTrendAxisTick } from '../dashboard';
 import { formatTrendTooltipTitle } from '../modules/chart-utils';
 import { Chart } from 'chart.js';
 import * as api from '../api';
@@ -85,75 +85,6 @@ describe('Dashboard Module', () => {
       const label = formatTrendAxisTick(ts, 'weekly');
       expect(label).not.toMatch(/:/);
     });
-  });
-
-  // QA row 384 step 2.3: Home page Savings-over-time chart must honor the
-  // global Account filter (issue #701). These tests verify that:
-  //   1. setupDashboardHandlers subscribes to both filter chips.
-  //   2. An account-chip change re-fetches when Home tab is active.
-  //   3. No re-fetch fires when Home tab is inactive.
-  //   4. Back-to-back provider+account fires coalesce into one reload.
-  //   5. The account_id is forwarded to getSavingsAnalytics.
-  //   6. Filter-aware empty-state copy is shown when a filter is active.
-  describe('setupDashboardHandlers — filter chip subscriptions (QA 2.3)', () => {
-    function addHomeTab(active: boolean): void {
-      const div = document.createElement('div');
-      div.id = 'home-tab';
-      if (active) div.classList.add('active');
-      document.body.appendChild(div);
-    }
-
-    beforeEach(() => {
-      (state.subscribeProvider as jest.Mock).mockClear();
-      (state.subscribeAccount as jest.Mock).mockClear();
-      (api.getSavingsAnalytics as jest.Mock).mockClear();
-      (api.getDashboardSummary as jest.Mock).mockResolvedValue({
-        potential_monthly_savings: 0, total_recommendations: 0,
-        active_commitments: 0, committed_monthly: 0, current_coverage: 0,
-        target_coverage: 80, ytd_savings: 0, by_service: {},
-      });
-      (api.getUpcomingPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
-      (api.getRecommendations as jest.Mock).mockResolvedValue([]);
-      (api.getSavingsAnalytics as jest.Mock).mockResolvedValue({ data_points: [] });
-
-      // Ensure a canvas for savings-trend-chart exists so loadSavingsTrendChart
-      // does not bail out at the early-return guard.
-      const canvas = document.createElement('canvas');
-      canvas.id = 'savings-trend-chart';
-      const empty = document.createElement('p');
-      empty.id = 'savings-trend-empty';
-      empty.className = 'hidden';
-      document.body.appendChild(canvas);
-      document.body.appendChild(empty);
-    });
-
-    test('registers one callback each with subscribeProvider and subscribeAccount', () => {
-      setupDashboardHandlers();
-
-      expect(state.subscribeProvider).toHaveBeenCalledTimes(1);
-      expect(state.subscribeAccount).toHaveBeenCalledTimes(1);
-      expect(typeof (state.subscribeProvider as jest.Mock).mock.calls[0]?.[0]).toBe('function');
-      expect(typeof (state.subscribeAccount as jest.Mock).mock.calls[0]?.[0]).toBe('function');
-    });
-
-    test('account chip change triggers loadDashboard (and getSavingsAnalytics) when home tab is active', async () => {
-      addHomeTab(true);
-      (state.getCurrentAccountIDs as jest.Mock).mockReturnValue(['uuid-acct-1']);
-
-      setupDashboardHandlers();
-      const accountCb = (state.subscribeAccount as jest.Mock).mock.calls[0]?.[0] as () => void;
-
-      (api.getSavingsAnalytics as jest.Mock).mockClear();
-      accountCb();
-      await new Promise((r) => setTimeout(r, 0));
-
-      // Two scoped series: the trend chart and the YTD tile sparkline (#317).
-      expect(api.getSavingsAnalytics).toHaveBeenCalledTimes(2);
-      for (const [filters] of (api.getSavingsAnalytics as jest.Mock).mock.calls) {
-        expect(filters).toEqual(expect.objectContaining({ account_ids: ['uuid-acct-1'] }));
-      }
-    });
-
   });
 
   // Issue #185 invariant — clear account state BEFORE awaiting the

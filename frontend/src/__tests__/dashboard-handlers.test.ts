@@ -79,6 +79,33 @@ describe('Dashboard Module', () => {
       document.body.appendChild(empty);
     });
 
+    test('registers one callback each with subscribeProvider and subscribeAccount', () => {
+      setupDashboardHandlers();
+
+      expect(state.subscribeProvider).toHaveBeenCalledTimes(1);
+      expect(state.subscribeAccount).toHaveBeenCalledTimes(1);
+      expect(typeof (state.subscribeProvider as jest.Mock).mock.calls[0]?.[0]).toBe('function');
+      expect(typeof (state.subscribeAccount as jest.Mock).mock.calls[0]?.[0]).toBe('function');
+    });
+
+    test('account chip change triggers loadDashboard (and getSavingsAnalytics) when home tab is active', async () => {
+      addHomeTab(true);
+      (state.getCurrentAccountIDs as jest.Mock).mockReturnValue(['uuid-acct-1']);
+
+      setupDashboardHandlers();
+      const accountCb = (state.subscribeAccount as jest.Mock).mock.calls[0]?.[0] as () => void;
+
+      (api.getSavingsAnalytics as jest.Mock).mockClear();
+      accountCb();
+      await new Promise((r) => setTimeout(r, 0));
+
+      // Two scoped series: the trend chart and the YTD tile sparkline (#317).
+      expect(api.getSavingsAnalytics).toHaveBeenCalledTimes(2);
+      for (const [filters] of (api.getSavingsAnalytics as jest.Mock).mock.calls) {
+        expect(filters).toEqual(expect.objectContaining({ account_ids: ['uuid-acct-1'] }));
+      }
+    });
+
     test('does NOT fire when home tab is inactive (active-tab guard)', async () => {
       addHomeTab(false);
 
