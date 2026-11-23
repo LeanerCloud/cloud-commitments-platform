@@ -174,3 +174,159 @@ func (m *MockAuthStore) CreateAdminIfNone(ctx context.Context, user *auth.User) 
 	args := m.Called(ctx, user)
 	return args.Bool(0), args.Error(1)
 }
+
+// GetGroup mocks the GetGroup operation.
+func (m *MockAuthStore) GetGroup(ctx context.Context, groupID string) (*auth.Group, error) {
+	args := m.Called(ctx, groupID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	v, ok := args.Get(0).(*auth.Group)
+	if !ok {
+		m.reporter.wrongReturnType("GetGroup", "*auth.Group", args.Get(0))
+	}
+	return v, args.Error(1)
+}
+
+// CreateGroup mocks the CreateGroup operation.
+func (m *MockAuthStore) CreateGroup(ctx context.Context, group *auth.Group) error {
+	args := m.Called(ctx, group)
+	return args.Error(0)
+}
+
+// UpdateGroup mocks the UpdateGroup operation.
+func (m *MockAuthStore) UpdateGroup(ctx context.Context, group *auth.Group) error {
+	args := m.Called(ctx, group)
+	return args.Error(0)
+}
+
+// DeleteGroup mocks the DeleteGroup operation.
+func (m *MockAuthStore) DeleteGroup(ctx context.Context, groupID string) error {
+	args := m.Called(ctx, groupID)
+	return args.Error(0)
+}
+
+// ListGroups mocks the ListGroups operation.
+func (m *MockAuthStore) ListGroups(ctx context.Context) ([]auth.Group, error) {
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	v, ok := args.Get(0).([]auth.Group)
+	if !ok {
+		m.reporter.wrongReturnType("ListGroups", "[]auth.Group", args.Get(0))
+	}
+	return v, args.Error(1)
+}
+
+// CountGroupMembers mocks the CountGroupMembers operation.
+func (m *MockAuthStore) CountGroupMembers(ctx context.Context, groupID string) (int, error) {
+	args := m.Called(ctx, groupID)
+	return args.Int(0), args.Error(1)
+}
+
+// CreateSession mocks the CreateSession operation.
+func (m *MockAuthStore) CreateSession(ctx context.Context, session *auth.Session) error {
+	args := m.Called(ctx, session)
+	return args.Error(0)
+}
+
+// GetSession mocks the GetSession operation.
+func (m *MockAuthStore) GetSession(ctx context.Context, token string) (*auth.Session, error) {
+	args := m.Called(ctx, token)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	v, ok := args.Get(0).(*auth.Session)
+	if !ok {
+		m.reporter.wrongReturnType("GetSession", "*auth.Session", args.Get(0))
+	}
+	return v, args.Error(1)
+}
+
+// DeleteSession mocks the DeleteSession operation.
+func (m *MockAuthStore) DeleteSession(ctx context.Context, token string) error {
+	args := m.Called(ctx, token)
+	return args.Error(0)
+}
+
+// DeleteUserSessions mocks the DeleteUserSessions operation.
+func (m *MockAuthStore) DeleteUserSessions(ctx context.Context, userID string) error {
+	args := m.Called(ctx, userID)
+	return args.Error(0)
+}
+
+// CleanupExpiredSessions mocks the CleanupExpiredSessions operation.
+func (m *MockAuthStore) CleanupExpiredSessions(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
+
+// CreateAPIKey mocks the CreateAPIKey operation.
+func (m *MockAuthStore) CreateAPIKey(ctx context.Context, key *auth.UserAPIKey) error {
+	args := m.Called(ctx, key)
+	return args.Error(0)
+}
+
+// GetAPIKeyByID mocks the GetAPIKeyByID operation.
+func (m *MockAuthStore) GetAPIKeyByID(ctx context.Context, keyID string) (*auth.UserAPIKey, error) {
+	args := m.Called(ctx, keyID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	v, ok := args.Get(0).(*auth.UserAPIKey)
+	if !ok {
+		m.reporter.wrongReturnType("GetAPIKeyByID", "*auth.UserAPIKey", args.Get(0))
+	}
+	return v, args.Error(1)
+}
+
+// GetAPIKeyByHash mocks the GetAPIKeyByHash operation.
+func (m *MockAuthStore) GetAPIKeyByHash(ctx context.Context, keyHash string) (*auth.UserAPIKey, error) {
+	args := m.Called(ctx, keyHash)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	v, ok := args.Get(0).(*auth.UserAPIKey)
+	if !ok {
+		m.reporter.wrongReturnType("GetAPIKeyByHash", "*auth.UserAPIKey", args.Get(0))
+	}
+	return v, args.Error(1)
+}
+
+// ListAPIKeysByUser mocks the ListAPIKeysByUser operation.
+func (m *MockAuthStore) ListAPIKeysByUser(ctx context.Context, userID string) ([]*auth.UserAPIKey, error) {
+	args := m.Called(ctx, userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	v, ok := args.Get(0).([]*auth.UserAPIKey)
+	if !ok {
+		m.reporter.wrongReturnType("ListAPIKeysByUser", "[]*auth.UserAPIKey", args.Get(0))
+	}
+	return v, args.Error(1)
+}
+
+// UpdateAPIKey mocks the UpdateAPIKey operation.
+func (m *MockAuthStore) UpdateAPIKey(ctx context.Context, key *auth.UserAPIKey) error {
+	args := m.Called(ctx, key)
+	return args.Error(0)
+}
+
+// RecordAPIKeyUsage mocks the RecordAPIKeyUsage operation.
+func (m *MockAuthStore) RecordAPIKeyUsage(ctx context.Context, keyID string, delta int64) error {
+	args := m.Called(ctx, keyID, delta)
+	return args.Error(0)
+}
+
+// DeleteAPIKey mocks the DeleteAPIKey operation.
+func (m *MockAuthStore) DeleteAPIKey(ctx context.Context, keyID string) error {
+	args := m.Called(ctx, keyID)
+	return args.Error(0)
+}
+
+// Ping mocks the Ping operation.
+func (m *MockAuthStore) Ping(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
