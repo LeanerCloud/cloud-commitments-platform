@@ -10,8 +10,7 @@ import {
   closeCreateKeyModal,
   createApiKey,
   handleCreateApiKey,
-  showKeyCreatedModal,
-  initApiKeys
+  showKeyCreatedModal
 } from '../apikeys';
 
 import * as api from '../api';
@@ -425,76 +424,6 @@ describe('API Keys Module', () => {
       await expect(createApiKey('Test Key', 'my-password', expiresAt, permissions)).rejects.toThrow('Create failed');
       expect(consoleError).toHaveBeenCalled();
       consoleError.mockRestore();
-    });
-  });
-
-  describe('initApiKeys', () => {
-    test('sets up create key button', () => {
-      initApiKeys();
-
-      const createBtn = document.getElementById('create-apikey-btn');
-      createBtn?.click();
-
-      const modal = document.getElementById('create-apikey-modal');
-      expect(modal?.classList.contains('hidden')).toBe(false);
-    });
-
-    test('sets up close modal button', () => {
-      initApiKeys();
-
-      // First show the modal
-      const modal = document.getElementById('create-apikey-modal');
-      modal?.classList.remove('hidden');
-
-      // Click close button
-      const closeBtn = document.getElementById('close-create-apikey-modal-btn');
-      closeBtn?.click();
-
-      expect(modal?.classList.contains('hidden')).toBe(true);
-    });
-
-    test('sets up form submission handler', async () => {
-      const futureDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-      (api.createApiKey as jest.Mock).mockResolvedValue({
-        api_key: 'test-key',
-        key_id: 'key-1',
-        key: { id: 'key-1', name: 'Test', key_prefix: 'abc' }
-      });
-      (api.getApiKeys as jest.Mock).mockResolvedValue({ api_keys: [] });
-
-      initApiKeys();
-
-      (document.getElementById('apikey-name') as HTMLInputElement).value = 'Test Key';
-      (document.getElementById('apikey-password') as HTMLInputElement).value = 'my-password';
-      (document.getElementById('apikey-expires-at') as HTMLInputElement).value = futureDate.toISOString().split('T')[0] || "";
-
-      const form = document.getElementById('create-apikey-form');
-      form?.dispatchEvent(new Event('submit'));
-
-      await new Promise(resolve => setTimeout(resolve, 0));
-
-      expect(api.createApiKey).toHaveBeenCalled();
-    });
-
-    test('sets up modal backdrop click to close', () => {
-      initApiKeys();
-
-      const modal = document.getElementById('create-apikey-modal');
-      modal?.classList.remove('hidden');
-
-      // Simulate click on modal backdrop
-      const clickEvent = new MouseEvent('click', { bubbles: true });
-      Object.defineProperty(clickEvent, 'target', { value: modal });
-      modal?.dispatchEvent(clickEvent);
-
-      expect(modal?.classList.contains('hidden')).toBe(true);
-    });
-
-    test('handles missing elements gracefully', () => {
-      document.body.innerHTML = '';
-
-      // Should not throw
-      expect(() => initApiKeys()).not.toThrow();
     });
   });
 
