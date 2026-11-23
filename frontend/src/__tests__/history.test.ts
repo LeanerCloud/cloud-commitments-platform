@@ -26,6 +26,14 @@ describe('History Module', () => {
     (getAmortizeUpfront as jest.Mock).mockReturnValue(false);
   });
 
+  // The active status chip lives in a module-level variable of history.ts with
+  // no public reset. Clicking a chip in one test would leak that filter into
+  // the next (order-dependent under --randomize), so put it back on "All"
+  // through the same UI path a user would use.
+  afterEach(() => {
+    document.querySelector<HTMLButtonElement>('[data-history-status="all"]')?.click();
+  });
+
   test.each([false, true])('unknown upfront with amortization %s preserves recurring versus effective cost', async (amortize) => {
     (getAmortizeUpfront as jest.Mock).mockReturnValue(amortize);
     const purchase = {

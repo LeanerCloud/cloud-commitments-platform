@@ -94,7 +94,20 @@ describe('Inventory & Coverage sub-section switching', () => {
   });
 
   test('loadInventory wires sub-nav click handlers and lands on default', () => {
-    loadInventory();
+    // inventory.ts wires the sub-nav buttons once per module instance
+    // (listenersWired, no public reset), so an earlier test's loadInventory
+    // would leave this test's fresh buttons unwired. Load a fresh instance of
+    // the module graph (mocks included) so the result is order-independent.
+    let freshLoadInventory!: typeof loadInventory;
+    let freshSwitchInventorySubTab!: typeof switchInventorySubTab;
+    let freshApi!: typeof api;
+    jest.isolateModules(() => {
+      freshLoadInventory = require('../inventory').loadInventory;
+      freshSwitchInventorySubTab = require('../navigation').switchInventorySubTab;
+      freshApi = require('../api');
+    });
+    (freshApi.listActiveCommitments as jest.Mock).mockResolvedValue([]);
+    freshLoadInventory();
 
     // Default landing is active-commitments (issue #751).
     expect(document.getElementById('inventory-active-commitments')?.classList.contains('hidden')).toBe(false);
@@ -105,7 +118,7 @@ describe('Inventory & Coverage sub-section switching', () => {
     // mocked router delegates to the real view switcher, so the DOM flips.
     const coverageBtn = document.querySelector<HTMLButtonElement>('[data-inv-subtab="coverage"]')!;
     coverageBtn.click();
-    expect(switchInventorySubTab).toHaveBeenCalledWith('coverage');
+    expect(freshSwitchInventorySubTab).toHaveBeenCalledWith('coverage');
     expect(document.getElementById('inventory-coverage')?.classList.contains('hidden')).toBe(false);
     expect(document.getElementById('inventory-active-commitments')?.classList.contains('hidden')).toBe(true);
   });
