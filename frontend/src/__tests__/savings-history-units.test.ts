@@ -6,7 +6,7 @@
 
 // The harness registers the module mocks, so it must be imported first.
 import './savings-history-harness';
-import { loadSavingsHistory, initSavingsHistory } from '../modules/savings-history';
+import { loadSavingsHistory, initSavingsHistory, convertFromMonthly, unitSuffix, unitLabel } from '../modules/savings-history';
 import { getSavingsAnalytics } from '../api';
 import { Chart } from 'chart.js';
 import { flushPromises } from './flush-promises';
@@ -198,6 +198,43 @@ describe('Savings History Module', () => {
       const tooltipCb = chartCall[1].options.plugins.tooltip.callbacks.label;
       const ctx = { raw: 1.0, datasetIndex: 0, dataset: { label: 'Period Savings' } };
       expect(tooltipCb(ctx)).toContain('/hr');
+    });
+  });
+
+  // Issue #750: unit conversion helpers + dropdown behavior
+  describe('unit conversion helpers', () => {
+    describe('convertFromMonthly', () => {
+      test('monthly -> monthly is identity', () => {
+        expect(convertFromMonthly(100, 'monthly')).toBe(100);
+        expect(convertFromMonthly(0, 'monthly')).toBe(0);
+        expect(convertFromMonthly(1.15, 'monthly')).toBe(1.15);
+      });
+
+      test('monthly -> hourly divides by 730', () => {
+        expect(convertFromMonthly(730, 'hourly')).toBe(1);
+        expect(convertFromMonthly(1.15, 'hourly')).toBeCloseTo(1.15 / 730, 6);
+      });
+
+      test('monthly -> yearly multiplies by 12', () => {
+        expect(convertFromMonthly(100, 'yearly')).toBe(1200);
+        expect(convertFromMonthly(1.15, 'yearly')).toBeCloseTo(1.15 * 12, 6);
+      });
+    });
+
+    describe('unitSuffix', () => {
+      test('returns correct suffix for each unit', () => {
+        expect(unitSuffix('hourly')).toBe('/hr');
+        expect(unitSuffix('monthly')).toBe('/mo');
+        expect(unitSuffix('yearly')).toBe('/yr');
+      });
+    });
+
+    describe('unitLabel', () => {
+      test('returns correct label for each unit', () => {
+        expect(unitLabel('hourly')).toBe('Hourly');
+        expect(unitLabel('monthly')).toBe('Monthly');
+        expect(unitLabel('yearly')).toBe('Yearly');
+      });
     });
   });
 });
