@@ -3,10 +3,8 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -255,44 +253,6 @@ func NewApplicationFromDeps(ctx context.Context, cfg ApplicationConfig, deps Ext
 	}, nil
 }
 
-// resolveAdminPassword returns the admin password from Secrets Manager.
-// It requires ADMIN_PASSWORD_SECRET to be set to a valid secret ARN/name.
-// If absent, it returns an error to prevent startup with no secret source.
-func resolveAdminPassword(ctx context.Context, resolver secrets.Resolver) (string, error) {
-	secret := os.Getenv("ADMIN_PASSWORD_SECRET")
-	if secret == "" {
-		return "", fmt.Errorf("ADMIN_PASSWORD_SECRET environment variable is required but not set; refusing to start without a Secrets Manager ARN")
-	}
-	if resolver == nil {
-		return "", fmt.Errorf("secret resolver is not configured; cannot resolve ADMIN_PASSWORD_SECRET")
-	}
-	resolved, err := resolver.GetSecret(ctx, secret)
-	if err != nil {
-		return "", fmt.Errorf("failed to resolve admin password secret: %w", err)
-	}
-	return resolved, nil
-}
-
-// loadAndGuardEncryptionKey loads the credential-encryption key via the
-// shared secrets.Resolver and refuses to return the all-zero dev key unless
-// CREDENTIAL_ENCRYPTION_ALLOW_DEV_KEY=1 is explicitly set. Logs which env
-// var resolved the key (name only — never the key value). The returned
-// keySource is propagated to the API handler so /health can surface it.
-func loadAndGuardEncryptionKey(ctx context.Context, resolver secrets.Resolver) (key []byte, keySource string, err error) {
-	encKey, source, err := credentials.LoadKey(ctx, resolver)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to load credential encryption key: %w", err)
-	}
-	// Defense in depth: LoadKey already gates this, but a guard here protects
-	// against a future regression where LoadKey is changed to silently fall
-	// back again.
-	if bytes.Equal(encKey, credentials.DevKey()) && os.Getenv(credentials.EnvAllowDev) != "1" {
-		return nil, "", fmt.Errorf("credentials: refusing to start with all-zero dev key (set %s=1 for local dev only)", credentials.EnvAllowDev)
-	}
-	logging.Infof("credentials: loaded encryption key via %s", source)
-	return encKey, source, nil
-}
-
 // reinitializeAfterConnect re-creates all stores and services that depend on the
 // database connection. This is called after the lazy DB connect succeeds.
 // Returns an error if any store or service initialization fails.
@@ -439,92 +399,6 @@ func (app *Application) reinitializeAfterConnect(ctx context.Context, dbConn *da
 	app.startRateLimiterCleanup(dbRL)
 
 	return nil
-}
-
-// buildAdminPasswordSyncCallback returns a callback that syncs the admin user's
-// password to the secret manager when it changes. Returns nil if the required
-// environment variables (ADMIN_PASSWORD_SECRET, ADMIN_EMAIL) are not set or
-// the secret resolver is nil.
-func buildAdminPasswordSyncCallback(store auth.StoreInterface, resolver secrets.Resolver) func(ctx context.Context, userID, newPassword string) {
-	adminPasswordSecret := os.Getenv("ADMIN_PASSWORD_SECRET")
-	adminEmail := os.Getenv("ADMIN_EMAIL")
-
-	if adminPasswordSecret == "" || resolver == nil || adminEmail == "" {
-		return nil
-	}
-
-	return func(ctx context.Context, userID, newPassword string) {
-		user, err := store.GetUserByID(ctx, userID)
-		if err != nil {
-			// Cannot tell whether this was the admin, so the secret manager copy
-			// may now be stale. Say so instead of skipping silently.
-			logging.Errorf("Admin password sync skipped: could not load user %s: %v; if this user is the admin, secret %q may no longer match the database password", userID, err, adminPasswordSecret)
-			return
-		}
-		if user == nil || user.Email != adminEmail {
-			return
-		}
-		if err := resolver.PutSecret(ctx, adminPasswordSecret, newPassword); err != nil {
-			// The password change is already committed to the database, so the
-			// two copies have now diverged. ERROR, not WARN: anything recovering
-			// from the secret manager copy gets the old password (#199). The
-			// usual cause is a runtime identity without write access to this
-			// one secret.
-			logging.Errorf("Admin password sync FAILED: secret %q no longer matches the database password (check the runtime identity can write this secret): %v", adminPasswordSecret, err)
-			return
-		}
-		logging.Infof("Admin password synced to secret manager")
-	}
-}
-
-// Close gracefully shuts down the application.
-func (app *Application) Close() error {
-	logging.Infof("Shutting down CUDly Server...")
-
-	app.lifeMu.Lock()
-	if app.lifeCancel != nil {
-		app.lifeCancel()
-	}
-	app.lifeMu.Unlock()
-
-	// Close database connection if using PostgreSQL
-	if app.DB != nil {
-		logging.Infof("Closing database connection...")
-		app.DB.Close()
-		logging.Infof("Database connection closed successfully")
-	}
-
-	return nil
-}
-
-// initConfigStore initializes the configuration store using PostgreSQL
-// Connection is deferred (lazy init) until first request to avoid Lambda ENI issues.
-func initConfigStore(ctx context.Context) (*database.Config, secrets.Resolver, error) {
-	// Require PostgreSQL configuration
-	if os.Getenv("DB_HOST") == "" {
-		return nil, nil, fmt.Errorf("database configuration required: DB_HOST must be set")
-	}
-
-	logging.Infof("Preparing PostgreSQL configuration store (lazy initialization)...")
-
-	// Initialize secret resolver
-	secretResolver, err := secrets.NewResolver(ctx, secrets.LoadConfigFromEnv())
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create secret resolver: %w", err)
-	}
-
-	// Load database config from environment
-	dbConfig, err := database.LoadFromEnv()
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to load database config: %w", err)
-	}
-
-	logging.Infof("PostgreSQL config loaded (will connect on first request): %s:%d", dbConfig.Host, dbConfig.Port)
-
-	// The config store itself is created lazily on first request (not here), so
-	// callers wire a nil ConfigStore into ExternalDeps. Deferring the connection
-	// avoids connecting during Lambda init when the ENI isn't ready.
-	return dbConfig, secretResolver, nil
 }
 
 // Helper functions for environment variable parsing
