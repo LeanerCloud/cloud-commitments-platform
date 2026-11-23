@@ -4,11 +4,12 @@
  * mocks live in recommendations-harness.ts.
  */
 // The harness registers the module mocks, so it must be imported first.
-import { mockFactoryDefaults } from './recommendations-harness';
+import { mockFactoryDefaults, setupOpportunitiesTabDom } from './recommendations-harness';
 import { loadRecommendations } from '../recommendations';
 import type { LocalRecommendation } from '../types';
 import * as api from '../api';
 import * as state from '../state';
+import * as recsApi from '../api/recommendations';
 
 beforeEach(() => {
   for (const [fn, factoryDefault] of mockFactoryDefaults) {
@@ -202,5 +203,142 @@ describe('Issue #494: deterministic group sort on multi-variant cells', () => {
 
     // Row order must be identical after selection change.
     expect(orderAfter).toEqual(orderBefore);
+  });
+
+  test('Sort is deterministic across repeated renders for each affected column', async () => {
+    const cells = [
+      multiVariantCell({ resourceType: 'A-cell', payment1y: 'no-upfront',      payment3y: 'all-upfront',     upfront1y: 0,   upfront3y: 1500, monthly1y: 50,  monthly3y: 0,  savings1y: 20, savings3y: 30 }),
+      multiVariantCell({ resourceType: 'B-cell', payment1y: 'partial-upfront', payment3y: 'partial-upfront', upfront1y: 300, upfront3y: 900,  monthly1y: 40,  monthly3y: 30, savings1y: 25, savings3y: 35 }),
+      multiVariantCell({ resourceType: 'C-cell', payment1y: 'all-upfront',     payment3y: 'no-upfront',      upfront1y: 800, upfront3y: 0,    monthly1y: 60,  monthly3y: 45, savings1y: 30, savings3y: 40 }),
+    ].flat();
+
+    const columns: Array<{ column: string; direction: 'asc' | 'desc' }> = [
+      { column: 'term',                  direction: 'asc' },
+      { column: 'payment',               direction: 'asc' },
+      { column: 'upfront_cost',          direction: 'asc' },
+      { column: 'monthly_cost',          direction: 'asc' },
+      { column: 'effective_savings_pct', direction: 'asc' },
+    ];
+
+    for (const sort of columns) {
+      setupTestFixture(cells, sort);
+      await loadRecommendations();
+      const first = renderedCellOrder();
+      // Re-run with the SAME inputs.
+      setupTestFixture(cells, sort);
+      await loadRecommendations();
+      const second = renderedCellOrder();
+      expect(second).toEqual(first);
+      // Must not be the empty / single-element trivial case.
+      expect(first.length).toBe(3);
+    }
+  });
+
+  //
+  // QA 4.13 - Monthly Cost: zero-cost (all-upfront) variants must not prevent
+  // sort-direction toggle from reordering rows.
+  //
+  // Before the fix, cells with at least one all-upfront variant (monthly_cost=0)
+  // all scored 0 via Math.min(...finite), tying every such cell so the direction
+  // multiplier had nothing to act on and subsequent sort clicks were no-ops.
+  // The fix uses the minimum NON-ZERO recurring cost, falling back to 0 only
+  // when all finite values are 0 (pure all-upfront cell).
+  //
+  test('Monthly Cost: mixed cell (all-upfront + no-upfront) sorts by non-zero recurring cost, not 0', async () => {
+    // cellLow: all-upfront (monthly=0) + no-upfront (monthly=20) -> score = 20
+    const cellLow = multiVariantCell({
+      resourceType: 'low-mixed', payment1y: 'all-upfront', payment3y: 'no-upfront',
+      upfront1y: 500, upfront3y: 0, monthly1y: 0, monthly3y: 20,
+    });
+    // cellHigh: all-upfront (monthly=0) + no-upfront (monthly=80) -> score = 80
+    const cellHigh = multiVariantCell({
+      resourceType: 'high-mixed', payment1y: 'all-upfront', payment3y: 'no-upfront',
+      upfront1y: 500, upfront3y: 0, monthly1y: 0, monthly3y: 80,
+    });
+    const recs = [...cellHigh, ...cellLow]; // wrong insertion order
+
+    // Ascending: cellLow (score=20) must precede cellHigh (score=80).
+    setupTestFixture(recs, { column: 'monthly_cost', direction: 'asc' });
+    await loadRecommendations();
+    const ascOrder = renderedCellOrder();
+    expect(indexOrFail(ascOrder, 'low-mixed'))
+      .toBeLessThan(indexOrFail(ascOrder, 'high-mixed'));
+
+    // Descending: cellHigh (score=80) must now precede cellLow (score=20).
+    // This is the toggle that was broken before the fix -- both cells scored 0
+    // so direction-flip was a no-op.
+    setupTestFixture(recs, { column: 'monthly_cost', direction: 'desc' });
+    await loadRecommendations();
+    const descOrder = renderedCellOrder();
+    expect(indexOrFail(descOrder, 'high-mixed'))
+      .toBeLessThan(indexOrFail(descOrder, 'low-mixed'));
+
+    // The two directions must produce OPPOSITE orderings (the toggle is live).
+    expect(ascOrder).not.toEqual(descOrder);
+  });
+
+  test('Monthly Cost: pure all-upfront cell scores 0 (not POSITIVE_INFINITY) and sorts before all-null cells', async () => {
+    // cellPureAllUpfront: both variants have monthly_cost=0 (all-upfront) -> score=0
+    const cellPureAllUpfront = multiVariantCell({
+      resourceType: 'pure-upfront', payment1y: 'all-upfront', payment3y: 'all-upfront',
+      upfront1y: 600, upfront3y: 1800, monthly1y: 0, monthly3y: 0,
+    });
+    // cellAllNull: both variants have monthly_cost=null -> score=POSITIVE_INFINITY
+    const cellAllNull = multiVariantCell({
+      resourceType: 'pure-null', payment1y: 'all-upfront', payment3y: 'all-upfront',
+      upfront1y: 1000, upfront3y: 3000, monthly1y: null, monthly3y: null,
+    });
+    const recs = [...cellAllNull, ...cellPureAllUpfront];
+
+    // Ascending: pure-upfront (score=0) must come before all-null (score=+Inf).
+    setupTestFixture(recs, { column: 'monthly_cost', direction: 'asc' });
+    await loadRecommendations();
+    const order = renderedCellOrder();
+    expect(indexOrFail(order, 'pure-upfront'))
+      .toBeLessThan(indexOrFail(order, 'pure-null'));
+  });
+});
+
+//
+// Issue #479: Select-all checkbox tri-state.
+// The header checkbox renders with the right .checked / .indeterminate state
+// reflecting current selection vs. the set of best-variant-per-cell recs
+// (the set the select-all click actually populates).
+//
+describe('Issue #479: Select-all header checkbox tri-state', () => {
+  const recs = [
+    { id: 'r1', provider: 'aws', cloud_account_id: 'a1', service: 'ec2', resource_type: 't3.medium', region: 'us-east-1', count: 1, term: 1, savings: 100, upfront_cost: 500 },
+    { id: 'r2', provider: 'aws', cloud_account_id: 'a1', service: 'rds', resource_type: 'db.t3',     region: 'us-east-1', count: 1, term: 1, savings: 200, upfront_cost: 800 },
+  ];
+
+  beforeEach(() => {
+    setupOpportunitiesTabDom();
+    jest.clearAllMocks();
+    (api.getRecommendations as jest.Mock).mockResolvedValue({ summary: {}, recommendations: recs, regions: [] });
+    (state.getRecommendations as jest.Mock).mockReturnValue(recs);
+    (state.getVisibleRecommendations as jest.Mock).mockReturnValue(recs);
+    (state.getRecommendationsColumnFilters as jest.Mock).mockReturnValue({});
+    (state.getCostPeriod as jest.Mock).mockReturnValue('monthly');
+    (state.getRecommendationsSort as jest.Mock).mockReturnValue({ column: 'savings', direction: 'desc' });
+    (recsApi.getRecommendationsFreshness as jest.Mock).mockResolvedValue({
+      last_collected_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+      last_collection_error: null,
+    });
+  });
+
+  test('with no selection, header checkbox is unchecked and not indeterminate', async () => {
+    (state.getSelectedRecommendationIDs as jest.Mock).mockReturnValue(new Set());
+    await loadRecommendations();
+    const cb = document.getElementById('select-all-recs') as HTMLInputElement;
+    expect(cb.checked).toBe(false);
+    expect(cb.indeterminate).toBe(false);
+  });
+
+  test('with a partial selection, header checkbox is indeterminate', async () => {
+    (state.getSelectedRecommendationIDs as jest.Mock).mockReturnValue(new Set(['r1']));
+    await loadRecommendations();
+    const cb = document.getElementById('select-all-recs') as HTMLInputElement;
+    expect(cb.indeterminate).toBe(true);
+    expect(cb.checked).toBe(false);
   });
 });
