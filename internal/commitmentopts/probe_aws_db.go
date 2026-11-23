@@ -5,8 +5,10 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/elasticache"
+	"github.com/aws/aws-sdk-go-v2/service/memorydb"
 	"github.com/aws/aws-sdk-go-v2/service/opensearch"
 	"github.com/aws/aws-sdk-go-v2/service/rds"
+	"github.com/aws/aws-sdk-go-v2/service/redshift"
 )
 
 // ---------------------------------------------------------------------------
@@ -169,4 +171,110 @@ func (p *OpenSearchProber) client(cfg aws.Config) OpenSearchDescribeOfferings {
 		return p.NewClient(cfg)
 	}
 	return opensearch.NewFromConfig(cfg)
+}
+
+// ---------------------------------------------------------------------------
+// Redshift
+// ---------------------------------------------------------------------------
+
+// RedshiftDescribeOfferings is the minimal Redshift surface we use. The
+// API has no NodeType filter on DescribeReservedNodeOfferings so the probe
+// filters client-side.
+type RedshiftDescribeOfferings interface {
+	DescribeReservedNodeOfferings(ctx context.Context, params *redshift.DescribeReservedNodeOfferingsInput, optFns ...func(*redshift.Options)) (*redshift.DescribeReservedNodeOfferingsOutput, error)
+}
+
+// RedshiftProber probes redshift:DescribeReservedNodeOfferings.
+type RedshiftProber struct {
+	NewClient func(cfg aws.Config) RedshiftDescribeOfferings
+}
+
+// Service returns "redshift".
+func (p *RedshiftProber) Service() string { return "redshift" }
+
+// Probe returns the combos for dc2.large.
+func (p *RedshiftProber) Probe(ctx context.Context, cfg aws.Config) ([]Combo, error) {
+	client := p.client(cfg)
+	raw, capped, err := walkPaginatedCapped(ctx, p.Service(), func(ctx context.Context, token *string) ([]rawOffer, *string, error) {
+		out, err := client.DescribeReservedNodeOfferings(ctx, &redshift.DescribeReservedNodeOfferingsInput{
+			MaxRecords: aws.Int32(pageSize),
+			Marker:     token,
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		offers := make([]rawOffer, 0, len(out.ReservedNodeOfferings))
+		for _, o := range out.ReservedNodeOfferings {
+			if aws.ToString(o.NodeType) != probeTargetRedshift {
+				continue
+			}
+			offers = append(offers, rawOffer{
+				durationSeconds: int64(aws.ToInt32(o.Duration)),
+				payment:         aws.ToString(o.OfferingType),
+			})
+		}
+		return offers, out.Marker, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return collectUnlessCapped(p.Service(), raw, capped), nil
+}
+
+func (p *RedshiftProber) client(cfg aws.Config) RedshiftDescribeOfferings {
+	if p.NewClient != nil {
+		return p.NewClient(cfg)
+	}
+	return redshift.NewFromConfig(cfg)
+}
+
+// ---------------------------------------------------------------------------
+// MemoryDB
+// ---------------------------------------------------------------------------
+
+// MemoryDBDescribeOfferings is the minimal MemoryDB surface we use.
+type MemoryDBDescribeOfferings interface {
+	DescribeReservedNodesOfferings(ctx context.Context, params *memorydb.DescribeReservedNodesOfferingsInput, optFns ...func(*memorydb.Options)) (*memorydb.DescribeReservedNodesOfferingsOutput, error)
+}
+
+// MemoryDBProber probes memorydb:DescribeReservedNodesOfferings.
+type MemoryDBProber struct {
+	NewClient func(cfg aws.Config) MemoryDBDescribeOfferings
+}
+
+// Service returns "memorydb".
+func (p *MemoryDBProber) Service() string { return "memorydb" }
+
+// Probe returns the combos for db.r6g.large.
+func (p *MemoryDBProber) Probe(ctx context.Context, cfg aws.Config) ([]Combo, error) {
+	client := p.client(cfg)
+	raw, err := walkPaginated(ctx, p.Service(), func(ctx context.Context, token *string) ([]rawOffer, *string, error) {
+		out, err := client.DescribeReservedNodesOfferings(ctx, &memorydb.DescribeReservedNodesOfferingsInput{
+			NodeType:   aws.String(probeTargetMemoryDB),
+			MaxResults: aws.Int32(pageSize),
+			NextToken:  token,
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		offers := make([]rawOffer, 0, len(out.ReservedNodesOfferings))
+		for _, o := range out.ReservedNodesOfferings {
+			offers = append(offers, rawOffer{
+				durationSeconds: int64(o.Duration),
+				payment:         aws.ToString(o.OfferingType),
+			})
+		}
+		return offers, out.NextToken, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return collect(p.Service(), raw), nil
+}
+
+func (p *MemoryDBProber) client(cfg aws.Config) MemoryDBDescribeOfferings {
+	if p.NewClient != nil {
+		return p.NewClient(cfg)
+	}
+	return memorydb.NewFromConfig(cfg)
 }
