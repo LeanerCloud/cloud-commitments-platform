@@ -5,7 +5,7 @@
  */
 
 // The harness registers the module mocks, so it must be imported first.
-import { mockShowToast, mockConfirmDialog, mockGroupRecsByCell, mockPageLevelRange, mockFormatSavingsRange } from './dashboard-harness';
+import { mockShowToast, mockConfirmDialog, mockGroupRecsByCell, mockPageLevelRange, mockFormatSavingsRange, resetDashboardState } from './dashboard-harness';
 import { loadDashboard } from '../dashboard';
 import * as api from '../api';
 import * as state from '../state';
@@ -13,6 +13,7 @@ import { flushPromises } from './flush-promises';
 
 describe('Dashboard Module', () => {
   beforeEach(() => {
+    resetDashboardState();
     // Reset DOM
     document.body.innerHTML = `
       <div id="summary"></div>

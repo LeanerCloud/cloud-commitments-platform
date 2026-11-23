@@ -115,3 +115,26 @@ jest.mock('../utils', () => ({
   // providerBadgeClass added for L4/D1 fix: whitelist-based CSS class helper.
   providerBadgeClass: jest.fn((p) => ['aws', 'azure', 'gcp'].includes((p || '').toLowerCase()) ? (p || '').toLowerCase() : ''),
 }));
+
+import { dashboardState } from '../dashboardflow/dashboardState';
+import { setupSavingsTrendHandlers } from '../dashboardflow/trend';
+
+/**
+ * Reset the dashboard module state that survives between tests in one file
+ * (jest.clearAllMocks does not touch it): the chart instances, which gate the
+ * loading skeletons (a chart drawn by an earlier test suppresses them), and the
+ * trend range (#1972). The range has no public reset, so click a lone 90d
+ * button; with no trend canvas in the DOM the click only records the range.
+ * Call it first in beforeEach, before the test DOM is built.
+ */
+export function resetDashboardState(): void {
+  dashboardState.savingsTrendChart = null;
+  dashboardState.savingsByServiceChart = null;
+  dashboardState.lastSavingsByServiceArgs = null;
+  const b90 = document.createElement('button');
+  b90.className = 'trend-range';
+  b90.dataset['range'] = '90';
+  document.body.replaceChildren(b90);
+  setupSavingsTrendHandlers();
+  b90.click();
+}

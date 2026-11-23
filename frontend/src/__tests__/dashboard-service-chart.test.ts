@@ -5,12 +5,13 @@
  */
 
 // The harness registers the module mocks, so it must be imported first.
-import { mockShowToast, mockConfirmDialog, mockGroupRecsByCell, mockPageLevelRange, mockFormatSavingsRange } from './dashboard-harness';
+import { mockShowToast, mockConfirmDialog, mockGroupRecsByCell, mockPageLevelRange, mockFormatSavingsRange, resetDashboardState } from './dashboard-harness';
 import { Chart } from 'chart.js';
 import * as api from '../api';
 
 describe('Dashboard Module', () => {
   beforeEach(() => {
+    resetDashboardState();
     // Reset DOM
     document.body.innerHTML = `
       <div id="summary"></div>
