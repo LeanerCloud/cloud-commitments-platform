@@ -3,9 +3,16 @@
  * table counts and the excluded-RIs notice
  */
 
-import './riexchange-harness';
-import { loadReshapeRecommendations, loadRIExchange, renderExcludedRIsNotice } from '../riexchange';
+import { _accountListeners, _providerListeners } from './riexchange-harness';
+import {
+  loadReshapeRecommendations,
+  loadRIExchange,
+  renderExcludedRIsNotice,
+  renderReshapeStalenessBanner,
+  setupRIExchangeHandlers,
+} from '../riexchange';
 import * as api from '../api';
+import * as navigation from '../navigation';
 
 describe('exchange history table counts (issue #286)', () => {
   beforeEach(() => {
@@ -144,5 +151,189 @@ describe('excluded RIs notice', () => {
     (api.getReshapeRecommendations as jest.Mock).mockResolvedValue({ recommendations: [], excluded_ris: [] });
     await loadReshapeRecommendations();
     expect(document.getElementById('ri-exchange-recommendations-excluded')?.textContent ?? '').toBe('');
+  });
+});
+
+// Staleness banner tests for issue #150.
+describe('renderReshapeStalenessBanner', () => {
+  let listEl: HTMLDivElement;
+
+  beforeEach(() => {
+    const wrapper = document.createElement('div');
+    listEl = document.createElement('div');
+    listEl.id = 'ri-exchange-recommendations-list';
+    wrapper.appendChild(listEl);
+    document.body.appendChild(wrapper);
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('renders no banner when staleness is empty', () => {
+    renderReshapeStalenessBanner('', null);
+    const banner = document.getElementById('ri-exchange-recommendations-freshness');
+    expect(banner?.textContent).toBe('');
+  });
+
+  it('renders a soft-warning banner for staleness=soft', () => {
+    renderReshapeStalenessBanner('soft', null);
+    const banner = document.getElementById('ri-exchange-recommendations-freshness');
+    expect(banner?.className).toContain('warning');
+    expect(banner?.textContent).toContain('more than 12h old');
+  });
+
+  it('renders a hard-warning banner for staleness=hard', () => {
+    renderReshapeStalenessBanner('hard', null);
+    const banner = document.getElementById('ri-exchange-recommendations-freshness');
+    expect(banner?.className).toContain('error');
+    expect(banner?.textContent).toContain('older than 24h');
+  });
+
+  it('includes an age label when recs_collected_at is provided', () => {
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    renderReshapeStalenessBanner('soft', twoHoursAgo);
+    const banner = document.getElementById('ri-exchange-recommendations-freshness');
+    expect(banner?.textContent).toContain('last collected 2h');
+  });
+
+  it('reports days once the data is older than 48h (#1691)', () => {
+    const old = new Date(Date.now() - 203 * 60 * 60 * 1000).toISOString();
+    renderReshapeStalenessBanner('hard', old);
+    const text = document.getElementById('ri-exchange-recommendations-freshness')?.textContent;
+    expect(text).toContain('last collected 8 days ago');
+    expect(text).not.toContain('203h');
+  });
+
+  it('clears an existing banner when staleness becomes empty', () => {
+    renderReshapeStalenessBanner('hard', null);
+    expect(document.getElementById('ri-exchange-recommendations-freshness')?.className).toContain('error');
+    renderReshapeStalenessBanner('', null);
+    const banner = document.getElementById('ri-exchange-recommendations-freshness');
+    expect(banner?.textContent).toBe('');
+    expect(banner?.className).toBe('');
+  });
+});
+
+describe('⚙︎ Exchange settings deep-link', () => {
+  beforeEach(() => {
+    const btn = document.createElement('button');
+    btn.id = 'ri-exchange-settings-btn';
+    document.body.appendChild(btn);
+  });
+
+  afterEach(() => {
+    const body = document.body;
+    while (body.firstChild) body.removeChild(body.firstChild);
+    jest.resetAllMocks();
+  });
+
+  // Issue #1775: 'settings' was the pre-#340 tab name, so switchTab fell back
+  // to Home while switchSettingsSubTab still set the Admin title and pushed
+  // /admin/purchasing -- URL and title said Admin over the Home dashboard.
+  it('switches to Admin → Purchasing when clicked', () => {
+    setupRIExchangeHandlers();
+    const btn = document.getElementById('ri-exchange-settings-btn')!;
+    btn.click();
+    expect(navigation.switchTab).toHaveBeenCalledWith('admin', { push: false, skipDefaultLoad: true });
+    expect(navigation.switchSettingsSubTab).toHaveBeenCalledWith('purchasing');
+  });
+});
+
+// issue #186: provider/account subscriptions on the RI Exchange tab
+describe('RI Exchange filter subscriptions (issue #186)', () => {
+  let instancesEl: HTMLDivElement;
+  let recsEl: HTMLDivElement;
+  let historyEl: HTMLDivElement;
+  let riExchangePanel: HTMLDivElement;
+
+  beforeEach(() => {
+    instancesEl = document.createElement('div');
+    instancesEl.id = 'ri-exchange-instances-list';
+    recsEl = document.createElement('div');
+    recsEl.id = 'ri-exchange-recommendations-list';
+    historyEl = document.createElement('div');
+    historyEl.id = 'ri-exchange-history-list';
+    // The sub-tab panel must exist and be visible for the guard to pass.
+    riExchangePanel = document.createElement('div');
+    riExchangePanel.id = 'inventory-ri-exchange';
+    document.body.append(instancesEl, recsEl, historyEl, riExchangePanel);
+
+    (api.listConvertibleRIs as jest.Mock).mockResolvedValue([]);
+    (api.getRIUtilization as jest.Mock).mockResolvedValue([]);
+    (api.getReshapeRecommendations as jest.Mock).mockResolvedValue({ recommendations: [], recs_staleness: '', recs_collected_at: null });
+    (api.getRIExchangeHistoryResponse as jest.Mock).mockResolvedValue({ records: [], direct_executions: [] });
+    _providerListeners.length = 0;
+    _accountListeners.length = 0;
+    // Re-apply the implementation after jest.resetAllMocks() from a prior
+    // describe block may have cleared it.
+    const stateMod = jest.requireMock('../state') as {
+      subscribeProvider: jest.Mock;
+      subscribeAccount: jest.Mock;
+      getCurrentProvider: jest.Mock;
+      getCurrentAccountIDs: jest.Mock;
+    };
+    stateMod.subscribeProvider.mockImplementation((cb: () => void) => {
+      _providerListeners.push(cb);
+      return () => undefined;
+    });
+    stateMod.subscribeAccount.mockImplementation((cb: () => void) => {
+      _accountListeners.push(cb);
+      return () => undefined;
+    });
+    // loadRIExchange now reads the provider/account chips to scope the
+    // request (issue #871); restore their implementations too.
+    stateMod.getCurrentProvider.mockImplementation(() => 'aws');
+    stateMod.getCurrentAccountIDs.mockImplementation(() => []);
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+    // Use clearAllMocks rather than resetAllMocks so the subscribeProvider/
+    // subscribeAccount mock implementations (which push to _providerListeners)
+    // are preserved across tests in this block.
+    jest.clearAllMocks();
+  });
+
+  it('setupRIExchangeHandlers registers subscribeProvider and subscribeAccount', () => {
+    const stateMod = jest.requireMock('../state');
+    setupRIExchangeHandlers();
+    expect(stateMod.subscribeProvider).toHaveBeenCalled();
+    expect(stateMod.subscribeAccount).toHaveBeenCalled();
+  });
+
+  it('a provider change triggers loadRIExchange when the sub-tab is active', async () => {
+    setupRIExchangeHandlers();
+    // Fire the provider listener (simulates topbar provider change).
+    _providerListeners.forEach(cb => cb());
+    // Flush the microtask queue: queueMicrotask fires after all pending
+    // micro-ticks; wrapping in a resolved promise ensures we drain it.
+    await new Promise(r => setTimeout(r, 0));
+    expect(api.listConvertibleRIs).toHaveBeenCalled();
+  });
+
+  it('a provider change does NOT trigger loadRIExchange when the sub-tab is hidden', async () => {
+    riExchangePanel.classList.add('hidden');
+    setupRIExchangeHandlers();
+    _providerListeners.forEach(cb => cb());
+    await new Promise(r => setTimeout(r, 0));
+    expect(api.listConvertibleRIs).not.toHaveBeenCalled();
+  });
+
+  it('an account change triggers loadRIExchange when the sub-tab is active', async () => {
+    setupRIExchangeHandlers();
+    _accountListeners.forEach(cb => cb());
+    await new Promise(r => setTimeout(r, 0));
+    expect(api.listConvertibleRIs).toHaveBeenCalled();
+  });
+
+  it('coalesces provider and account changes into a single reload', async () => {
+    setupRIExchangeHandlers();
+    // Simulate topbar filter cascade: provider change triggers account reset
+    _providerListeners.forEach(cb => cb());
+    _accountListeners.forEach(cb => cb());
+    await new Promise(r => setTimeout(r, 0));
+    // Should be called once, not twice
+    expect(api.listConvertibleRIs).toHaveBeenCalledTimes(1);
   });
 });
