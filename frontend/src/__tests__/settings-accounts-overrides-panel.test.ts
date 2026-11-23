@@ -367,4 +367,100 @@ describe('Overrides panel: inline Term/Coverage/Enabled (issue #110)', () => {
     const toastCalls = mockShowToast.mock.calls.map(c => c[0]) as Array<{ kind?: string; message?: string }>;
     expect(toastCalls.some(t => t.kind === 'info' && t.message?.includes('Delete'))).toBe(true);
   });
+
+  test('Enabled: checkbox is checked by default for legacy rows (enabled === undefined)', async () => {
+    (api.listAccountServiceOverrides as jest.Mock).mockResolvedValue([
+      { id: 'o1', account_id: 'acc-1', provider: 'aws', service: 'ec2' },
+    ]);
+
+    const panel = await openOverridesPanel('acc-1');
+    const cb = panel.querySelector('input.override-enabled-toggle') as HTMLInputElement;
+    expect(cb).not.toBeNull();
+    expect(cb.type).toBe('checkbox');
+    expect(cb.checked).toBe(true);
+    const tr = cb.closest('tr')!;
+    expect(tr.classList.contains('override-disabled')).toBe(false);
+  });
+
+  test('Enabled: rows with enabled=false render unchecked with .override-disabled dim', async () => {
+    (api.listAccountServiceOverrides as jest.Mock).mockResolvedValue([
+      { id: 'o1', account_id: 'acc-1', provider: 'aws', service: 'ec2', enabled: false },
+    ]);
+
+    const panel = await openOverridesPanel('acc-1');
+    const cb = panel.querySelector('input.override-enabled-toggle') as HTMLInputElement;
+    expect(cb.checked).toBe(false);
+    const tr = cb.closest('tr')!;
+    expect(tr.classList.contains('override-disabled')).toBe(true);
+  });
+
+  test('Enabled: toggle off calls save with {enabled: false} and dims the row', async () => {
+    (api.listAccountServiceOverrides as jest.Mock).mockResolvedValue([
+      { id: 'o1', account_id: 'acc-1', provider: 'aws', service: 'ec2' },
+    ]);
+    (api.saveAccountServiceOverride as jest.Mock).mockResolvedValue({
+      id: 'o1', account_id: 'acc-1', provider: 'aws', service: 'ec2', enabled: false,
+    });
+
+    const panel = await openOverridesPanel('acc-1');
+    const cb = panel.querySelector('input.override-enabled-toggle') as HTMLInputElement;
+    const tr = cb.closest('tr')!;
+    cb.checked = false;
+    cb.dispatchEvent(new Event('change'));
+    // After the optimistic visual update, the row should already be dimmed
+    // even before the network roundtrip completes.
+    expect(tr.classList.contains('override-disabled')).toBe(true);
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(api.saveAccountServiceOverride).toHaveBeenCalledTimes(1);
+    expect(api.saveAccountServiceOverride).toHaveBeenCalledWith(
+      'acc-1', 'aws', 'ec2', { enabled: false },
+    );
+  });
+
+  test('Enabled: toggle on calls save with {enabled: true} and removes dim', async () => {
+    (api.listAccountServiceOverrides as jest.Mock).mockResolvedValue([
+      { id: 'o1', account_id: 'acc-1', provider: 'aws', service: 'ec2', enabled: false },
+    ]);
+    (api.saveAccountServiceOverride as jest.Mock).mockResolvedValue({
+      id: 'o1', account_id: 'acc-1', provider: 'aws', service: 'ec2', enabled: true,
+    });
+
+    const panel = await openOverridesPanel('acc-1');
+    const cb = panel.querySelector('input.override-enabled-toggle') as HTMLInputElement;
+    const tr = cb.closest('tr')!;
+    expect(tr.classList.contains('override-disabled')).toBe(true);
+    cb.checked = true;
+    cb.dispatchEvent(new Event('change'));
+    expect(tr.classList.contains('override-disabled')).toBe(false);
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(api.saveAccountServiceOverride).toHaveBeenCalledTimes(1);
+    expect(api.saveAccountServiceOverride).toHaveBeenCalledWith(
+      'acc-1', 'aws', 'ec2', { enabled: true },
+    );
+  });
+
+  // ----- Non-AWS rows -----
+
+  test('Azure rows: term/coverage/enabled are all editable (issue #109)', async () => {
+    // Issue #109: Azure override rows now have inline editing on all fields,
+    // same as AWS rows after issue #110.
+    (api.listAccountServiceOverrides as jest.Mock).mockResolvedValue([
+      { id: 'o1', account_id: 'acc-1', provider: 'azure', service: 'compute', term: 1, coverage: 80 },
+    ]);
+
+    const panel = await openOverridesPanel('acc-1');
+    // Term select is present and editable.
+    const termSel = panel.querySelector('select.override-term-select') as HTMLSelectElement | null;
+    expect(termSel).not.toBeNull();
+    expect(termSel!.disabled).toBe(false);
+    // Coverage input is present.
+    const covInput = panel.querySelector('input.override-coverage-input') as HTMLInputElement | null;
+    expect(covInput).not.toBeNull();
+    // Enabled toggle is present and not disabled.
+    const cb = panel.querySelector('input.override-enabled-toggle') as HTMLInputElement;
+    expect(cb).not.toBeNull();
+    expect(cb.disabled).toBe(false);
+  });
 });
