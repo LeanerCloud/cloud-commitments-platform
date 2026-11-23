@@ -13,6 +13,7 @@ import {
   loadGlobalSettings,
   saveGlobalSettings,
   setupSettingsHandlers,
+  isUnsavedChanges,
 } from '../settings';
 
 import * as api from '../api';
@@ -177,6 +178,102 @@ describe('Settings Module', () => {
       expect(api.updateConfig).toHaveBeenCalled();
       const call = (api.updateConfig as jest.Mock).mock.calls[0][0];
       expect(call.recommendations_cache_stale_hours).toBe(0);
+    });
+
+    describe('global coverage propagation (issue #522)', () => {
+      const loadWithCoverage50 = async (): Promise<void> => {
+        (api.getConfig as jest.Mock).mockResolvedValue({
+          global: { enabled_providers: ['aws'], default_term: 3, default_payment: 'all-upfront', default_coverage: 50 },
+          services: [
+            { provider: 'aws', service: 'ec2', enabled: true, term: 3, payment: 'all-upfront', coverage: 50 },
+            { provider: 'aws', service: 'savings-plans-compute', enabled: true, term: 3, payment: 'all-upfront', coverage: 50 },
+          ],
+        });
+        (api.updateConfig as jest.Mock).mockResolvedValue({});
+        (api.updateServiceConfig as jest.Mock).mockClear().mockResolvedValue(undefined);
+        await loadGlobalSettings();
+      };
+      const coverageSentFor = (service: string): number | undefined => {
+        const call = (api.updateServiceConfig as jest.Mock).mock.calls.find(
+          ([provider, svc]) => provider === 'aws' && svc === service,
+        );
+        return call?.[2].coverage;
+      };
+
+      test('an SP card coverage typed during its pending PUT is kept and sent by the next save (#576)', async () => {
+        await loadWithCoverage50();
+        const card = document.getElementById('aws-savings-plans-compute-coverage') as HTMLInputElement;
+        card.value = '60';
+        let resolvePut!: () => void;
+        (api.updateServiceConfig as jest.Mock).mockImplementation((provider: string, svc: string) =>
+          provider === 'aws' && svc === 'savings-plans-compute'
+            ? new Promise<void>(resolve => { resolvePut = resolve; })
+            : Promise.resolve());
+
+        const firstSave = saveGlobalSettings({ preventDefault: jest.fn() } as unknown as Event);
+        await new Promise(r => setTimeout(r, 0));
+        card.value = '77';
+        resolvePut();
+        await firstSave;
+
+        expect(coverageSentFor('savings-plans-compute')).toBe(60);
+        expect(card.value).toBe('77');
+        expect(isUnsavedChanges()).toBe(true);
+
+        (api.updateServiceConfig as jest.Mock).mockClear().mockResolvedValue(undefined);
+        await saveGlobalSettings({ preventDefault: jest.fn() } as unknown as Event);
+
+        expect(coverageSentFor('savings-plans-compute')).toBe(77);
+        expect(isUnsavedChanges()).toBe(false);
+      });
+
+      test.each(['12.7', '-40', '500'])('an SP card coverage of %s aborts the save before any PUT (#318)', async (value) => {
+        await loadWithCoverage50();
+        mockShowToast.mockClear();
+        (document.getElementById('aws-savings-plans-compute-coverage') as HTMLInputElement).value = value;
+
+        await saveGlobalSettings({ preventDefault: jest.fn() } as unknown as Event);
+
+        expect(api.updateConfig).not.toHaveBeenCalled();
+        expect(api.updateServiceConfig).not.toHaveBeenCalled();
+        expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({
+          kind: 'error',
+          message: expect.stringContaining('whole number between 0 and 100 (savings-plans-compute)'),
+        }));
+        expect(isUnsavedChanges()).toBe(true);
+      });
+
+      test.each([['0', 0], ['100', 100]])('an SP card coverage of %s is within range and saved (#318)', async (value, sent) => {
+        await loadWithCoverage50();
+        (document.getElementById('aws-savings-plans-compute-coverage') as HTMLInputElement).value = value;
+
+        await saveGlobalSettings({ preventDefault: jest.fn() } as unknown as Event);
+
+        expect(coverageSentFor('savings-plans-compute')).toBe(sent);
+      });
+
+      test('a saved service payment edit leaves nothing unsaved (#576)', async () => {
+        await loadWithCoverage50();
+        (document.getElementById('aws-ec2-payment') as HTMLSelectElement).value = 'partial-upfront';
+        expect(isUnsavedChanges()).toBe(true);
+
+        await saveGlobalSettings({ preventDefault: jest.fn() } as unknown as Event);
+
+        expect(isUnsavedChanges()).toBe(false);
+      });
+
+      test('an empty global coverage field is rejected instead of saving 0', async () => {
+        await loadWithCoverage50();
+        (document.getElementById('setting-default-coverage') as HTMLInputElement).value = '';
+
+        await saveGlobalSettings({ preventDefault: jest.fn() } as unknown as Event);
+
+        expect(api.updateConfig).not.toHaveBeenCalled();
+        expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({
+          message: 'Dashboard coverage target must be a whole number between 0 and 100',
+          kind: 'error',
+        }));
+      });
     });
   }); // end saveGlobalSettings
 });
