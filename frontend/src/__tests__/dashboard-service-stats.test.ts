@@ -42,9 +42,29 @@ describe('Dashboard Module', () => {
     // Import the public helpers from dashboard. The module is already
     // loaded above via the jest.mock chain, so we can import directly.
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { computeServiceStats } = require('../dashboard') as {
+    const { computeServiceStats, computeServiceStatsFromRecs } = require('../dashboard') as {
       computeServiceStats: (dataPoints: unknown[]) => Map<string, { min: number; max: number; sum: number; count: number; samples: number[] }>;
+      computeServiceStatsFromRecs: (recs: unknown[]) => Map<string, { min: number; max: number; sum: number; count: number; samples: number[]; minLabel?: string; maxLabel?: string; unknownCells?: number }>;
     };
+
+    /** Build a minimal recommendation fixture. */
+    function rec(service: string, savings: number, term = 1, payment = 'no_upfront'): unknown {
+      return {
+        id: `${service}-${savings}`,
+        provider: 'aws',
+        service,
+        region: 'us-east-1',
+        resource_type: 'Standard',
+        count: 1,
+        term,
+        payment,
+        upfront_cost: 0,
+        monthly_cost: 0,
+        savings,
+        selected: false,
+        purchased: false,
+      };
+    }
 
     beforeEach(() => {
       document.body.innerHTML = '';
@@ -122,6 +142,150 @@ describe('Dashboard Module', () => {
         expect(ec2?.samples).toContain(50);
         expect(ec2?.samples).toContain(100);
         expect(ec2?.samples).toContain(200);
+      });
+    });
+
+    // computeServiceStatsFromRecs unit tests.
+    describe('computeServiceStatsFromRecs', () => {
+      test('returns empty map for empty recommendations', () => {
+        expect(computeServiceStatsFromRecs([]).size).toBe(0);
+      });
+
+      test('single rec produces min === max (zero upside)', () => {
+        const result = computeServiceStatsFromRecs([rec('ec2', 100)]);
+        const ec2 = result.get('ec2');
+        expect(ec2?.min).toBe(100);
+        expect(ec2?.max).toBe(100);
+        expect(ec2?.count).toBe(1);
+      });
+
+      test('two recs for same service: min is lower value, max is higher value', () => {
+        const result = computeServiceStatsFromRecs([
+          rec('ec2', 200, 1, 'no_upfront'),
+          rec('ec2', 500, 3, 'all_upfront'),
+        ]);
+        const ec2 = result.get('ec2');
+        expect(ec2?.min).toBe(200);
+        expect(ec2?.max).toBe(500);
+        expect(ec2?.count).toBe(2);
+      });
+
+      test('tracks minLabel and maxLabel from term/payment option', () => {
+        const result = computeServiceStatsFromRecs([
+          rec('ec2', 200, 1, 'no_upfront'),
+          rec('ec2', 500, 3, 'all_upfront'),
+        ]);
+        const ec2 = result.get('ec2');
+        expect(ec2?.minLabel).toBe('1yr no_upfront');
+        expect(ec2?.maxLabel).toBe('3yr all_upfront');
+      });
+
+      test('uses "unspecified" label when payment is undefined or empty string', () => {
+        const recNoPayment = { ...rec('ec2', 100) as Record<string, unknown> };
+        delete recNoPayment['payment'];
+        const recEmptyPayment = { ...rec('ec2', 200) as Record<string, unknown>, payment: '' };
+        const result = computeServiceStatsFromRecs([recNoPayment, recEmptyPayment] as unknown as Parameters<typeof computeServiceStatsFromRecs>[0]);
+        const ec2 = result.get('ec2');
+        expect(ec2?.minLabel).toContain('unspecified');
+        expect(ec2?.maxLabel).toContain('unspecified');
+        expect(ec2?.minLabel).not.toContain('undefined');
+        expect(ec2?.maxLabel).not.toContain('undefined');
+      });
+
+      test('accumulates stats for multiple services independently', () => {
+        const result = computeServiceStatsFromRecs([
+          rec('ec2', 100, 1, 'no_upfront'),
+          rec('ec2', 400, 3, 'all_upfront'),
+          rec('rds', 50, 1, 'no_upfront'),
+          rec('rds', 80, 3, 'all_upfront'),
+        ]);
+        expect(result.size).toBe(2);
+        expect(result.get('ec2')?.min).toBe(100);
+        expect(result.get('ec2')?.max).toBe(400);
+        expect(result.get('rds')?.min).toBe(50);
+        expect(result.get('rds')?.max).toBe(80);
+      });
+
+      test('stores raw sample values', () => {
+        const result = computeServiceStatsFromRecs([
+          rec('ec2', 100),
+          rec('ec2', 300),
+          rec('ec2', 200),
+        ]);
+        const ec2 = result.get('ec2');
+        expect(ec2?.samples).toHaveLength(3);
+        expect(ec2?.samples).toContain(100);
+        expect(ec2?.samples).toContain(200);
+        expect(ec2?.samples).toContain(300);
+      });
+      describe('per-cell aggregation (#1770)', () => {
+        // The suite mocks groupRecsByCell as one-cell-for-all; these cases need real cells.
+        beforeEach(() => {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const actual = jest.requireActual('../recommendations') as { groupRecsByCell: (r: unknown[]) => Map<string, unknown[]> };
+          mockGroupRecsByCell.mockImplementation((recs: unknown[]) => actual.groupRecsByCell(recs));
+        });
+        const cell = (svc: string, region: string, savings: unknown, term = 1, payment = 'no_upfront'): unknown =>
+          ({ ...(rec(svc, 0, term, payment) as Record<string, unknown>), region, savings });
+
+        test('two cells with two variants each: min/max are per-cell sums', () => {
+          const ec2 = computeServiceStatsFromRecs([
+            cell('ec2', 'us-east-1', 100, 1, 'no_upfront'),
+            cell('ec2', 'us-east-1', 150, 3, 'all_upfront'),
+            cell('ec2', 'eu-west-1', 400, 1, 'no_upfront'),
+            cell('ec2', 'eu-west-1', 500, 3, 'all_upfront'),
+          ]).get('ec2');
+          // Per-row min/max would give 100 / 500.
+          expect(ec2?.min).toBe(500);
+          expect(ec2?.max).toBe(650);
+          expect(ec2?.count).toBe(4);
+        });
+
+        test('labels name the variant when every cell picks the same one', () => {
+          const ec2 = computeServiceStatsFromRecs([
+            cell('ec2', 'us-east-1', 100, 1, 'no_upfront'),
+            cell('ec2', 'us-east-1', 150, 3, 'all_upfront'),
+            cell('ec2', 'eu-west-1', 400, 1, 'no_upfront'),
+            cell('ec2', 'eu-west-1', 500, 3, 'all_upfront'),
+          ]).get('ec2');
+          expect(ec2?.minLabel).toBe('1yr no_upfront');
+          expect(ec2?.maxLabel).toBe('3yr all_upfront');
+        });
+
+        test('labels are neutral when cells pick different variants', () => {
+          const ec2 = computeServiceStatsFromRecs([
+            cell('ec2', 'us-east-1', 100, 1, 'no_upfront'),
+            cell('ec2', 'us-east-1', 150, 3, 'all_upfront'),
+            cell('ec2', 'eu-west-1', 400, 3, 'partial_upfront'),
+            cell('ec2', 'eu-west-1', 500, 1, 'all_upfront'),
+          ]).get('ec2');
+          expect(ec2?.minLabel).toBe('varies by account/region');
+          expect(ec2?.maxLabel).toBe('varies by account/region');
+        });
+
+        test('single-cell service is unchanged', () => {
+          const ec2 = computeServiceStatsFromRecs([
+            cell('ec2', 'us-east-1', 200, 1, 'no_upfront'),
+            cell('ec2', 'us-east-1', 500, 3, 'all_upfront'),
+          ]).get('ec2');
+          expect([ec2?.min, ec2?.max]).toEqual([200, 500]);
+          expect([ec2?.minLabel, ec2?.maxLabel]).toEqual(['1yr no_upfront', '3yr all_upfront']);
+        });
+
+        test('unknown savings are skipped, never counted as 0', () => {
+          const ec2 = computeServiceStatsFromRecs([
+            cell('ec2', 'us-east-1', 300, 1, 'no_upfront'),
+            cell('ec2', 'us-east-1', undefined, 3, 'all_upfront'),
+            cell('ec2', 'eu-west-1', null),
+            cell('ec2', 'ap-south-1', NaN),
+          ]).get('ec2');
+          expect([ec2?.min, ec2?.max]).toEqual([300, 300]);
+          expect(ec2?.unknownCells).toBe(2);
+        });
+
+        test('service whose cells are all unknown has no entry', () => {
+          expect(computeServiceStatsFromRecs([cell('rds', 'us-east-1', undefined)]).has('rds')).toBe(false);
+        });
       });
     });
   });
