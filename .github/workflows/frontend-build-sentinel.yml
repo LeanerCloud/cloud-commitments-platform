@@ -32,7 +32,7 @@ jobs:
   build:
     name: Build frontend
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     defaults:
       run:
         working-directory: frontend
@@ -61,3 +61,8 @@ jobs:
 
       - name: Run frontend tests
         run: npx jest --no-coverage --silent
+
+      # Same step as the PR gate (frontend-build.yml): direct pushes to main
+      # never run that workflow, so the order-independence check lives here too (#1970).
+      - name: Run frontend tests under fixed random seeds
+        run: npm run test:random
