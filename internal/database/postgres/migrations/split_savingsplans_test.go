@@ -226,7 +226,10 @@ func TestMigration_SplitSavingsPlans_PurchasePlansJSONB(t *testing.T) {
 		('22222222-2222-2222-2222-222222222222', 'cccccccc-cccc-cccc-cccc-000000000001')`)
 	require.NoError(t, err)
 
-	require.NoError(t, migrations.RunMigrations(ctx, pool, migrationsPath, "", ""))
+	// Stop at 000040 so the colon-form assertions stay independent of newer
+	// migrations (000178 rewrites the keys to the slash form); the head
+	// interaction is pinned separately below.
+	require.NoError(t, migrations.MigrateToVersion(ctx, pool, migrationsPath, 40))
 
 	// SP plan: services should now have four aws:savings-plans-<type>
 	// keys plus the untouched aws:rds; the umbrella key should be gone.
@@ -249,4 +252,17 @@ func TestMigration_SplitSavingsPlans_PurchasePlansJSONB(t *testing.T) {
 	err = pool.QueryRow(ctx, `SELECT services FROM purchase_plans WHERE id = '22222222-2222-2222-2222-222222222222'`).Scan(&rdsServices)
 	require.NoError(t, err)
 	assert.Equal(t, map[string]any{"aws:rds": map[string]any{"term": "1yr"}}, rdsServices)
+
+	// 000178 then rewrites the colon keys to the slash form, keeping values.
+	require.NoError(t, migrations.RunMigrations(ctx, pool, migrationsPath, "", ""))
+	err = pool.QueryRow(ctx, `SELECT services FROM purchase_plans WHERE id = '11111111-1111-1111-1111-111111111111'`).Scan(&spServices)
+	require.NoError(t, err)
+	spValue := map[string]any{"term": "1yr", "payment": "all-upfront"}
+	assert.Equal(t, map[string]any{
+		"aws/savings-plans-compute":     spValue,
+		"aws/savings-plans-ec2instance": spValue,
+		"aws/savings-plans-sagemaker":   spValue,
+		"aws/savings-plans-database":    spValue,
+		"aws/rds":                       map[string]any{"term": "3yr"},
+	}, spServices)
 }
