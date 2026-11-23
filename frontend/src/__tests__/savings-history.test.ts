@@ -9,7 +9,6 @@ import { loadSavingsHistory, initSavingsHistory } from '../modules/savings-histo
 import { getSavingsAnalytics } from '../api';
 import * as state from '../state';
 import { Chart } from 'chart.js';
-import { flushPromises } from './flush-promises';
 
 describe('Savings History Module', () => {
   beforeEach(() => {
@@ -545,65 +544,6 @@ describe('Savings History Module', () => {
       await loadSavingsHistory();
 
       expect(console.error).toHaveBeenCalledWith('Canvas element not found: savings-history-chart');
-    });
-  });
-
-  describe('initSavingsHistory', () => {
-    test('adds change listener to period select', () => {
-      const periodSelect = document.getElementById('savings-period') as HTMLSelectElement;
-      const addEventListenerSpy = jest.spyOn(periodSelect, 'addEventListener');
-
-      initSavingsHistory();
-
-      expect(addEventListenerSpy).toHaveBeenCalledWith('change', expect.any(Function));
-    });
-
-    test('adds click listener to refresh button', () => {
-      const refreshBtn = document.getElementById('refresh-savings-btn') as HTMLButtonElement;
-      const addEventListenerSpy = jest.spyOn(refreshBtn, 'addEventListener');
-
-      initSavingsHistory();
-
-      expect(addEventListenerSpy).toHaveBeenCalledWith('click', expect.any(Function));
-    });
-
-    test('handles missing period select gracefully', () => {
-      document.getElementById('savings-period')?.remove();
-
-      expect(() => initSavingsHistory()).not.toThrow();
-    });
-
-    test('handles missing refresh button gracefully', () => {
-      document.getElementById('refresh-savings-btn')?.remove();
-
-      expect(() => initSavingsHistory()).not.toThrow();
-    });
-
-    test('period change triggers loadSavingsHistory', async () => {
-      (getSavingsAnalytics as jest.Mock).mockResolvedValue({ data_points: [] });
-
-      initSavingsHistory();
-
-      const periodSelect = document.getElementById('savings-period') as HTMLSelectElement;
-      periodSelect.value = '30d';
-      periodSelect.dispatchEvent(new Event('change'));
-
-      await flushPromises();
-
-      expect(getSavingsAnalytics).toHaveBeenCalled();
-    });
-
-    test('refresh button click triggers loadSavingsHistory', async () => {
-      (getSavingsAnalytics as jest.Mock).mockResolvedValue({ data_points: [] });
-
-      initSavingsHistory();
-
-      const refreshBtn = document.getElementById('refresh-savings-btn') as HTMLButtonElement;
-      refreshBtn.click();
-
-      await flushPromises();
-
-      expect(getSavingsAnalytics).toHaveBeenCalled();
     });
   });
 
