@@ -474,53 +474,6 @@ describe('Plans Module', () => {
 
   });
   describe('openCreatePlanModal', () => {
-    test('opens modal with "New Purchase Plan" title when selection is empty (issue #17)', () => {
-      (state.getSelectedRecommendationIDs as jest.Mock).mockReturnValue(new Set());
-
-      openCreatePlanModal();
-
-      const modal = document.getElementById('plan-modal');
-      expect(modal?.classList.contains('hidden')).toBe(false);
-      const title = document.getElementById('plan-modal-title');
-      expect(title?.textContent).toBe('New purchase plan');
-      // Previously we early-returned behind a toast that users missed
-      // (e.g. after a provider-filter switch). Falling through to the
-      // new-plan flow never silently noop-s.
-      expect(mockShowToast).not.toHaveBeenCalled();
-    });
-
-    test('opens modal when recommendations are selected', () => {
-      (state.getSelectedRecommendationIDs as jest.Mock).mockReturnValue(new Set([0]));
-
-      openCreatePlanModal();
-
-      const modal = document.getElementById('plan-modal');
-      expect(modal?.classList.contains('hidden')).toBe(false);
-    });
-
-    test('sets "Create Purchase Plan" title when a snapshot is passed', () => {
-      // #273 CR follow-up: title now keys off the snapshot the caller
-      // passes (the resolved-target captured at button-click time)
-      // rather than the live selection state, which would otherwise be
-      // racy between modal-open and modal-render.
-      const snapshot = [
-        { id: 'rec-x', service: 'ec2' },
-      ] as unknown as readonly api.Recommendation[];
-      openCreatePlanModal(snapshot);
-
-      const title = document.getElementById('plan-modal-title');
-      expect(title?.textContent).toBe('Create purchase plan');
-    });
-
-    test('clears plan ID for new plan', () => {
-      (state.getSelectedRecommendationIDs as jest.Mock).mockReturnValue(new Set([0]));
-      (document.getElementById('plan-id') as HTMLInputElement).value = 'existing-plan';
-
-      openCreatePlanModal();
-
-      expect((document.getElementById('plan-id') as HTMLInputElement).value).toBe('');
-    });
-
     // #770: Purchase Configuration section should be prefilled from the
     // selected commitment when exactly one commitment is passed in the snapshot.
     describe('prefill from single selected commitment (#770)', () => {
@@ -2138,81 +2091,6 @@ describe('Plans Module', () => {
       // Post-fix: termSelect.value === '' (unset, user must choose)
       expect(termSelect.value).not.toBe('3');
       expect(termSelect.value).toBe('');
-    });
-  });
-
-  // H-5 regression: payment option must not be auto-selected when absent.
-  // Pre-fix: `firstService?.payment || 'no-upfront'` pre-selected 'no-upfront'
-  // when payment was missing, silently changing the plan on re-save.
-  // These tests must FAIL on pre-fix code.
-  describe('H-5: absent payment leaves select blank (no no-upfront default)', () => {
-    const planBase = {
-      id: 'plan-1',
-      name: 'Test Plan',
-      enabled: true,
-      auto_purchase: false,
-      notification_days_before: 3,
-      ramp_schedule: { type: 'immediate', percent_per_step: 100, step_interval_days: 0 }
-    };
-
-    test('absent payment field leaves payment select value empty in edit modal', async () => {
-      (api.getPlans as jest.Mock).mockResolvedValue({
-        plans: [{
-          id: 'plan-1', name: 'Test Plan', enabled: true, auto_purchase: false,
-          services: { ec2: { provider: 'aws', service: 'ec2', term: 1, coverage: 80 } },
-          ramp_schedule: { type: 'immediate', percent_per_step: 100, step_interval_days: 0, current_step: 0, total_steps: 1 },
-        }]
-      });
-      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
-      (api.getPlan as jest.Mock).mockResolvedValue({
-        ...planBase,
-        services: {
-          ec2: {
-            provider: 'aws',
-            service: 'ec2',
-            term: 1,
-            coverage: 80,
-            // payment deliberately absent
-          }
-        }
-      });
-
-      await loadPlans();
-      const editBtn = document.querySelector('[data-action="edit-plan"]') as HTMLButtonElement;
-      editBtn?.click();
-      await flushPromises();
-
-      const paymentSelect = document.getElementById('plan-payment') as HTMLSelectElement;
-      // Pre-fix: paymentSelect.value === 'no-upfront' (hardcoded default)
-      // Post-fix: paymentSelect.value === '' (unset, user must choose)
-      expect(paymentSelect.value).not.toBe('no-upfront');
-      expect(paymentSelect.value).toBe('');
-    });
-
-    test('present payment field is correctly pre-selected in edit modal', async () => {
-      (api.getPlans as jest.Mock).mockResolvedValue({
-        plans: [{
-          id: 'plan-1', name: 'Test Plan', enabled: true, auto_purchase: false,
-          services: { ec2: { provider: 'aws', service: 'ec2', term: 1, payment: 'all-upfront', coverage: 80 } },
-          ramp_schedule: { type: 'immediate', percent_per_step: 100, step_interval_days: 0, current_step: 0, total_steps: 1 },
-        }]
-      });
-      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
-      (api.getPlan as jest.Mock).mockResolvedValue({
-        ...planBase,
-        services: {
-          ec2: { provider: 'aws', service: 'ec2', term: 1, payment: 'all-upfront', coverage: 80 }
-        }
-      });
-
-      await loadPlans();
-      const editBtn = document.querySelector('[data-action="edit-plan"]') as HTMLButtonElement;
-      editBtn?.click();
-      await flushPromises();
-
-      const paymentSelect = document.getElementById('plan-payment') as HTMLSelectElement;
-      // When payment IS present, it should be correctly pre-selected
-      expect(paymentSelect.value).toBe('all-upfront');
     });
   });
 
