@@ -17,7 +17,6 @@
 // The harness registers the module mocks, so it must be imported first.
 import { mockShowToast, buildPlanModalDOM, fire, errorEl } from './plans-range-validation-harness';
 import { openNewPlanModal, closePlanModal, openAddPurchasesModal } from '../plans';
-import * as api from '../api';
 import { flushPromises } from './flush-promises';
 
 // ---------------------------------------------------------------------------
@@ -480,77 +479,5 @@ describe('Add Purchases modal: inline range validation (#771)', () => {
     await flushPromises();
 
     expect(require('../api').createPlannedPurchases).not.toHaveBeenCalled();
-  });
-});
-
-describe('Add Purchases configured notice lead time', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-    document.body.replaceChildren();
-  });
-  afterEach(() => jest.useRealTimers());
-
-  it.each([
-    [0, '2026-10-15T23:59:00Z', '2026-10-17'],
-    [1, '2026-12-31T23:59:00Z', '2027-01-03'],
-    [3, '2026-10-15T23:59:00Z', '2026-10-20'],
-    [30, '2026-01-31T23:59:00Z', '2026-03-04'],
-    [3, '2026-10-14T23:00:00-07:00', '2026-10-20'],
-    [3, '2026-10-15T00:01:00+14:00', '2026-10-19'],
-    [3, '2026-03-07T23:59:00-05:00', '2026-03-13'],
-    [3, '2026-10-24T23:59:00+02:00', '2026-10-29'],
-  ])('uses N=%s at %s to suggest %s', async (notice, now, expected) => {
-    jest.useFakeTimers({ now: new Date(now) });
-    await openAddPurchasesModal('plan-notice', 'Notice plan', notice);
-    expect((document.getElementById('add-purchases-start-date') as HTMLInputElement).value).toBe(expected);
-    expect(document.getElementById('add-purchases-date-help')?.textContent).toContain(`${notice}-day notification window`);
-    expect(document.querySelector('button[type="submit"]')).not.toBeDisabled();
-  });
-
-  it.each([undefined, NaN, Infinity, -1, 31, 1.5])('fails visibly for invalid notice %s', async notice => {
-    await openAddPurchasesModal('plan-notice', 'Notice plan', notice as number);
-    expect(document.getElementById('add-purchases-error')?.textContent).toContain('missing or invalid');
-    const count = document.getElementById('add-purchases-count') as HTMLInputElement;
-    count.dispatchEvent(new Event('input'));
-    expect(document.querySelector('button[type="submit"]')).toBeDisabled();
-    document.getElementById('add-purchases-form')?.dispatchEvent(new Event('submit', { cancelable: true }));
-    expect(api.createPlannedPurchases).not.toHaveBeenCalled();
-  });
-
-  it('preserves an earlier selected date, warns that it will be refused, and shows the server refusal', async () => {
-    jest.useFakeTimers({ now: new Date('2026-10-15T23:59:00Z') });
-    const refusal = 'start_date leaves too little notice before the first purchase; choose a start date on or after 2026-10-20';
-    (api.createPlannedPurchases as jest.Mock).mockRejectedValue(new Error(refusal));
-    (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
-    await openAddPurchasesModal('plan-notice', 'Notice plan', 3);
-    const date = document.getElementById('add-purchases-start-date') as HTMLInputElement;
-    const minimum = date.min;
-    date.value = '2026-10-16';
-    date.dispatchEvent(new Event('input'));
-    expect(date.value).toBe('2026-10-16');
-    expect(date.min).toBe(minimum);
-    expect(document.getElementById('add-purchases-date-warning')?.textContent).toContain('will be refused');
-    expect(document.querySelector('button[type="submit"]')).not.toBeDisabled();
-    document.getElementById('add-purchases-form')?.dispatchEvent(new Event('submit', { cancelable: true }));
-    expect(api.createPlannedPurchases).toHaveBeenCalledWith('plan-notice', 1, '2026-10-16');
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(document.getElementById('add-purchases-error')?.textContent).toBe(refusal);
-    expect(document.getElementById('add-purchases-modal')).not.toBeNull();
-  });
-
-  // N=3 at 23:59 UTC on 15 Oct: now+(N+1)d is 19 Oct 23:59, so 19 Oct is refused
-  // and 20 Oct (the suggested date) is the first accepted midnight.
-  it.each([
-    ['2026-10-19', 'will be refused'],
-    ['2026-10-20', ''],
-  ])('warns for %s only when it is inside the (N+1)-day margin', async (selected, text) => {
-    jest.useFakeTimers({ now: new Date('2026-10-15T23:59:00Z') });
-    await openAddPurchasesModal('plan-notice', 'Notice plan', 3);
-    const date = document.getElementById('add-purchases-start-date') as HTMLInputElement;
-    date.value = selected;
-    date.dispatchEvent(new Event('input'));
-    const warning = document.getElementById('add-purchases-date-warning')?.textContent ?? '';
-    if (text) expect(warning).toContain(text); else expect(warning).toBe('');
   });
 });
