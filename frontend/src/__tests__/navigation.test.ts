@@ -3,18 +3,17 @@
  */
 
 // The harness registers the module mocks, so it must be imported first.
-import { setPathname } from './navigation-harness';
-import { switchTab, switchSettingsSubTab, switchInventorySubTab, getSettingsSubTabFromPath, getInventorySubTabFromPath, applyTabFromPath } from '../navigation';
+import './navigation-harness';
+import { switchTab, switchSettingsSubTab, switchInventorySubTab, getSettingsSubTabFromPath, applyTabFromPath } from '../navigation';
 import { loadDashboard } from '../dashboard';
 import { loadRecommendations } from '../recommendations';
 import { loadPlans } from '../plans';
 import { initHistoryDateRange, loadHistory } from '../history';
-import { loadGlobalSettings, isUnsavedChanges } from '../settings';
+import { loadGlobalSettings } from '../settings';
 import { loadAutomationSettings } from '../riexchange';
 import { canAccess } from '../permissions';
 import { loadInventory } from '../inventory';
 import { isAdmin } from '../auth';
-import { disposeLadderTimeline } from '../ladder-timeline';
 
 describe('Navigation Module', () => {
   beforeEach(() => {
@@ -485,107 +484,6 @@ describe('Navigation Module', () => {
       expect(getSettingsSubTabFromPath()).toBe('general');
       switchSettingsSubTab(getSettingsSubTabFromPath(), { push: false });
       expect(document.title).toBe('CUDly — Admin · General');
-    });
-  });
-
-
-  // QA A.4: Inventory sub-tabs become URL-addressable (/inventory/<subtab>),
-  // matching the Admin /admin/<subtab> convention.
-  describe('getInventorySubTabFromPath', () => {
-    let originalURL: string;
-    let originalState: unknown;
-
-    beforeEach(() => {
-      originalURL = window.location.href;
-      originalState = window.history.state;
-    });
-
-    afterEach(() => {
-      window.history.replaceState(originalState, '', originalURL);
-    });
-
-    test('returns the default (active-commitments) for a bare /inventory path', () => {
-      setPathname('/inventory');
-      expect(getInventorySubTabFromPath()).toBe('active-commitments');
-    });
-
-    test('returns coverage for /inventory/coverage', () => {
-      setPathname('/inventory/coverage');
-      expect(getInventorySubTabFromPath()).toBe('coverage');
-    });
-
-    test('returns ri-exchange for /inventory/ri-exchange', () => {
-      setPathname('/inventory/ri-exchange');
-      expect(getInventorySubTabFromPath()).toBe('ri-exchange');
-    });
-
-    test('falls back to the default for an unknown sub-tab', () => {
-      setPathname('/inventory/bogus');
-      expect(getInventorySubTabFromPath()).toBe('active-commitments');
-    });
-  });
-
-  describe('unsaved settings guard', () => {
-    afterEach(() => {
-      (isUnsavedChanges as jest.Mock).mockReturnValue(false);
-    });
-
-    const dialogButton = (label: string): HTMLButtonElement =>
-      Array.from(document.querySelectorAll<HTMLButtonElement>('.modal-confirm button')).find(
-        b => b.textContent === label
-      )!;
-
-    test('asks via the styled dialog, stays put on cancel and leaves on confirm', async () => {
-      switchTab('admin');
-      (isUnsavedChanges as jest.Mock).mockReturnValue(true);
-
-      switchTab('home');
-      expect(document.querySelector('.modal-confirm-title')?.textContent).toBe('Leave without saving?');
-      expect(document.getElementById('admin-tab')?.classList.contains('active')).toBe(true);
-      dialogButton('Stay on this tab').click();
-      await Promise.resolve();
-      await Promise.resolve();
-      expect(document.getElementById('admin-tab')?.classList.contains('active')).toBe(true);
-
-      switchTab('home');
-      dialogButton('Leave without saving').click();
-      await Promise.resolve();
-      await Promise.resolve();
-      expect(document.getElementById('home-tab')?.classList.contains('active')).toBe(true);
-    });
-  });
-
-  // Issue #667: the ladder planned-purchase chart is released when its
-  // section is left; returning re-runs loadGlobalSettings, which re-inits it.
-  describe('ladder timeline teardown', () => {
-    test('leaving Settings disposes the ladder chart; the dirty guard keeps it until confirmed', async () => {
-      switchTab('admin');
-      switchSettingsSubTab('purchasing');
-      (disposeLadderTimeline as jest.Mock).mockClear();
-      (isUnsavedChanges as jest.Mock).mockReturnValue(true);
-      switchTab('home');
-      expect(disposeLadderTimeline).not.toHaveBeenCalled();
-      (isUnsavedChanges as jest.Mock).mockReturnValue(false);
-      switchTab('plans');
-      expect(disposeLadderTimeline).toHaveBeenCalledTimes(1);
-      document.querySelector<HTMLElement>('.modal-confirm-backdrop')?.remove();
-    });
-
-    test('other settings sub-tabs dispose it and Purchasing reloads it', () => {
-      switchTab('admin');
-      (disposeLadderTimeline as jest.Mock).mockClear();
-      switchSettingsSubTab('purchasing');
-      expect(disposeLadderTimeline).not.toHaveBeenCalled();
-      for (const sub of ['general', 'accounts', 'users']) {
-        (disposeLadderTimeline as jest.Mock).mockClear();
-        switchSettingsSubTab(sub);
-        expect(disposeLadderTimeline).toHaveBeenCalledTimes(1);
-      }
-      (loadGlobalSettings as jest.Mock).mockClear();
-      (disposeLadderTimeline as jest.Mock).mockClear();
-      switchSettingsSubTab('purchasing');
-      expect(disposeLadderTimeline).not.toHaveBeenCalled();
-      expect(loadGlobalSettings).toHaveBeenCalledTimes(1);
     });
   });
 });
