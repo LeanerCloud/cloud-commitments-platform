@@ -22,7 +22,7 @@ test('global filters are hidden on the admin tab', () => {
 });
 
 test('account tables share a fixed layout and column widths', () => {
-  const css = read('styles/components.css');
+  const css = read('styles/components-accounts.css');
   expect(rule(css, '.accounts-table')).toMatch(/table-layout:\s*fixed/);
   expect(rule(css, '.accounts-table')).toMatch(/min-width:\s*44rem/);
   for (const n of [2, 3, 4]) {
@@ -31,7 +31,7 @@ test('account tables share a fixed layout and column widths', () => {
 });
 
 test('users date cells do not wrap', () => {
-  expect(rule(read('styles/components.css'), '.users-table td.nowrap')).toMatch(/white-space:\s*nowrap/);
+  expect(rule(read('styles/components-accounts.css'), '.users-table td.nowrap')).toMatch(/white-space:\s*nowrap/);
   const ts = read('users/userList.ts');
   expect(ts.match(/<td class="nowrap">/g)).toHaveLength(2);
 });

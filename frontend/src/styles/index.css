@@ -6,6 +6,7 @@
 @import './base-utilities.css';
 @import './layout.css';
 @import './components.css';
+@import './components-accounts.css';
 @import './components-rec-table.css';
 @import './components-dialogs-badges.css';
 @import './components-badges-cli.css';
