@@ -391,4 +391,85 @@ describe('effectiveSavingsPct', () => {
     expect(effectiveSavingsPct(mk({ savings: 100, upfront_cost: 0, monthly_cost: undefined, term: 1 }))).toBeNull();
     expect(effectiveSavingsPct(mk({ savings: 100, upfront_cost: 0, monthly_cost: null, term: 1 }))).toBeNull();
   });
+
+  test('monthly_cost=0 (real all-upfront) is treated as known data, not missing', () => {
+    // A literal 0 means the backend explicitly reported zero recurring cost
+    // (e.g. an all-upfront commitment). effectiveSavingsPct SHOULD compute a
+    // result in this case, because on_demand_monthly = 0 + savings + amortized.
+    const pct = effectiveSavingsPct(mk({ savings: 100, upfront_cost: 0, monthly_cost: 0, term: 1 }));
+    // onDemand = 0 + 100 + 0 = 100; effective = 100/100 * 100 = 100%
+    expect(pct).not.toBeNull();
+    expect(pct!).toBeCloseTo(100, 1);
+  });
+
+  // #323: AWS rows require the provider-canonical on_demand_cost; without it
+  // the reconstruction formula (monthly_cost + savings + amortized) diverges
+  // from the true CE baseline and produces misleadingly high percentages.
+  describe('AWS reconstruction fallback returns null (#323)', () => {
+    const mkAws = (overrides: Partial<LocalRecommendation>): LocalRecommendation =>
+      mk({ provider: 'aws', ...overrides });
+
+    test('AWS row with no on_demand_cost returns null regardless of monthly_cost', () => {
+      // Repro: RI rec where EstimatedMonthlyOnDemandCost was absent from the
+      // CE response. Reconstruction gives a number but it diverges from the
+      // real denominator, so null is the correct sentinel.
+      expect(effectiveSavingsPct(mkAws({ savings: 100, upfront_cost: 0, monthly_cost: 50, term: 1 }))).toBeNull();
+    });
+
+    test('AWS row with on_demand_cost=0 (treated as not-populated) returns null', () => {
+      // Backend nonZeroPtr converts 0 -> nil, so 0 at the frontend means the
+      // field was absent. Same outcome as missing.
+      expect(effectiveSavingsPct(mkAws({ savings: 100, upfront_cost: 0, monthly_cost: 50, term: 1, on_demand_cost: 0 }))).toBeNull();
+    });
+
+    test('AWS row with valid on_demand_cost computes normally', () => {
+      // When CE supplies the baseline, the formula is well-defined.
+      // effectiveSavings = 100 - 0 = 100; pct = 100 / 300 * 100 = 33.33%
+      const pct = effectiveSavingsPct(mkAws({ savings: 100, upfront_cost: 0, monthly_cost: 200, term: 1, on_demand_cost: 300 }));
+      expect(pct).not.toBeNull();
+      expect(pct!).toBeCloseTo(33.33, 1);
+    });
+  });
+
+  // #274: on_demand_cost (when populated by the provider) is used directly
+  // as the denominator instead of reconstructing it from
+  // monthly_cost + savings + amortized. The reconstruction collapses for
+  // Azure all-upfront recs where monthly_cost = $0 and inflates the % well
+  // past realistic ceilings.
+  describe('on_demand_cost preference (#274)', () => {
+    test('repro of the live Azure D11_v2 row with provider-supplied on_demand_cost', () => {
+      // Reconstructed (no on_demand_cost): savings=$29, upfront=$26,
+      // monthly=$0, term=1 → onDemand = 0 + 29 + 2.17 = $31.17 →
+      // pct = 29 / 31.17 ≈ 93% (reconstruction inflates because monthly_cost=0
+      // collapses the denominator; the provider baseline is far more accurate).
+      // With provider-supplied on_demand_cost = $122.64 (the real Azure
+      // CostWithNoReservedInstances for 2 × Standard_D11_v2 in eastus),
+      // pct = 29 / 122.64 ≈ 23.65% -- within realistic 1-year RI savings.
+      // (Old formula subtracted amortized from numerator too: 26.83/122.64=21.88%.)
+      const pctReconstructed = effectiveSavingsPct(
+        mk({ savings: 29, upfront_cost: 26, monthly_cost: 0, term: 1 }),
+      );
+      expect(pctReconstructed!).toBeGreaterThan(80);
+
+      const pctWithBaseline = effectiveSavingsPct(
+        mk({ savings: 29, upfront_cost: 26, monthly_cost: 0, term: 1, on_demand_cost: 122.64 }),
+      );
+      expect(pctWithBaseline).not.toBeNull();
+      expect(pctWithBaseline!).toBeCloseTo(23.65, 1);
+    });
+
+    test('on_demand_cost overrides reconstruction even when monthly_cost is non-zero', () => {
+      // Demonstrates the preference order: when both are present, the
+      // provider's on_demand_cost wins over the reconstructed value.
+      // Otherwise a stale/cached monthly_cost could override the canonical
+      // baseline silently.
+      const pct = effectiveSavingsPct(
+        mk({ savings: 100, upfront_cost: 0, monthly_cost: 50, term: 1, on_demand_cost: 500 }),
+      );
+      // With baseline: pct = (100 - 0) / 500 * 100 = 20%
+      // Reconstruction would have given: pct = 100 / (50 + 100 + 0) * 100 = 66.7%
+      expect(pct).not.toBeNull();
+      expect(pct!).toBeCloseTo(20, 1);
+    });
+  });
 });
