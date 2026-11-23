@@ -7,6 +7,7 @@
 import {
   mockConfirmDialog,
   mockOpenArcheraOfferModal,
+  mockShowToast,
 } from './plans-harness';
 import {
   loadPlans,
@@ -185,6 +186,123 @@ describe('Plans Module', () => {
         expect(notice.querySelector('img')).toBeNull();
         expect(notice.textContent).toContain('<img src=x onerror=alert(1)>');
       });
+    });
+
+    test('edit action calls getPlan with plan_id, not the purchase id (#773)', async () => {
+      // The purchase row has id="purchase-1" and plan_id="plan-1".
+      // Before the fix, editPlan received "purchase-1", causing GET /plans/purchase-1
+      // to return 404 and surfacing "Failed to load plan details".
+      (api.getPlan as jest.Mock).mockResolvedValue({
+        id: 'plan-1',
+        name: 'Test Plan',
+        enabled: true,
+        auto_purchase: false,
+        notification_days_before: 3,
+        services: {
+          ec2: { provider: 'aws', service: 'ec2', enabled: true, term: 1, payment: 'all-upfront', coverage: 80 },
+        },
+        ramp_schedule: { type: 'immediate', percent_per_step: 100, step_interval_days: 0 },
+      });
+
+      const editBtn = document.querySelector('[data-action="edit"]') as HTMLButtonElement;
+      editBtn?.click();
+
+      await flushPromises();
+
+      // Must use the plan FK, not the purchase PK.
+      expect(api.getPlan).toHaveBeenCalledWith('plan-1');
+      expect(api.getPlan).not.toHaveBeenCalledWith('purchase-1');
+      // No error toast should fire.
+      expect(mockShowToast).not.toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Failed to load plan details' }),
+      );
+    });
+
+    test('edit action with empty plan id is a no-op (defensive guard)', async () => {
+      // Simulate a button whose data-plan-id attribute is missing/empty by
+      // directly injecting a button without the attribute and clicking it.
+      const container = document.getElementById('planned-purchases-list');
+      const btn = document.createElement('button');
+      btn.dataset.action = 'edit';
+      btn.dataset.id = 'purchase-1';
+      // intentionally omit data-plan-id so planId defaults to ''
+      container?.appendChild(btn);
+      btn.click();
+
+      await flushPromises();
+
+      // getPlan must NOT be called when planId is empty.
+      expect(api.getPlan).not.toHaveBeenCalled();
+    });
+
+    test('edit action reconciles the list when the plan is gone (#1403)', async () => {
+      // Regression for #1403: a scheduled-purchase row can outlive its plan
+      // (deleted, or the caller's account scope changed). Clicking Edit passes
+      // the correct plan_id (the #773/#780 fix is intact), but GET /plans/{id}
+      // now returns 404. The UI must surface an actionable message AND refresh
+      // the planned-purchases list so the orphaned row is dropped, instead of
+      // dead-ending on the generic "Failed to load plan details" toast.
+      const notFound = Object.assign(new Error('HTTP 404'), { status: 404 });
+      (api.getPlan as jest.Mock).mockRejectedValue(notFound);
+      // Clear the getPlannedPurchases call made during beforeEach's loadPlans
+      // so the assertion below counts only the reconcile triggered by the edit.
+      (api.getPlannedPurchases as jest.Mock).mockClear();
+
+      const editBtn = document.querySelector('[data-action="edit"]') as HTMLButtonElement;
+      editBtn?.click();
+
+      await flushPromises();
+
+      // The right plan FK was used (guards against a #773-class regression).
+      expect(api.getPlan).toHaveBeenCalledWith('plan-1');
+      // Actionable, plan-gone message — NOT the generic dead-end.
+      expect(mockShowToast).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'This plan is no longer available. It may have been deleted.', kind: 'error' }),
+      );
+      // The stale row is reconciled by refetching the planned purchases.
+      expect(api.getPlannedPurchases).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('resume action for paused purchase', () => {
+    test('resume action resumes paused purchase', async () => {
+      (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({
+        purchases: [
+          {
+            id: 'purchase-1',
+            plan_id: 'plan-1',
+            plan_name: 'Test Plan',
+            scheduled_date: '2024-02-20',
+            provider: 'aws',
+            service: 'ec2',
+            resource_type: 't3.medium',
+            region: 'us-east-1',
+            count: 5,
+            term: 1,
+            payment: 'all-upfront',
+            upfront_cost: 1000,
+            estimated_savings: 200,
+            status: 'paused',
+            step_number: 1,
+            total_steps: 4
+          }
+        ]
+      });
+      await loadPlans();
+
+      (api.resumePlannedPurchase as jest.Mock).mockResolvedValue({});
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+
+      const resumeBtn = document.querySelector('[data-action="resume"]') as HTMLButtonElement;
+      resumeBtn?.click();
+
+      await flushPromises();
+
+      expect(api.resumePlannedPurchase).toHaveBeenCalledWith('purchase-1');
+      // Resume must give visible feedback via a success toast.
+      expect(mockShowToast).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Purchase resumed', kind: 'success' }));
     });
   });
 });
