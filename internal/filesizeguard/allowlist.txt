@@ -19,7 +19,6 @@ internal/auth/service_password.go	596	2026-11-23	split pending #341
 internal/commitmentopts/probe.go	613	2026-11-23	split pending #341
 internal/config/interfaces.go	1060	2026-11-23	split pending #341 (hot: 10 commits in 14 days)
 internal/config/store_postgres_ladder.go	540	2026-11-23	split pending #341
-internal/config/store_postgres_recommendations.go	833	2026-11-23	split pending #341
 internal/config/types.go	1939	2026-11-23	split pending #341 (hot: 21 commits in 14 days)
 internal/config/validation.go	1065	2026-11-23	split pending #341 (hot: concurrent branches touch it)
 internal/database/postgres/migrations/migrate.go	651	2026-11-23	split pending #341
