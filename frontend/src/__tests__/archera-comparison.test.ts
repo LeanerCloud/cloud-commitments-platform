@@ -3,61 +3,11 @@
  * file read from its Go path, so the UI is tested against the real shape.
  * Success rendering is therefore fixture-based; no live Archera calls.
  */
-import * as fs from 'fs';
-import * as path from 'path';
-import { buildComparisonView, renderComparisonSection } from '../archera-comparison';
-import { getInsuranceComparison, getInsuranceStatus } from '../api/insurance';
-import type { ArcheraComparison, ArcheraOffer, ArcheraProductSupport } from '../api/types';
+// The harness registers the module mock, so it must be imported first.
+import { status, golden, TOP_KEYS, SUPPORT_KEYS, clone, firstOffer, mount, clickAndLoad, flush, comparison } from './archera-comparison-harness';
+import { buildComparisonView } from '../archera-comparison';
+import type { ArcheraComparison, ArcheraOffer } from '../api/types';
 
-jest.mock('../api/insurance', () => ({
-  getInsuranceStatus: jest.fn(),
-  getInsuranceComparison: jest.fn(),
-}));
-
-const status = getInsuranceStatus as jest.Mock;
-const comparison = getInsuranceComparison as jest.Mock;
-
-const GOLDEN_PATH = path.resolve(__dirname, '../../../internal/archera/testdata/comparison.golden.json');
-const golden = JSON.parse(fs.readFileSync(GOLDEN_PATH, 'utf8')) as ArcheraComparison;
-
-// satisfies makes tsc fail when the TS DTO gains or loses a key; the
-// runtime check below fails when the Go golden file drifts from the TS keys.
-const TOP_KEYS = {
-  title: 1, plan_id: 1, fetched_at: 1, currency: 1, currency_note: 1, premium_included: 1,
-  basis_note: 1, delta_basis_note: 1, current: 1, hypotheticals: 1, rows: 1,
-  non_gating_disclosure: 1, sponsorship_disclosure: 1,
-} satisfies Record<keyof ArcheraComparison, 1>;
-const SUPPORT_KEYS = {
-  status: 1, source: 1, evidence: 1, underwriting_allowance: 1, customer_eligibility: 1,
-} satisfies Record<keyof ArcheraProductSupport, 1>;
-
-function clone(): ArcheraComparison {
-  return JSON.parse(JSON.stringify(golden)) as ArcheraComparison;
-}
-
-function firstOffer(c: ArcheraComparison): ArcheraOffer {
-  const row = c.rows[0];
-  if (!row) throw new Error('golden has no rows');
-  return row.current;
-}
-
-async function mount(): Promise<HTMLElement> {
-  document.body.replaceChildren();
-  const root = document.createElement('div');
-  document.body.appendChild(root);
-  await renderComparisonSection(root);
-  return root;
-}
-
-async function clickAndLoad(root: HTMLElement, data: ArcheraComparison): Promise<void> {
-  comparison.mockResolvedValueOnce(data);
-  root.querySelector('button')!.click();
-  await flush();
-}
-
-async function flush(): Promise<void> {
-  for (let i = 0; i < 5; i++) await Promise.resolve();
-}
 
 beforeEach(() => {
   jest.resetAllMocks();
