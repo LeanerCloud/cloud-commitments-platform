@@ -100,7 +100,7 @@ RUN echo "Building for ${TARGETOS}/${TARGETARCH}" && \
 # Image pinned to a SHA256 digest for reproducible builds. Refresh via
 # the Docker Hub API tags endpoint and update the digest below when the
 # `node:24-alpine` tag is bumped.
-FROM --platform=$BUILDPLATFORM node:25-alpine@sha256:bdf2cca6fe3dabd014ea60163eca3f0f7015fbd5c7ee1b0e9ccb4ced6eb02ef4 AS frontend-builder
+FROM --platform=$BUILDPLATFORM node:26-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS frontend-builder
 
 WORKDIR /frontend
 COPY frontend/package*.json ./
