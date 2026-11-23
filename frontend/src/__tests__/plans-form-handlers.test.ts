@@ -10,11 +10,14 @@ import {
 } from './plans-harness';
 import {
   openCreatePlanModal,
+  openNewPlanModal,
   setupPlanHandlers,
   _resetRampHandlersForTest,
 } from '../plans';
 
+import * as api from '../api';
 import * as state from '../state';
+import { populateTermSelect, populatePaymentSelect, isValidCombination } from '../commitmentOptions';
 
 describe('Plans Module', () => {
   beforeEach(() => {
@@ -252,6 +255,58 @@ describe('Plans Module', () => {
     });
   });
 
+  describe('commitment options handling', () => {
+    test('provider change updates commitment options', () => {
+      openNewPlanModal();
+
+      const providerSelect = document.getElementById('plan-provider') as HTMLSelectElement;
+      providerSelect.value = 'azure';
+      providerSelect.dispatchEvent(new Event('change'));
+
+      expect(populateTermSelect).toHaveBeenCalled();
+      expect(populatePaymentSelect).toHaveBeenCalled();
+    });
+
+    test('service change updates commitment options', () => {
+      openNewPlanModal();
+
+      const serviceSelect = document.getElementById('plan-service') as HTMLSelectElement;
+      serviceSelect.value = 'rds';
+      serviceSelect.dispatchEvent(new Event('change'));
+
+      expect(populateTermSelect).toHaveBeenCalled();
+      expect(populatePaymentSelect).toHaveBeenCalled();
+    });
+
+    test('term change updates payment options', () => {
+      openNewPlanModal();
+
+      const termSelect = document.getElementById('plan-term') as HTMLSelectElement;
+      termSelect.value = '3';
+      termSelect.dispatchEvent(new Event('change'));
+
+      expect(populatePaymentSelect).toHaveBeenCalled();
+    });
+
+    test('payment change updates term options', () => {
+      openNewPlanModal();
+
+      const paymentSelect = document.getElementById('plan-payment') as HTMLSelectElement;
+      paymentSelect.value = 'no-upfront';
+      paymentSelect.dispatchEvent(new Event('change'));
+
+      expect(populateTermSelect).toHaveBeenCalled();
+    });
+
+    test('validates invalid combination on load', () => {
+      (isValidCombination as jest.Mock).mockReturnValue(false);
+      openNewPlanModal();
+
+      // Should call populatePaymentSelect to fix invalid combination
+      expect(populatePaymentSelect).toHaveBeenCalled();
+    });
+  });
+
   describe('provider scopes service dropdown (issue #11)', () => {
     // Match optgroups by label-prefix so both the real HTML labels
     // ("AWS"/"Azure"/"GCP") and the test fixture's labels
@@ -347,6 +402,79 @@ describe('Plans Module', () => {
       expect(parent).toBeInstanceOf(HTMLOptGroupElement);
       expect((parent as HTMLOptGroupElement).label.toLowerCase()).toMatch(/^azure/);
       expect(service.value).not.toBe('ec2');
+    });
+  });
+
+  describe('Plan account chip removal focus (issue #1648)', () => {
+    const accounts = [
+      { id: 'a1', name: 'Alpha', external_id: '111' },
+      { id: 'a2', name: 'Beta', external_id: '222' },
+      { id: 'a3', name: 'Gamma', external_id: '333' },
+    ];
+
+    beforeEach(() => {
+      const form = document.getElementById('plan-form') as HTMLElement;
+      const search = document.createElement('input');
+      search.id = 'plan-account-search';
+      const suggestions = document.createElement('div');
+      suggestions.id = 'plan-account-suggestions';
+      const selected = document.createElement('div');
+      selected.id = 'plan-accounts-selected';
+      const ids = document.createElement('input');
+      ids.type = 'hidden';
+      ids.id = 'plan-account-ids';
+      form.append(search, suggestions, selected, ids);
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+      (api.listAccountsMinimal as jest.Mock).mockResolvedValue([]);
+    });
+
+    async function addChips(count: number): Promise<void> {
+      (api.listAccountsMinimal as jest.Mock).mockResolvedValue(accounts.slice(0, count));
+      openNewPlanModal();
+      await Promise.resolve();
+      const search = document.getElementById('plan-account-search') as HTMLInputElement;
+      search.value = 'x';
+      search.dispatchEvent(new Event('input'));
+      await jest.advanceTimersByTimeAsync(300);
+      document
+        .querySelectorAll<HTMLElement>('#plan-account-suggestions .account-suggestion-item')
+        .forEach(item => item.click());
+    }
+
+    function removeBtn(name: string, id: string): HTMLButtonElement {
+      return document.querySelector(`button[aria-label="Remove ${name} (${id})"]`) as HTMLButtonElement;
+    }
+
+    test('removing the middle chip focuses the next chip remove button', async () => {
+      await addChips(3);
+      removeBtn('Beta', '222').click();
+      expect(document.activeElement).toBe(removeBtn('Gamma', '333'));
+      expect((document.getElementById('plan-account-ids') as HTMLInputElement).value).toBe('a1,a3');
+      expect(document.querySelectorAll('#plan-accounts-selected .account-chip')).toHaveLength(2);
+    });
+
+    test('removing the last chip focuses the previous chip remove button', async () => {
+      await addChips(3);
+      removeBtn('Gamma', '333').click();
+      expect(document.activeElement).toBe(removeBtn('Beta', '222'));
+    });
+
+    test('removing the first chip focuses the new first chip remove button', async () => {
+      await addChips(3);
+      removeBtn('Alpha', '111').click();
+      expect(document.activeElement).toBe(removeBtn('Beta', '222'));
+    });
+
+    test('removing the only chip focuses the account search input', async () => {
+      await addChips(1);
+      removeBtn('Alpha', '111').click();
+      expect(document.activeElement).toBe(document.getElementById('plan-account-search'));
+      expect((document.getElementById('plan-account-ids') as HTMLInputElement).value).toBe('');
+      expect(document.querySelectorAll('#plan-accounts-selected .account-chip')).toHaveLength(0);
     });
   });
 });
