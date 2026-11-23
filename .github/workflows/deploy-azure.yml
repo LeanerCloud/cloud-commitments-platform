@@ -380,16 +380,28 @@ jobs:
             exit 1
           fi
           execution="$(az containerapp job start --name "$JOB_NAME" --resource-group "$RESOURCE_GROUP" --query name --output tsv)"
+          if [ -z "$execution" ]; then
+            echo "::error::az containerapp job start returned no execution name for job $JOB_NAME; cannot track the migration."
+            exit 1
+          fi
           echo "Started execution $execution of job $JOB_NAME"
-          # The replica timeout (20 min) bounds the execution; the step timeout
-          # above covers the polling around it.
+          # The replica timeout (20 min) bounds the execution; this deadline is
+          # that plus slack and fires before the step timeout kills the step
+          # silently.
+          deadline=$((SECONDS + ${MIGRATE_DEADLINE_SECONDS:-1380}))
           while true; do
             status="$(az containerapp job execution show --name "$JOB_NAME" --resource-group "$RESOURCE_GROUP" \
               --job-execution-name "$execution" --query properties.status --output tsv)"
             echo "Execution $execution status: $status"
             case "$status" in
               Succeeded) break ;;
-              Running | Processing | Unknown) sleep 15 ;;
+              Running | Processing | Unknown)
+                if [ "$SECONDS" -ge "$deadline" ]; then
+                  echo "::error::Migration job did not finish within $((${MIGRATE_DEADLINE_SECONDS:-1380} / 60)) minutes; check the execution logs: az containerapp job execution show --name $JOB_NAME --resource-group $RESOURCE_GROUP --job-execution-name $execution"
+                  exit 1
+                fi
+                sleep 15
+                ;;
               *)
                 echo "::error::Migration execution $execution ended with status $status. See the job's console logs in Log Analytics (ContainerAppConsoleLogs_CL, ContainerJobName_s == $JOB_NAME)."
                 exit 1
