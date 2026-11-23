@@ -24,7 +24,7 @@ const UNKNOWN = 'Unknown';
 const NOT_GIVEN = 'Not given';
 const NOT_KNOWN_SUPPORTED = 'Not known to be supported by Archera';
 
-function el<K extends keyof HTMLElementTagNameMap>(
+export function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   text?: string,
   className?: string,
@@ -35,11 +35,11 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
-function money(v: unknown): string {
+export function money(v: unknown): string {
   return typeof v === 'string' ? v : UNKNOWN;
 }
 
-function text(v: unknown): string {
+export function text(v: unknown): string {
   return typeof v === 'string' && v !== '' ? v : NOT_GIVEN;
 }
 
@@ -62,7 +62,7 @@ function alignNumericColumns(t: HTMLTableElement): void {
   });
 }
 
-function table(caption: string, headers: string[]): { wrap: HTMLElement; body: HTMLTableSectionElement; align: () => void } {
+export function table(caption: string, headers: string[]): { wrap: HTMLElement; body: HTMLTableSectionElement; align: () => void } {
   const wrap = el('div');
   wrap.style.overflowX = 'auto';
   const t = el('table');
@@ -78,7 +78,7 @@ function table(caption: string, headers: string[]): { wrap: HTMLElement; body: H
   return { wrap, body, align: () => alignNumericColumns(t) };
 }
 
-function formatFetchedAt(raw: unknown): string {
+export function formatFetchedAt(raw: unknown): string {
   const s = typeof raw === 'string' ? raw : '';
   const d = new Date(s);
   if (s === '' || Number.isNaN(d.getTime())) return `Fetched at ${s || NOT_GIVEN}`;
@@ -88,7 +88,7 @@ function formatFetchedAt(raw: unknown): string {
   return `Fetched at ${local} (${utc})`;
 }
 
-function totalsRows(body: HTMLTableSectionElement, t: ArcheraTotals): void {
+export function totalsRows(body: HTMLTableSectionElement, t: ArcheraTotals): void {
   const rows: Array<[string, string | null]> = [
     ['Commitment cost total (monthly)', t.monthly_730h_commitment_cost_total],
     ['Cloud provider cost (monthly)', t.monthly_730h_cloud_provider_cost],

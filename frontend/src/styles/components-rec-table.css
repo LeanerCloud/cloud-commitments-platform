@@ -419,3 +419,38 @@ tr.rec-variant-row > td.checkbox-col + td {
 tr.rec-variant-row:hover td:not(.checkbox-col) {
     background: var(--cudly-surface-tint-strong);
 }
+
+/* Per-recommendation Archera quote (issue #799): icon button in the first
+ * column and the panel row that opens beneath its recommendation. */
+.rec-archera-btn {
+    width: 1.5rem;
+    height: 1.5rem;
+    margin: 0 0 0 var(--cudly-sp-2);
+    border-color: transparent;
+    background: transparent;
+    color: var(--cudly-text-subtle);
+    vertical-align: middle;
+}
+
+.rec-archera-btn:hover:not(:disabled),
+.rec-archera-btn:focus-visible {
+    border-color: var(--cudly-border-strong);
+    background: var(--cudly-surface);
+    color: var(--cudly-primary);
+}
+
+.rec-archera-row > td {
+    padding: var(--cudly-sp-3);
+    background: var(--cudly-surface-muted);
+    border-bottom: 1px solid var(--cudly-border);
+}
+
+.rec-archera-panel {
+    max-width: 60rem;
+    white-space: normal;
+}
+
+.rec-archera-panel h4,
+.rec-archera-panel h5 {
+    margin: var(--cudly-sp-2) 0;
+}
