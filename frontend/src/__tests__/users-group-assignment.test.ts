@@ -286,3 +286,73 @@ describe('group assignment UX (issue #998)', () => {
     });
   });
 });
+
+// ============================================================================
+// GROUP UNION HINT (issue #1001)
+// ============================================================================
+describe('group union permission hint (issue #1001)', () => {
+  const mockUsers = [
+    { id: '1', email: 'alice@test.com', groups: ['g1'], mfa_enabled: false },
+  ];
+  const mockGroups = [
+    { id: 'g1', name: 'Admins', permissions: [], description: '', allowed_accounts: [] },
+    { id: 'g2', name: 'Viewers', permissions: [], description: '', allowed_accounts: [] },
+  ];
+
+  beforeEach(() => {
+    document.body.innerHTML = `
+      <div id="users-list"></div>
+      <div id="user-stats"></div>
+      <div id="bulk-actions-bar" class="hidden">
+        <span id="selected-count">0</span>
+      </div>
+    `;
+    userState.setAllUsers(mockUsers as any);
+    userState.setFilteredUsers(mockUsers as any);
+    userState.setAvailableGroups(mockGroups as any);
+    userState.clearSelectedUserIds();
+    jest.clearAllMocks();
+  });
+
+  it('renders the union hint in the group membership expand panel', () => {
+    userList.renderUsers(mockUsers as any);
+
+    const expandBtn = document.querySelector<HTMLButtonElement>(
+      '.user-expand-btn[data-user-id="1"]',
+    );
+    expect(expandBtn).toBeTruthy();
+    expandBtn!.click();
+
+    const panel = document.querySelector('.user-expand-panel[data-user-id="1"]');
+    expect(panel).toBeTruthy();
+    expect(panel!.textContent).toContain('combined (union) of all selected groups');
+  });
+
+  it('effective permissions use readable labels with the raw string as title', () => {
+    userState.setAvailableGroups([
+      { id: 'g-admin', name: 'Admins', description: '', permissions: [{ action: 'admin', resource: '*' }, { action: 'create', resource: 'plans' }] },
+    ] as any);
+    const user = { ...(mockUsers as any[])[0], groups: ['g-admin'] };
+    userState.setAllUsers([user] as any);
+    userList.renderUsers([user] as any);
+    document.querySelector<HTMLButtonElement>('.user-expand-btn[data-user-id="1"]')!.click();
+
+    const badges = Array.from(document.querySelectorAll('.perm-badge-list .permission-badge'));
+    expect(badges.map(b => b.textContent)).toEqual(['Full access', 'Create plans']);
+    expect(badges[0]!.getAttribute('title')).toContain('admin:*: full access to all resources');
+    expect(badges[1]!.getAttribute('title')).toBe('create:plans');
+  });
+
+  it('hint appears in expand-panel-groups section, before the checkbox list', () => {
+    userList.renderUsers(mockUsers as any);
+
+    const expandBtn = document.querySelector<HTMLButtonElement>(
+      '.user-expand-btn[data-user-id="1"]',
+    );
+    expandBtn!.click();
+
+    const groupsSection = document.querySelector('.expand-panel-groups');
+    expect(groupsSection).toBeTruthy();
+    expect(groupsSection!.textContent).toContain('combined (union) of all selected groups');
+  });
+});
