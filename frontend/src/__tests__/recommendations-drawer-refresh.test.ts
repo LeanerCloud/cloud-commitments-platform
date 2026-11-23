@@ -435,5 +435,45 @@ describe('Recommendations Module', () => {
       );
       expect(api.getRecommendations).toHaveBeenCalledTimes(2);
     });
+
+    // Issue #1679: in Lambda mode the refresh POST returns 202 as soon as the
+    // collection is started, so the outcome is only known once the in-flight
+    // marker clears. A failed new collection must not be reported as refreshed.
+    test('202 accepted — failure toast, not success, when the started collect failed', async () => {
+      mockGetRecs();
+      (recsApi.getRecommendationsFreshness as jest.Mock).mockResolvedValueOnce({
+        last_collected_at: null,
+        last_collection_error: null,
+      });
+      (recsApi.refreshRecommendations as jest.Mock).mockResolvedValue({
+        started_at: new Date().toISOString(),
+        last_collected_at: null,
+      });
+      (recsApi.getRecommendationsFreshness as jest.Mock).mockResolvedValue({
+        last_collected_at: null,
+        last_collection_error: 'aws: cost explorer throttled',
+        last_collection_started_at: null,
+      });
+
+      await loadRecommendations();
+      await Promise.resolve();
+      await Promise.resolve();
+      await jest.advanceTimersByTimeAsync(5_000);
+
+      expect(mockShowToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'Recommendations refresh failed: the collection reported errors. The previous recommendations are still shown.',
+          kind: 'error',
+        }),
+      );
+      // Raw provider error text never reaches the refresh outcome toast.
+      expect(mockShowToast).not.toHaveBeenCalledWith(
+        expect.objectContaining({ message: expect.stringMatching(/^Recommendations refresh.*cost explorer throttled/) }),
+      );
+      expect(mockShowToast).not.toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Recommendations refreshed' }),
+      );
+      expect(api.getRecommendations).toHaveBeenCalledTimes(2);
+    });
   });
 });
