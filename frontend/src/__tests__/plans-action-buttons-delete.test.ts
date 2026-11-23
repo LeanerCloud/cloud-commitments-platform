@@ -240,5 +240,108 @@ describe('Plans Module', () => {
 
       expect(api.deletePlan).not.toHaveBeenCalled();
     });
+
+    test('delete plan shows error on failure', async () => {
+      (api.getPlans as jest.Mock).mockResolvedValue({
+        plans: [
+          {
+            id: 'plan-1',
+            name: 'Test Plan',
+            enabled: true,
+            auto_purchase: false,
+            services: {
+              'ec2': {
+                provider: 'aws',
+                service: 'ec2',
+                enabled: true,
+                term: 1,
+                payment: 'all-upfront',
+                coverage: 80
+              }
+            }
+          }
+        ]
+      });
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+      (api.deletePlan as jest.Mock).mockRejectedValue(new Error('API Error'));
+      // confirmDialog() replaces window.confirm() (11-L2); set via mockConfirmDialog.
+      mockConfirmDialog.mockResolvedValue(true);
+      console.error = jest.fn();
+
+      await loadPlans();
+
+      const deleteBtn = document.querySelector('[data-action="delete-plan"]') as HTMLButtonElement;
+      deleteBtn?.click();
+
+      await flushPromises();
+
+      expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({ message: 'Failed to delete plan' }));
+    });
+
+    test('add purchases button opens modal', async () => {
+      (api.getPlans as jest.Mock).mockResolvedValue({
+        plans: [
+          {
+            id: 'plan-1',
+            name: 'Test Plan',
+            enabled: true,
+            auto_purchase: false,
+            services: {}
+          }
+        ]
+      });
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+
+      await loadPlans();
+
+      const addBtn = document.querySelector('[data-action="add-purchases"]') as HTMLButtonElement;
+      addBtn?.click();
+
+      await flushPromises();
+
+      const modal = document.getElementById('add-purchases-modal');
+      expect(modal).toBeTruthy();
+      expect(modal?.innerHTML).toContain('Add Planned Purchases');
+    });
+  });
+
+  // Regression for H1: providerBadgeHtml must be used for planned-purchase rows
+  // and plan card detail (prevents XSS via class attribute injection).
+  describe('H1 regression: provider badge XSS neutralisation in plans.ts', () => {
+    test('providerBadgeHtml is called with the purchase provider for planned-purchase rows', async () => {
+      const mockBadge = (jest.requireMock('../utils') as { providerBadgeHtml: jest.Mock }).providerBadgeHtml;
+
+      const maliciousProvider = 'aws"><img src=x onerror=alert(1)>';
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({
+        purchases: [
+          {
+            id: 'pp-1',
+            plan_id: 'plan-1',
+            plan_name: 'Test Plan',
+            provider: maliciousProvider,
+            service: 'ec2',
+            resource_type: 'Standard',
+            region: 'us-east-1',
+            count: 1,
+            term: 1,
+            payment: 'no-upfront',
+            upfront_cost: 0,
+            estimated_savings: 50,
+            scheduled_date: '2024-06-01',
+            status: 'pending',
+            step_number: 1,
+            total_steps: 4,
+          }
+        ]
+      });
+      (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+
+      await loadPlans();
+
+      // providerBadgeHtml must have been called with the malicious string.
+      // Pre-fix the string was raw-interpolated into a class attribute via innerHTML.
+      // Post-fix it goes through the helper which whitelists and escapes it.
+      expect(mockBadge).toHaveBeenCalledWith(maliciousProvider);
+    });
   });
 });
