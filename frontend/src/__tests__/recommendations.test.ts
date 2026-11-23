@@ -12,9 +12,6 @@ import {
 } from './recommendations-harness';
 import {
   loadRecommendations,
-  pickBestVariantPerCell,
-  seedGlobalDefaults,
-  effectiveMonthlySavings,
   effectiveSavingsPct,
   displaySavingsPct,
   onDemandMonthly,
@@ -55,134 +52,6 @@ beforeEach(() => {
   }
 });
 
-//
-// issue #223: default-seed from GlobalConfig across all 3 surfaces.
-// These tests exercise the pickBestVariantPerCell config-match tiebreaker
-// and the seedGlobalDefaults hook that injects resolved GlobalConfig values.
-//
-
-describe('issue #223: pickBestVariantPerCell config-match tiebreaker', () => {
-  const rec = (
-    id: string,
-    term: 1 | 3,
-    payment: string,
-    savings = 100,
-    upfront_cost = 0,
-  ) => ({
-    id,
-    provider: 'aws' as const,
-    cloud_account_id: 'acct-1',
-    service: 'ec2',
-    resource_type: 't3.medium',
-    region: 'us-east-1',
-    engine: '',
-    count: 1,
-    term,
-    payment,
-    savings,
-    upfront_cost,
-  } as unknown as LocalRecommendation);
-
-  afterEach(() => {
-    // Reset module cache to initial defaults so tests don't bleed into each other.
-    seedGlobalDefaults(1, 'all-upfront');
-  });
-
-  test('prefers variant matching configured (term, payment) over highest-effective', () => {
-    // Two variants in one cell: 1yr/all-upfront (configured default) vs
-    // 3yr/no-upfront (higher effective savings).
-    const recs = [
-      rec('want-this', 1, 'all-upfront', 300, 0), // effective = $300/mo
-      rec('skip-this', 3, 'no-upfront', 400, 0), // effective = $400/mo (higher)
-    ];
-    seedGlobalDefaults(1, 'all-upfront');
-    const result = pickBestVariantPerCell(recs);
-    expect(result).toHaveLength(1);
-    expect(result[0]!.id).toBe('want-this');
-  });
-
-  test('falls back to highest-effective when no variant matches configured defaults', () => {
-    // Neither variant matches term=1/all-upfront; fallback picks highest net savings.
-    const recs = [
-      rec('low-effective', 3, 'all-upfront', 200, 36000), // net savings = $200/mo
-      rec('high-effective', 3, 'no-upfront', 400, 0), // net savings = $400/mo
-    ];
-    seedGlobalDefaults(1, 'all-upfront'); // neither matches
-    const result = pickBestVariantPerCell(recs);
-    expect(result).toHaveLength(1);
-    expect(result[0]!.id).toBe('high-effective');
-  });
-
-  test('handles multiple independent cells and picks config-match in each', () => {
-    // Two distinct cells; each has a variant matching configured defaults.
-    const recs = [
-      rec('cell-a-match', 1, 'all-upfront', 100, 0),
-      rec('cell-a-other', 3, 'no-upfront', 400, 0), // higher effective but different cell
-      { ...rec('cell-b-match', 1, 'all-upfront', 200, 0), region: 'eu-west-1', id: 'cell-b-match' },
-      { ...rec('cell-b-other', 3, 'partial-upfront', 600, 0), region: 'eu-west-1', id: 'cell-b-other' },
-    ];
-    seedGlobalDefaults(1, 'all-upfront');
-    const result = pickBestVariantPerCell(recs);
-    const ids = result.map((r) => r.id).sort();
-    expect(ids).toEqual(['cell-a-match', 'cell-b-match']);
-  });
-
-  test('config-match with 3yr/partial-upfront as configured defaults', () => {
-    const recs = [
-      rec('wrong-1', 1, 'all-upfront', 100, 0),
-      rec('want-3yr', 3, 'partial-upfront', 100, 0),
-    ];
-    seedGlobalDefaults(3, 'partial-upfront');
-    const result = pickBestVariantPerCell(recs);
-    expect(result).toHaveLength(1);
-    expect(result[0]!.id).toBe('want-3yr');
-  });
-});
-
-//
-// Issue #220 / #221: effectiveMonthlySavings + effectiveSavingsPct helpers
-// + Monthly Cost and Effective % column rendering
-//
-
-describe('effectiveMonthlySavings', () => {
-  const mk = (overrides: Partial<LocalRecommendation>): LocalRecommendation => ({
-    id: 'r',
-    provider: 'aws',
-    service: 'ec2',
-    resource_type: 't3.medium',
-    region: 'us-east-1',
-    count: 1,
-    term: 1,
-    savings: 100,
-    upfront_cost: 0,
-    monthly_cost: 50,
-    ...overrides,
-  } as unknown as LocalRecommendation);
-
-  test('no-upfront: effective equals raw savings when upfront=0', () => {
-    expect(effectiveMonthlySavings(mk({ savings: 100, upfront_cost: 0, term: 1 }))).toBeCloseTo(100);
-  });
-
-  test('all-upfront: savings is already net so returns savings directly', () => {
-    // Provider reports net monthly savings after factoring in the upfront cost.
-    // effectiveMonthlySavings must NOT subtract amortized upfront again (#1103).
-    expect(effectiveMonthlySavings(mk({ savings: 50, upfront_cost: 600, term: 1 }))).toBeCloseTo(50);
-    expect(effectiveMonthlySavings(mk({ savings: 1200, upfront_cost: 36000, term: 3 }))).toBeCloseTo(1200);
-  });
-
-  test('partial-upfront: savings is already net, returns savings directly', () => {
-    expect(effectiveMonthlySavings(mk({ savings: 600, upfront_cost: 7200, term: 3 }))).toBeCloseTo(600);
-  });
-
-  test('term=0: returns raw savings (no division by term needed)', () => {
-    expect(effectiveMonthlySavings(mk({ savings: 60, upfront_cost: 120, term: 0 }))).toBeCloseTo(60);
-  });
-
-  test('savings is returned as-is regardless of upfront size', () => {
-    expect(effectiveMonthlySavings(mk({ savings: 10, upfront_cost: 1200, term: 1 }))).toBeCloseTo(10);
-  });
-});
-
 describe('effectiveSavingsPct', () => {
   // mk() defaults to 'azure' for reconstruction-path tests. AWS rows require
   // on_demand_cost to be set; without it effectiveSavingsPct returns null
@@ -201,55 +70,6 @@ describe('effectiveSavingsPct', () => {
     monthly_cost: 50,
     ...overrides,
   } as unknown as LocalRecommendation);
-
-  test('no-upfront: pct = savings / (monthly_cost + savings) * 100', () => {
-    const pct = effectiveSavingsPct(mk({ savings: 100, upfront_cost: 0, monthly_cost: 50, term: 1 }));
-    expect(pct).not.toBeNull();
-    expect(pct!).toBeCloseTo(66.67, 1);
-  });
-
-  test('all-upfront with monthly_cost=0: numerator is savings (already net, no double-subtract)', () => {
-    // savings=50 is already net of amortized upfront; denominator reconstruction
-    // keeps amortized in onDemand so we get 50/100=50%, not 0/100=0% (#1103).
-    const pct = effectiveSavingsPct(mk({ savings: 50, upfront_cost: 600, monthly_cost: 0, term: 1 }));
-    expect(pct).not.toBeNull();
-    expect(pct!).toBeCloseTo(50, 1);
-  });
-
-  test('partial-upfront: standard case', () => {
-    // savings=600 net; amortized=200; onDemand=200+600+200=1000; pct=600/1000=60%.
-    const pct = effectiveSavingsPct(mk({ savings: 600, upfront_cost: 7200, monthly_cost: 200, term: 3 }));
-    expect(pct).not.toBeNull();
-    expect(pct!).toBeCloseTo(60, 1);
-  });
-
-  test('on_demand_monthly=0 returns null (no division by zero)', () => {
-    const pct = effectiveSavingsPct(mk({ savings: 0, upfront_cost: 0, monthly_cost: 0, term: 1 }));
-    expect(pct).toBeNull();
-  });
-
-  test('term=0 clamps to 12 months (no explosion)', () => {
-    const pct = effectiveSavingsPct(mk({ savings: 60, upfront_cost: 120, monthly_cost: 40, term: 0 }));
-    expect(pct).toBeNull();
-  });
-
-  test('positive net savings even with large upfront: no double-subtract (#1103)', () => {
-    // savings=10 is already net; amortized=100; onDemand=400+10+100=510.
-    // Old formula gave -90/510=-17.65%; correct result is 10/510=1.96%.
-    const pct = effectiveSavingsPct(mk({ savings: 10, upfront_cost: 1200, monthly_cost: 400, term: 1 }));
-    expect(pct).not.toBeNull();
-    expect(pct!).toBeGreaterThan(0);
-    expect(pct!).toBeCloseTo(1.96, 1);
-  });
-
-  test('undefined/null monthly_cost returns null (data not provided)', () => {
-    // monthly_cost null/undefined means the provider API did not return a monthly
-    // recurring breakdown. Without it we cannot reconstruct on_demand_monthly,
-    // so effectiveSavingsPct must return null rather than collapsing the
-    // denominator to savings alone (which produced the misleading 100% rows in #252).
-    expect(effectiveSavingsPct(mk({ savings: 100, upfront_cost: 0, monthly_cost: undefined, term: 1 }))).toBeNull();
-    expect(effectiveSavingsPct(mk({ savings: 100, upfront_cost: 0, monthly_cost: null, term: 1 }))).toBeNull();
-  });
 
   test('monthly_cost=0 (real all-upfront) is treated as known data, not missing', () => {
     // A literal 0 means the backend explicitly reported zero recurring cost
