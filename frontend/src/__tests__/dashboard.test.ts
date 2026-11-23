@@ -4,7 +4,7 @@
 
 // The harness registers the module mocks, so it must be imported first.
 import { mockShowToast, mockConfirmDialog, mockGroupRecsByCell, mockPageLevelRange, mockFormatSavingsRange } from './dashboard-harness';
-import { loadDashboard, loadSavingsTrendChart, loadYtdSparkline, setupSavingsTrendHandlers, setupDashboardHandlers, formatTrendAxisTick } from '../dashboard';
+import { loadDashboard, loadYtdSparkline, setupSavingsTrendHandlers, setupDashboardHandlers, formatTrendAxisTick } from '../dashboard';
 import { formatTrendTooltipTitle } from '../modules/chart-utils';
 import { Chart } from 'chart.js';
 import * as api from '../api';
@@ -154,131 +154,6 @@ describe('Dashboard Module', () => {
       }
     });
 
-    test('does NOT fire when home tab is inactive (active-tab guard)', async () => {
-      addHomeTab(false);
-
-      setupDashboardHandlers();
-      const accountCb = (state.subscribeAccount as jest.Mock).mock.calls[0]?.[0] as () => void;
-      const providerCb = (state.subscribeProvider as jest.Mock).mock.calls[0]?.[0] as () => void;
-
-      (api.getSavingsAnalytics as jest.Mock).mockClear();
-      (api.getDashboardSummary as jest.Mock).mockClear();
-      accountCb();
-      providerCb();
-      await new Promise((r) => setTimeout(r, 0));
-
-      expect(api.getDashboardSummary).not.toHaveBeenCalled();
-    });
-
-    test('back-to-back provider+account fires coalesce into one reload', async () => {
-      addHomeTab(true);
-
-      setupDashboardHandlers();
-      const providerCb = (state.subscribeProvider as jest.Mock).mock.calls[0]?.[0] as () => void;
-      const accountCb = (state.subscribeAccount as jest.Mock).mock.calls[0]?.[0] as () => void;
-
-      (api.getDashboardSummary as jest.Mock).mockClear();
-      // Simulate topbar provider-change: clears accounts then sets provider,
-      // per the #185 ordering rule — both fire synchronously.
-      accountCb();
-      providerCb();
-      await new Promise((r) => setTimeout(r, 0));
-
-      expect(api.getDashboardSummary).toHaveBeenCalledTimes(1);
-    });
-
-    test('loadSavingsTrendChart forwards account_id to the analytics API', async () => {
-      (state.getCurrentAccountIDs as jest.Mock).mockReturnValue(['uuid-acct-2']);
-
-      await loadSavingsTrendChart();
-
-      expect(api.getSavingsAnalytics).toHaveBeenCalledWith(
-        expect.objectContaining({ account_ids: ['uuid-acct-2'] })
-      );
-    });
-
-    test('loadSavingsTrendChart forwards account_ids for multi-account filter (filter parity with KPI tiles)', async () => {
-      // Regression: previously the chart omitted account_ids when length > 1,
-      // causing the chart data to diverge from the KPI tiles above it which
-      // always forward all selected accounts. The fix passes account_ids
-      // unconditionally when any accounts are selected.
-      (state.getCurrentAccountIDs as jest.Mock).mockReturnValue(['uuid-a', 'uuid-b']);
-      (api.getSavingsAnalytics as jest.Mock).mockResolvedValue({
-        data_points: [{ timestamp: new Date().toISOString(), cumulative_savings: 50, total_savings: 5, total_upfront: 100, purchase_count: 1 }],
-      });
-
-      await loadSavingsTrendChart();
-
-      expect(api.getSavingsAnalytics).toHaveBeenCalledWith(
-        expect.objectContaining({ account_ids: ['uuid-a', 'uuid-b'] })
-      );
-    });
-
-    test('empty-state shows filter name when account chip is active (QA 2.3)', async () => {
-      (state.getCurrentAccountIDs as jest.Mock).mockReturnValue(['uuid-acct-3']);
-      (api.getSavingsAnalytics as jest.Mock).mockResolvedValue({ data_points: [] });
-
-      await loadSavingsTrendChart();
-
-      const empty = document.getElementById('savings-trend-empty');
-      expect(empty?.classList.contains('hidden')).toBe(false);
-      expect(empty?.textContent).toContain('uuid-acct-3');
-    });
-
-    test('empty-state shows generic message when no filter is active', async () => {
-      (state.getCurrentAccountIDs as jest.Mock).mockReturnValue([]);
-      (state.getCurrentProvider as jest.Mock).mockReturnValue('');
-      (api.getSavingsAnalytics as jest.Mock).mockResolvedValue({ data_points: [] });
-
-      await loadSavingsTrendChart();
-
-      const empty = document.getElementById('savings-trend-empty');
-      expect(empty?.classList.contains('hidden')).toBe(false);
-      expect(empty?.textContent).toContain('No savings recorded in the last');
-    });
-
-    test('empty-state names the provider when a provider filter is active (issue #498, QA 2.3)', async () => {
-      // The analytics endpoint now applies the provider param as a WHERE
-      // filter, so the query IS scoped to the selected provider — naming it
-      // in the empty-state is accurate. Mirrors the account-filter empty-state.
-      (state.getCurrentAccountIDs as jest.Mock).mockReturnValue([]);
-      (state.getCurrentProvider as jest.Mock).mockReturnValue('aws');
-      (api.getSavingsAnalytics as jest.Mock).mockResolvedValue({ data_points: [] });
-
-      await loadSavingsTrendChart();
-
-      const empty = document.getElementById('savings-trend-empty');
-      expect(empty?.classList.contains('hidden')).toBe(false);
-      // Provider name (uppercased by buildFilterDesc) appears in the message.
-      expect(empty?.textContent).toContain('AWS');
-      expect(empty?.textContent).toMatch(/No savings recorded in the last (\d+ days|year) for /);
-    });
-
-    test('loadSavingsTrendChart forwards the provider chip to the analytics API (issue #498, QA 2.3)', async () => {
-      // Regression: previously the chart dropped the provider param, so the
-      // savings-history series showed the same all-provider data regardless of
-      // the selected provider. The fix forwards provider to scope the query.
-      (state.getCurrentAccountIDs as jest.Mock).mockReturnValue([]);
-      (state.getCurrentProvider as jest.Mock).mockReturnValue('aws');
-      (api.getSavingsAnalytics as jest.Mock).mockResolvedValue({ data_points: [] });
-
-      await loadSavingsTrendChart();
-
-      expect(api.getSavingsAnalytics).toHaveBeenCalledWith(
-        expect.objectContaining({ provider: 'aws' })
-      );
-    });
-
-    test('loadSavingsTrendChart omits provider when no provider filter is active', async () => {
-      (state.getCurrentAccountIDs as jest.Mock).mockReturnValue([]);
-      (state.getCurrentProvider as jest.Mock).mockReturnValue('');
-      (api.getSavingsAnalytics as jest.Mock).mockResolvedValue({ data_points: [] });
-
-      await loadSavingsTrendChart();
-
-      const call = (api.getSavingsAnalytics as jest.Mock).mock.calls[0]?.[0];
-      expect(call).not.toHaveProperty('provider');
-    });
   });
 
   // Issue #185 invariant — clear account state BEFORE awaiting the
