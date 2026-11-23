@@ -10,6 +10,7 @@ import {
   mockShowToast,
 } from './plans-harness';
 import {
+  loadPlans,
   savePlan,
   closePlanModal,
   openCreatePlanModal,
@@ -360,6 +361,107 @@ describe('Plans Module', () => {
           expect((document.getElementById('plan-service-fields') as HTMLElement).hidden).toBe(false);
         });
       });
+    });
+  });
+
+  describe('add purchases modal', () => {
+    beforeEach(async () => {
+      (api.getPlans as jest.Mock).mockResolvedValue({
+        plans: [
+          {
+            id: 'plan-1',
+            name: 'Test Plan',
+            enabled: true,
+            auto_purchase: false,
+            notification_days_before: 3,
+            services: {}
+          }
+        ]
+      });
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+
+      await loadPlans();
+
+      const addBtn = document.querySelector('[data-action="add-purchases"]') as HTMLButtonElement;
+      addBtn?.click();
+
+      await flushPromises();
+    });
+
+    test('default date leaves the displayed plan notification window intact', () => {
+      const now = new Date();
+      const expected = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 5));
+      const input = document.getElementById('add-purchases-start-date') as HTMLInputElement;
+      expect(input.value).toBe(expected.toISOString().slice(0, 10));
+    });
+
+    test('cancel button closes modal', async () => {
+      const cancelBtn = document.getElementById('add-purchases-cancel') as HTMLButtonElement;
+      cancelBtn?.click();
+
+      await flushPromises();
+
+      const modal = document.getElementById('add-purchases-modal');
+      expect(modal).toBeNull();
+    });
+
+    test('submit form creates planned purchases', async () => {
+      (api.createPlannedPurchases as jest.Mock).mockResolvedValue({});
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+
+      const countInput = document.getElementById('add-purchases-count') as HTMLInputElement;
+      countInput.value = '3';
+
+      const form = document.getElementById('add-purchases-form') as HTMLFormElement;
+      form.dispatchEvent(new Event('submit'));
+
+      await flushPromises();
+
+      expect(api.createPlannedPurchases).toHaveBeenCalledWith('plan-1', 3, expect.any(String));
+      expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({ message: 'Successfully scheduled 3 purchases' }));
+    });
+
+    test('submit form with single purchase shows singular message', async () => {
+      (api.createPlannedPurchases as jest.Mock).mockResolvedValue({});
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+
+      const countInput = document.getElementById('add-purchases-count') as HTMLInputElement;
+      countInput.value = '1';
+
+      const form = document.getElementById('add-purchases-form') as HTMLFormElement;
+      form.dispatchEvent(new Event('submit'));
+
+      await flushPromises();
+
+      expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({ message: 'Successfully scheduled 1 purchase' }));
+    });
+
+    test('submit form shows error on failure', async () => {
+      (api.createPlannedPurchases as jest.Mock).mockRejectedValue(new Error('API Error'));
+
+      const form = document.getElementById('add-purchases-form') as HTMLFormElement;
+      form.dispatchEvent(new Event('submit'));
+
+      await flushPromises();
+
+      const errorDiv = document.getElementById('add-purchases-error');
+      expect(errorDiv?.textContent).toBe('API Error');
+      expect(errorDiv?.classList.contains('hidden')).toBe(false);
+    });
+
+    test('submit form preserves a specific scheduling refusal', async () => {
+      const refusal = 'purchase plan has no remaining steps';
+      (api.createPlannedPurchases as jest.Mock).mockRejectedValue(new Error(refusal));
+
+      const form = document.getElementById('add-purchases-form') as HTMLFormElement;
+      form.dispatchEvent(new Event('submit'));
+
+      await flushPromises();
+
+      const errorDiv = document.getElementById('add-purchases-error');
+      expect(errorDiv?.textContent).toBe(refusal);
+      expect(errorDiv?.classList.contains('hidden')).toBe(false);
+      expect(mockShowToast).not.toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('Successfully') }));
     });
   });
 });
