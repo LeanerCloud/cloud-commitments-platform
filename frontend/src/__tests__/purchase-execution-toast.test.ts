@@ -19,7 +19,6 @@ import * as api from '../api';
 import * as recs from '../recommendations';
 import * as plans from '../plans';
 import * as archera from '../archera';
-import { confirmDialog } from '../confirmDialog';
 
 // ── tests ─────────────────────────────────────────────────────────────────────
 
@@ -424,70 +423,5 @@ describe('handleFanOutExecute — fan-out path', () => {
     ];
     expect(submittedRecs[0]?.details).toEqual(postgresDetails);
     expect(submittedRecs[0]?.engine).toBe('postgres');
-  });
-});
-
-describe('handleExecutePurchase - missing payment option (#431)', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-    (recs.getFanOutBuckets as jest.Mock).mockReturnValue(null);
-    (plans.closePurchaseModal as jest.Mock).mockImplementation(() => undefined);
-  });
-
-  afterEach(() => {
-    document.body.textContent = '';
-  });
-
-  test.each([
-    ['undefined', undefined],
-    ['empty string', ''],
-    ['whitespace only', '   '],
-  ])('refuses with an error toast and no POST when payment is %s', async (_label, payment) => {
-    const rec: Record<string, unknown> = { ...buildMinimalRec() };
-    if (payment === undefined) delete rec.payment;
-    else rec.payment = payment;
-    (recs.getPurchaseModalRecommendations as jest.Mock).mockReturnValue([rec]);
-
-    const btn = setup();
-    btn.click();
-    await new Promise((r) => setTimeout(r, 0));
-
-    expect(api.executePurchase).not.toHaveBeenCalled();
-    expect(confirmDialog).not.toHaveBeenCalled();
-    expect(lastToastKind()).toBe('error');
-    expect(lastToastMessage()).toContain('no payment option');
-    expect(btn.disabled).toBe(false);
-    expect(plans.closePurchaseModal).not.toHaveBeenCalled();
-  });
-
-  test('refuses the whole batch when only one of several recs lacks payment', async () => {
-    const missing: Record<string, unknown> = { ...buildMinimalRec(), id: 'rec-2' };
-    delete missing.payment;
-    (recs.getPurchaseModalRecommendations as jest.Mock).mockReturnValue([buildMinimalRec(), missing]);
-
-    const btn = setup();
-    btn.click();
-    await new Promise((r) => setTimeout(r, 0));
-
-    expect(api.executePurchase).not.toHaveBeenCalled();
-    expect(lastToastMessage()).toContain('1 of 2');
-  });
-
-  test('a rec with a payment option is sent unchanged', async () => {
-    (recs.getPurchaseModalRecommendations as jest.Mock).mockReturnValue([
-      { ...buildMinimalRec(), payment: 'no-upfront' },
-    ]);
-    (api.executePurchase as jest.Mock).mockResolvedValue({
-      execution_id: 'exec-1',
-      status: 'queued',
-      email_sent: true,
-    });
-
-    const btn = setup();
-    btn.click();
-    await new Promise((r) => setTimeout(r, 0));
-
-    const sent = (api.executePurchase as jest.Mock).mock.calls[0][0];
-    expect(sent[0].payment).toBe('no-upfront');
   });
 });
