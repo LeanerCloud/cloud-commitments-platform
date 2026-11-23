@@ -221,6 +221,15 @@ export async function mockApi(page: Page): Promise<MockHandle> {
     await jsonRoute(route, {}, 404);
   });
 
+  // Opportunities asks whether Archera is configured before it shows the
+  // per-recommendation quote button; a deployment without the settings
+  // answers configured:false, so that is the default here (specs that
+  // exercise the quote register their own route after mockApi).
+  await page.route('**/api/insurance/status', async (route) => {
+    record(route);
+    await jsonRoute(route, { configured: false, missing: [] });
+  });
+
   // Public info - admin already exists, login modal does not appear.
   await page.route('**/api/public-info', async (route) => {
     record(route);
