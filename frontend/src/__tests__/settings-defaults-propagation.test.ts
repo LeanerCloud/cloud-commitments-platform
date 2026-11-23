@@ -11,7 +11,10 @@ import {
 } from './settings-harness';
 import {
   loadGlobalSettings,
+  saveGlobalSettings,
   setupSettingsHandlers,
+  isUnsavedChanges,
+  openOverrideModal,
 } from '../settings';
 
 import * as api from '../api';
@@ -117,6 +120,157 @@ describe('Settings Module', () => {
       // Must include display name, not raw backend ID.
       expect(bodyText).toMatch(/EC2 Reserved Instances/);
       expect(bodyText).not.toMatch(/^aws$/m);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // isUnsavedChanges -- no false prompt on pristine load or before load
+  // (issue #1441)
+  // -----------------------------------------------------------------------
+  // The navigation guard in navigation.ts calls isUnsavedChanges() whenever
+  // the user leaves the Admin tab. Before the fix, savedSnapshot started as
+  // an empty object ({}), so comparing any live DOM value against undefined
+  // always returned true -- causing the "You have unsaved settings changes.
+  // Leave without saving?" modal to fire even without any edits.
+  describe('isUnsavedChanges -- navigation guard (issue #1441)', () => {
+    const baseConfigResponse = {
+      global: {
+        enabled_providers: ['aws'] as string[],
+        notification_email: '',
+        auto_collect: true,
+        default_term: 3,
+        default_payment: 'all-upfront',
+        default_coverage: 80,
+        notification_days_before: 3,
+        recommendations_cache_stale_hours: 24,
+        recommendations_lookback_days: 7,
+        grace_period_days: { aws: 7, azure: 7, gcp: 7 },
+        laddering_enabled: false,
+      },
+      services: [],
+      credentials: {},
+    };
+
+    test('returns false before settings have been loaded (empty snapshot -- regression for #1441)', () => {
+      // Use a fresh module instance so savedSnapshot starts as the empty object
+      // {} that it is at module initialisation, before any loadGlobalSettings()
+      // call has run snapshotAllFields(). This is the exact state that caused
+      // the bug: the navigation guard fired on every first Admin-tab visit
+      // because `getFieldValue(id) !== undefined` was always true.
+      //
+      // Pre-fix: TRACKED_FIELDS.some(id => getFieldValue(id) !== savedSnapshot[id])
+      //   = TRACKED_FIELDS.some(id => '' !== undefined) = true -> prompt shown (BUG)
+      // Post-fix: Object.keys(savedSnapshot).length === 0 -> return false (CORRECT)
+      let freshIsUnsavedChanges!: () => boolean;
+      jest.isolateModules(() => {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const s = require('../settings') as { isUnsavedChanges: () => boolean };
+        freshIsUnsavedChanges = s.isUnsavedChanges;
+      });
+      expect(freshIsUnsavedChanges()).toBe(false);
+    });
+
+    test('returns false immediately after settings load without any user edits', async () => {
+      // loadGlobalSettings() populates all tracked fields from the API response
+      // and then calls snapshotAllFields() to establish the clean baseline.
+      // A user who navigates away right after load (no edits) must see no prompt.
+      (api.getConfig as jest.Mock).mockResolvedValue(baseConfigResponse);
+      await loadGlobalSettings();
+
+      expect(isUnsavedChanges()).toBe(false);
+    });
+
+    test('returns true after a tracked field is edited post-load', async () => {
+      // After a clean load + snapshot, mutating a tracked field must be detected
+      // so the navigation guard can show the prompt for real unsaved changes.
+      // Verifies the fix does not suppress legitimate dirty-state detection.
+      (api.getConfig as jest.Mock).mockResolvedValue(baseConfigResponse);
+      await loadGlobalSettings();
+
+      // Simulate the user changing the notification email -- a tracked field.
+      const emailInput = document.getElementById('setting-notification-email') as HTMLInputElement;
+      emailInput.value = 'edited@example.com';
+      emailInput.dispatchEvent(new Event('input'));
+
+      expect(isUnsavedChanges()).toBe(true);
+    });
+  });
+
+  // Issue #135: `default_coverage || 80` rewrote a stored 0 to 80, and the
+  // next Save persisted 80 without the user touching the field.
+  describe('default_coverage 0 round-trips through load and save (issue #135)', () => {
+    const configWithCoverage = (global: Record<string, unknown>, services: unknown[] = []) => ({
+      global: {
+        enabled_providers: ['aws'],
+        notification_email: '',
+        auto_collect: true,
+        default_term: 3,
+        default_payment: 'all-upfront',
+        notification_days_before: 3,
+        ...global,
+      },
+      services,
+      credentials: {},
+    });
+
+    const saveUnchanged = async () => {
+      (api.updateConfig as jest.Mock).mockResolvedValue({});
+      (api.updateServiceConfig as jest.Mock).mockClear().mockResolvedValue(undefined);
+      await saveGlobalSettings({ preventDefault: jest.fn() } as unknown as Event);
+    };
+
+    test('a stored 0 renders as 0 and an unedited Save sends no global PUT', async () => {
+      (api.getConfig as jest.Mock).mockResolvedValue(configWithCoverage({ default_coverage: 0 }));
+      await loadGlobalSettings();
+
+      expect((document.getElementById('setting-default-coverage') as HTMLInputElement).value).toBe('0');
+      expect((document.getElementById('aws-savings-plans-compute-coverage') as HTMLInputElement).value).toBe('0');
+
+      await saveUnchanged();
+
+      expect(api.updateConfig).not.toHaveBeenCalled();
+      expect(api.updateServiceConfig).not.toHaveBeenCalled();
+    });
+
+    test('an absent default_coverage renders the 80 default and an unedited Save sends no global PUT', async () => {
+      (api.getConfig as jest.Mock).mockResolvedValue(configWithCoverage({}));
+      await loadGlobalSettings();
+
+      expect((document.getElementById('setting-default-coverage') as HTMLInputElement).value).toBe('80');
+
+      await saveUnchanged();
+
+      expect(api.updateConfig).not.toHaveBeenCalled();
+    });
+
+    test('a per-service coverage of 0 round-trips under a non-zero global', async () => {
+      (api.getConfig as jest.Mock).mockResolvedValue(configWithCoverage(
+        { default_coverage: 50 },
+        [{ provider: 'aws', service: 'savings-plans-compute', enabled: true, term: 3, payment: 'all-upfront', coverage: 0 }],
+      ));
+      await loadGlobalSettings();
+
+      expect((document.getElementById('aws-savings-plans-compute-coverage') as HTMLInputElement).value).toBe('0');
+      expect((document.getElementById('aws-savings-plans-ec2instance-coverage') as HTMLInputElement).value).toBe('50');
+
+      await saveUnchanged();
+
+      expect(api.updateServiceConfig).not.toHaveBeenCalled();
+    });
+
+    test('the override modal inherit label shows the stored 0%', async () => {
+      const modal = document.createElement('div');
+      modal.id = 'override-modal';
+      const covInput = document.createElement('input');
+      covInput.id = 'override-coverage';
+      modal.appendChild(covInput);
+      document.body.appendChild(modal);
+
+      (api.getConfig as jest.Mock).mockResolvedValue(configWithCoverage({ default_coverage: 0 }));
+      await loadGlobalSettings();
+      openOverrideModal('acc-1', 'aws', [], document.createElement('div'));
+
+      expect(covInput.placeholder).toBe('Inherit (currently: 0%)');
     });
   });
 });
