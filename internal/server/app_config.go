@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/database"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/email"
@@ -121,4 +123,76 @@ func LoadApplicationConfig() (ApplicationConfig, error) {
 		RecommendationSchedule:  os.Getenv("RECOMMENDATION_SCHEDULE"),
 		FireSweepOff:            os.Getenv("FIRE_SWEEP_SCHEDULED") == "false",
 	}, nil
+}
+
+// resolveOIDCIssuerURL picks the canonical OIDC issuer URL for the
+// deployment. CUDLY_ISSUER_URL (set by the infra module to the
+// Function URL / Container App URL / Cloud Run URL) wins; DashboardURL
+// is the backstop.
+func resolveOIDCIssuerURL(cfg ApplicationConfig) string {
+	if cfg.IssuerURL != "" {
+		return strings.TrimRight(cfg.IssuerURL, "/")
+	}
+	return strings.TrimRight(cfg.DashboardURL, "/")
+}
+
+// loadScheduledPurchaseMaxOverdue parses SCHEDULED_PURCHASE_MAX_OVERDUE, a Go
+// duration such as "24h" or "36h": how long after its due time the fire and
+// process sweeps may still buy a row (issue #712). Unset returns 0, which the
+// purchase manager reads as purchase.DefaultMaxDueRowAge. A malformed or
+// non-positive value fails startup rather than silently changing which overdue
+// purchases get bought.
+func loadScheduledPurchaseMaxOverdue() (time.Duration, error) {
+	raw := os.Getenv("SCHEDULED_PURCHASE_MAX_OVERDUE")
+	if raw == "" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, fmt.Errorf("invalid SCHEDULED_PURCHASE_MAX_OVERDUE: %w", err)
+	}
+	if d <= 0 {
+		return 0, fmt.Errorf("invalid SCHEDULED_PURCHASE_MAX_OVERDUE: %q must be a positive duration", raw)
+	}
+	return d, nil
+}
+
+// maxTrustedProxyHops bounds CUDLY_TRUSTED_PROXY_HOPS; no real chain is deeper.
+const maxTrustedProxyHops = 8
+
+// parseTrustedProxyHops parses CUDLY_TRUSTED_PROXY_HOPS. Unset means 0 (the
+// X-Forwarded-For header is ignored); anything but an integer in 0..8 is a
+// startup error.
+func parseTrustedProxyHops(raw string) (int, error) {
+	if raw == "" {
+		return 0, nil
+	}
+	hops, err := strconv.Atoi(raw)
+	if err != nil || hops < 0 || hops > maxTrustedProxyHops {
+		return 0, fmt.Errorf("invalid CUDLY_TRUSTED_PROXY_HOPS %q: want an integer 0-%d", raw, maxTrustedProxyHops)
+	}
+	return hops, nil
+}
+
+// validateAppConfigEnvDefaults validates the money-moving env-sourced defaults
+// at the startup boundary. DEFAULT_RAMP_SCHEDULE is
+// validated here so a typo fails startup (issue #1026).
+// Empty values are always valid (means "use the purchase manager's built-in default").
+func validateAppConfigEnvDefaults(cfg ApplicationConfig) error {
+	if err := config.ValidateRampScheduleEnv(cfg.DefaultRampSchedule); err != nil {
+		return fmt.Errorf("invalid DEFAULT_RAMP_SCHEDULE: %w", err)
+	}
+	return nil
+}
+
+func getEnvInt(key string, defaultVal int) int {
+	if val := os.Getenv(key); val != "" {
+		result, err := strconv.Atoi(val)
+		if err != nil {
+			logging.Warnf("WARNING: %s=%q is not a valid integer; using default %d", key, val, defaultVal) // #nosec G706 -- env var value is operator-controlled configuration; logged for diagnostics
+			return defaultVal
+		}
+		return result
+	}
+	return defaultVal
 }
