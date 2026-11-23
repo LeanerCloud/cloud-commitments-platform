@@ -1,13 +1,16 @@
 /**
- * API Keys module tests: showKeyCreatedModal, revokeApiKey, deleteApiKey and initApiKeys. Split from
- * apikeys.test.ts to stay under the 500-line ceiling; the module mocks live in
- * the harness.
+ * API Keys module tests: showKeyCreatedModal, revokeApiKey, deleteApiKey and
+ * initApiKeys. Split from apikeys.test.ts to stay under the 500-line ceiling;
+ * the module mocks live in the harness.
  */
 
 // The harness registers the module mocks, so it must be imported first.
 import { mockConfirmDialog } from './apikeys-harness';
 import {
-  showKeyCreatedModal
+  loadApiKeys,
+  showKeyCreatedModal,
+  revokeApiKey,
+  deleteApiKey
 } from '../apikeys';
 
 import * as api from '../api';
@@ -190,6 +193,125 @@ describe('API Keys Module', () => {
 
       const modal = document.getElementById('apikey-created-modal');
       expect(modal).toBeNull();
+    });
+  });
+
+  describe('revokeApiKey', () => {
+    beforeEach(async () => {
+      const mockKeys = [
+        {
+          id: 'key-1',
+          name: 'Test Key',
+          key_prefix: 'abc123',
+          is_active: true,
+          created_at: '2024-01-15T10:00:00Z'
+        }
+      ];
+
+      (api.getApiKeys as jest.Mock).mockResolvedValue({ api_keys: mockKeys });
+      await loadApiKeys();
+    });
+
+    test('does nothing if key not found', async () => {
+      await revokeApiKey('non-existent-key');
+
+      expect(api.revokeApiKey).not.toHaveBeenCalled();
+    });
+
+    test('does nothing if user cancels confirmation', async () => {
+      mockConfirmDialog.mockResolvedValueOnce(false);
+
+      await revokeApiKey('key-1');
+
+      expect(api.revokeApiKey).not.toHaveBeenCalled();
+    });
+
+    test('revokes key and reloads list', async () => {
+      (api.revokeApiKey as jest.Mock).mockResolvedValue({});
+
+      await revokeApiKey('key-1');
+
+      expect(api.revokeApiKey).toHaveBeenCalledWith('key-1');
+      expect(api.getApiKeys).toHaveBeenCalledTimes(2); // Initial load + after revoke
+    });
+
+    test('toasts a failure while the hidden create modal still has its error element (issue #717)', async () => {
+      const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+      (api.revokeApiKey as jest.Mock).mockRejectedValue(new Error('Revoke failed'));
+
+      await revokeApiKey('key-1');
+
+      expect(document.querySelector('.toast-error')?.querySelector('.toast-message')?.textContent).toBe('Failed to revoke API key: Revoke failed');
+      expect(document.getElementById('create-apikey-error')?.classList.contains('hidden')).toBe(true);
+      consoleError.mockRestore();
+    });
+
+    test('shows error on API failure', async () => {
+      // Remove the create-apikey-error element so showError falls back to alert
+      document.getElementById('create-apikey-error')?.remove();
+
+      const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+      (api.revokeApiKey as jest.Mock).mockRejectedValue(new Error('Revoke failed'));
+
+      await revokeApiKey('key-1');
+
+      expect(consoleError).toHaveBeenCalledWith('Failed to revoke API key:', expect.any(Error));
+      expect(document.querySelector('.toast-error')?.querySelector('.toast-message')?.textContent).toBe('Failed to revoke API key: Revoke failed');
+      consoleError.mockRestore();
+    });
+  });
+
+  describe('deleteApiKey', () => {
+    beforeEach(async () => {
+      const mockKeys = [
+        {
+          id: 'key-1',
+          name: 'Test Key',
+          key_prefix: 'abc123',
+          is_active: false,
+          created_at: '2024-01-15T10:00:00Z'
+        }
+      ];
+
+      (api.getApiKeys as jest.Mock).mockResolvedValue({ api_keys: mockKeys });
+      await loadApiKeys();
+    });
+
+    test('does nothing if key not found', async () => {
+      await deleteApiKey('non-existent-key');
+
+      expect(api.deleteApiKey).not.toHaveBeenCalled();
+    });
+
+    test('does nothing if user cancels confirmation', async () => {
+      mockConfirmDialog.mockResolvedValueOnce(false);
+
+      await deleteApiKey('key-1');
+
+      expect(api.deleteApiKey).not.toHaveBeenCalled();
+    });
+
+    test('deletes key and reloads list', async () => {
+      (api.deleteApiKey as jest.Mock).mockResolvedValue({});
+
+      await deleteApiKey('key-1');
+
+      expect(api.deleteApiKey).toHaveBeenCalledWith('key-1');
+      expect(api.getApiKeys).toHaveBeenCalledTimes(2); // Initial load + after delete
+    });
+
+    test('shows error on API failure', async () => {
+      // Remove the create-apikey-error element so showError falls back to alert
+      document.getElementById('create-apikey-error')?.remove();
+
+      const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+      (api.deleteApiKey as jest.Mock).mockRejectedValue(new Error('Delete failed'));
+
+      await deleteApiKey('key-1');
+
+      expect(consoleError).toHaveBeenCalledWith('Failed to delete API key:', expect.any(Error));
+      expect(document.querySelector('.toast-error')?.querySelector('.toast-message')?.textContent).toBe('Failed to delete API key: Delete failed');
+      consoleError.mockRestore();
     });
   });
 });
