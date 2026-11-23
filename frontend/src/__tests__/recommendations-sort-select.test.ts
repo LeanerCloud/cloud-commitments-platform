@@ -341,4 +341,140 @@ describe('Issue #479: Select-all header checkbox tri-state', () => {
     expect(cb.indeterminate).toBe(true);
     expect(cb.checked).toBe(false);
   });
+
+  test('with every best-variant selected, header checkbox is checked and not indeterminate', async () => {
+    (state.getSelectedRecommendationIDs as jest.Mock).mockReturnValue(new Set(['r1', 'r2']));
+    await loadRecommendations();
+    const cb = document.getElementById('select-all-recs') as HTMLInputElement;
+    expect(cb.checked).toBe(true);
+    expect(cb.indeterminate).toBe(false);
+  });
+
+  test('clicking when all selected clears selection (the previously-broken second-click path)', async () => {
+    // Repro from the issue: with all rows selected, the header checkbox
+    // used to render as unchecked, so the second click flipped it to
+    // checked and re-selected everything (no-op). Now it renders as
+    // checked, so the second click flips to unchecked and clears.
+    (state.getSelectedRecommendationIDs as jest.Mock).mockReturnValue(new Set(['r1', 'r2']));
+    await loadRecommendations();
+    const cb = document.getElementById('select-all-recs') as HTMLInputElement;
+    expect(cb.checked).toBe(true);
+    // Simulate the browser's pre-change flip from true → false.
+    cb.checked = false;
+    cb.dispatchEvent(new Event('change'));
+    expect(state.clearSelectedRecommendations).toHaveBeenCalled();
+  });
+});
+
+//
+// Issue #480: First-click sort direction per column.
+// Text columns and most numerics default to 'asc' (A→Z / low → high).
+// `savings` and `on_demand_monthly` keep 'desc' as the platform default.
+//
+describe('Issue #480: per-column default sort direction', () => {
+  const recs = [
+    { id: 'r1', provider: 'aws',   cloud_account_id: 'a1', service: 'ec2', resource_type: 't3.medium', region: 'us-east-1', count: 1, term: 1, payment: 'no-upfront', savings: 100, upfront_cost: 0,    monthly_cost: 50,  on_demand_cost: 80  },
+    { id: 'r2', provider: 'azure', cloud_account_id: 'a2', service: 'vm',  resource_type: 'D2s_v3',    region: 'eastus',    count: 1, term: 1, payment: 'no-upfront', savings: 150, upfront_cost: 1000, monthly_cost: 100, on_demand_cost: 130 },
+  ];
+
+  beforeEach(() => {
+    setupOpportunitiesTabDom();
+    jest.clearAllMocks();
+    (api.getRecommendations as jest.Mock).mockResolvedValue({ summary: {}, recommendations: recs, regions: [] });
+    (state.getRecommendations as jest.Mock).mockReturnValue(recs);
+    (state.getVisibleRecommendations as jest.Mock).mockReturnValue(recs);
+    (state.getRecommendationsColumnFilters as jest.Mock).mockReturnValue({});
+    (state.getRecommendationsSort as jest.Mock).mockReturnValue({ column: 'savings', direction: 'desc' });
+    (state.getCostPeriod as jest.Mock).mockReturnValue('monthly');
+    (recsApi.getRecommendationsFreshness as jest.Mock).mockResolvedValue({
+      last_collected_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+      last_collection_error: null,
+    });
+  });
+
+  test.each<[string, 'asc' | 'desc']>([
+    ['provider',              'asc'],
+    ['account',               'asc'],
+    ['service',               'asc'],
+    ['resource_type',         'asc'],
+    ['region',                'asc'],
+    ['count',                 'asc'],
+    ['term',                  'asc'],
+    ['payment',               'asc'],
+    ['upfront_cost',          'asc'],
+    ['monthly_cost',          'asc'],
+    ['effective_savings_pct', 'asc'],
+    ['savings',               'desc'],  // exception per QA notes
+    ['on_demand_monthly',     'desc'],  // exception per QA notes
+  ])('first click on %s header sorts %s', async (col, expectedDir) => {
+    // Pin the active sort to a column distinct from the one we click so
+    // the click is treated as a "first click on a previously-unsorted
+    // column" rather than a toggle on the active column. Pick `region`
+    // unless `region` itself is the column under test, in which case
+    // pick `provider`.
+    const initialColumn = col === 'region' ? 'provider' : 'region';
+    (state.getRecommendationsSort as jest.Mock).mockReturnValue({ column: initialColumn, direction: 'asc' });
+    await loadRecommendations();
+    const header = document.querySelector<HTMLTableCellElement>(`th[data-sort="${col}"]`);
+    expect(header).not.toBeNull();
+    header!.click();
+    expect(state.setRecommendationsSort).toHaveBeenCalledWith({ column: col, direction: expectedDir });
+  });
+
+  test('second click on the same column toggles the direction', async () => {
+    // Provider's first click goes to asc (covered above). After
+    // state reports the active sort, the next click flips to desc.
+    (state.getRecommendationsSort as jest.Mock).mockReturnValue({ column: 'provider', direction: 'asc' });
+    await loadRecommendations();
+    const header = document.querySelector<HTMLTableCellElement>('th[data-sort="provider"]');
+    header!.click();
+    expect(state.setRecommendationsSort).toHaveBeenLastCalledWith({ column: 'provider', direction: 'desc' });
+  });
+});
+
+//
+// Issue #481: Sort column + direction persisted across page refresh via
+// URL query params (?sort=<col>&dir=<asc|desc>).
+//
+describe('Issue #481: URL persistence of sort state', () => {
+  const recs = [
+    { id: 'r1', provider: 'aws', cloud_account_id: 'a1', service: 'ec2', resource_type: 't3.medium', region: 'us-east-1', count: 1, term: 1, savings: 100, upfront_cost: 500 },
+  ];
+
+  beforeEach(() => {
+    setupOpportunitiesTabDom();
+    jest.clearAllMocks();
+    (api.getRecommendations as jest.Mock).mockResolvedValue({ summary: {}, recommendations: recs, regions: [] });
+    (state.getRecommendations as jest.Mock).mockReturnValue(recs);
+    (state.getVisibleRecommendations as jest.Mock).mockReturnValue(recs);
+    (state.getRecommendationsColumnFilters as jest.Mock).mockReturnValue({});
+    (state.getRecommendationsSort as jest.Mock).mockReturnValue({ column: 'savings', direction: 'desc' });
+    (state.getCostPeriod as jest.Mock).mockReturnValue('monthly');
+    (recsApi.getRecommendationsFreshness as jest.Mock).mockResolvedValue({
+      last_collected_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+      last_collection_error: null,
+    });
+    // Reset URL between tests.
+    window.history.replaceState({}, '', '/');
+  });
+
+  test('valid ?sort=col&dir=asc seeds setRecommendationsSort on load', async () => {
+    window.history.replaceState({}, '', '/?sort=upfront_cost&dir=asc');
+    await loadRecommendations();
+    expect(state.setRecommendationsSort).toHaveBeenCalledWith({ column: 'upfront_cost', direction: 'asc' });
+  });
+
+  test('valid ?sort=col&dir=desc seeds setRecommendationsSort on load', async () => {
+    window.history.replaceState({}, '', '/?sort=provider&dir=desc');
+    await loadRecommendations();
+    expect(state.setRecommendationsSort).toHaveBeenCalledWith({ column: 'provider', direction: 'desc' });
+  });
+
+  test('invalid ?sort=<unknown> is silently ignored', async () => {
+    window.history.replaceState({}, '', '/?sort=not_a_column&dir=asc');
+    await loadRecommendations();
+    expect(state.setRecommendationsSort).not.toHaveBeenCalledWith(
+      expect.objectContaining({ column: 'not_a_column' }),
+    );
+  });
 });
