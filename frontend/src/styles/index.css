@@ -6,6 +6,7 @@
 @import './base-utilities.css';
 @import './layout.css';
 @import './components.css';
+@import './components-chip-select.css';
 @import './forms.css';
 @import './tables.css';
 @import './tables-compact.css';

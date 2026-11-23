@@ -300,7 +300,7 @@ describe('Review Purchase totals band on phones (issue #1654)', () => {
   });
 
   test('each tile may shrink below its content width', () => {
-    const components = fs.readFileSync(path.join(stylesDir, 'components.css'), 'utf8');
+    const components = fs.readFileSync(path.join(stylesDir, 'components-chip-select.css'), 'utf8');
     const m = components.match(/\.commitment-summary-stat \{([^}]*)\}/);
     expect(m).not.toBeNull();
     expect(m![1]).toMatch(/min-width:\s*0/);
