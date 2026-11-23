@@ -1,0 +1,247 @@
+/**
+ * Plans module tests: plan modal open and close tests.
+ * Split from plans.test.ts to stay under the 500-line ceiling; the module
+ * mocks live in plans-harness.ts.
+ */
+// The harness registers the module mocks, so it must be imported first.
+import {
+  mockConfirmDialog,
+  mockOpenArcheraOfferModal,
+  mockShowToast,
+} from './plans-harness';
+import {
+  savePlan,
+  closePlanModal,
+  _resetRampHandlersForTest,
+} from '../plans';
+
+import * as api from '../api';
+
+describe('Plans Module', () => {
+  beforeEach(() => {
+    mockOpenArcheraOfferModal.mockClear();
+    // Reset DOM with full form structure
+    document.body.innerHTML = `
+      <div id="plans-list"></div>
+      <div id="planned-purchases-list"></div>
+      <div id="plan-modal" class="hidden">
+        <h3 id="plan-modal-title">Create Plan</h3>
+        <form id="plan-form">
+          <input type="hidden" id="plan-id">
+          <input type="text" id="plan-name">
+          <textarea id="plan-description"></textarea>
+          <p id="plan-selection-groups-intro" hidden></p>
+          <ul id="plan-selection-groups" hidden></ul>
+          <div id="plan-service-fields">
+          <select id="plan-provider">
+            <option value="aws">AWS</option>
+            <option value="azure">Azure</option>
+            <option value="gcp">GCP</option>
+          </select>
+          <select id="plan-service">
+            <optgroup label="AWS Services" data-provider="aws">
+              <option value="ec2">EC2</option>
+              <option value="rds">RDS</option>
+            </optgroup>
+            <!-- Issue #241: mirrors the real markup's AWS Savings Plans
+                 optgroup, whose human-readable label ("Savings Plans") does
+                 not contain "aws" -- only the data-provider attribute ties
+                 it to the AWS provider. -->
+            <optgroup label="Savings Plans" data-provider="aws">
+              <option value="savings-plans-compute">Compute SP</option>
+            </optgroup>
+            <optgroup label="Azure Services" data-provider="azure">
+              <option value="compute">Compute</option>
+            </optgroup>
+            <optgroup label="GCP Services" data-provider="gcp">
+              <option value="compute">Compute</option>
+            </optgroup>
+          </select>
+          <select id="plan-term">
+            <option value="1">1 Year</option>
+            <option value="3">3 Years</option>
+          </select>
+          <select id="plan-payment">
+            <option value="no-upfront">No Upfront</option>
+            <option value="partial-upfront">Partial Upfront</option>
+            <option value="all-upfront">All Upfront</option>
+          </select>
+          </div>
+          <input type="number" id="plan-coverage" value="80">
+          <input type="checkbox" id="plan-auto-purchase">
+          <input type="text" id="plan-max-step-commitment">
+          <p id="plan-auto-purchase-state"></p>
+          <input type="number" id="plan-notify-days" value="3">
+          <input type="checkbox" id="plan-enabled" checked>
+          <input type="radio" name="ramp-schedule" value="immediate" checked>
+          <input type="radio" name="ramp-schedule" value="weekly-25pct">
+          <input type="radio" name="ramp-schedule" value="monthly-10pct">
+          <input type="radio" name="ramp-schedule" value="custom">
+          <div id="custom-ramp-config" class="hidden">
+            <input type="number" id="ramp-step-percent" value="20">
+            <input type="number" id="ramp-interval-days" value="7">
+          </div>
+          <!-- Target Accounts section (universal-plans fix). The hidden
+               plan-account-ids field is the contract between renderPlan
+               AccountChips and savePlan; the submit button's disabled
+               state is recomputed every time the chip list changes. -->
+          <div id="plan-accounts-selected" class="selected-accounts"></div>
+          <input type="hidden" id="plan-account-ids" value="">
+          <div id="plan-filters-notice" class="hidden"></div>
+          <button type="submit">Save plan</button>
+        </form>
+      </div>
+      <div id="purchase-modal" class="hidden"></div>
+    `;
+
+    jest.clearAllMocks();
+    window.alert = jest.fn();
+    window.confirm = jest.fn().mockReturnValue(true);
+    // Default confirmDialog to confirmed so tests that don't override it
+    // behave like the old window.confirm() returning true (finding 11-L2).
+    mockConfirmDialog.mockResolvedValue(true);
+    // Reset ramp-handlers install-once guard: DOM is rebuilt each beforeEach,
+    // so static modal elements are fresh and need listeners re-attached (H3 fix).
+    _resetRampHandlersForTest();
+  });
+
+  describe('savePlan', () => {
+    beforeEach(() => {
+      closePlanModal(); // drop a selection or bound-edit state a previous test left open
+      // Set up form values
+      (document.getElementById('plan-name') as HTMLInputElement).value = 'New Plan';
+      (document.getElementById('plan-description') as HTMLTextAreaElement).value = 'Test description';
+      (document.getElementById('plan-provider') as HTMLSelectElement).value = 'aws';
+      (document.getElementById('plan-service') as HTMLSelectElement).value = 'ec2';
+      (document.getElementById('plan-term') as HTMLSelectElement).value = '1';
+      (document.getElementById('plan-payment') as HTMLSelectElement).value = 'all-upfront';
+      (document.getElementById('plan-coverage') as HTMLInputElement).value = '80';
+      (document.getElementById('plan-auto-purchase') as HTMLInputElement).checked = true;
+      (document.getElementById('plan-max-step-commitment') as HTMLInputElement).value = '100.10';
+      (document.getElementById('plan-notify-days') as HTMLInputElement).value = '3';
+      (document.getElementById('plan-enabled') as HTMLInputElement).checked = true;
+      // Universal-plans fix: savePlan rejects an empty Target Accounts list,
+      // so default the hidden field to a single account UUID for every test
+      // in this block. Tests that exercise the empty-accounts rejection set
+      // it back to '' explicitly inside the test.
+      (document.getElementById('plan-account-ids') as HTMLInputElement).value = '11111111-1111-1111-1111-111111111111';
+    });
+
+    // -------------------------------------------------------------------------
+    // Regression tests for finding 11-M1: plan numeric fields must be validated
+    // with Number.isInteger(Number(raw)) before being sent to the API.
+    // -------------------------------------------------------------------------
+    describe('11-M1: strict integer validation for plan numeric fields', () => {
+      test('rejects fractional target_coverage (2.5 should not truncate to 2)', async () => {
+        (document.getElementById('plan-coverage') as HTMLInputElement).value = '2.5';
+        const event = { preventDefault: jest.fn() } as unknown as Event;
+        await savePlan(event);
+        expect(api.createPlan).not.toHaveBeenCalled();
+        expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({ kind: 'error' }));
+      });
+
+      test('rejects an empty target_coverage instead of sending 0 (#523)', async () => {
+        (document.getElementById('plan-coverage') as HTMLInputElement).value = '';
+        const event = { preventDefault: jest.fn() } as unknown as Event;
+        await savePlan(event);
+        expect(api.createPlan).not.toHaveBeenCalled();
+        expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({
+          message: 'Target Coverage must be a whole number between 0 and 100',
+          kind: 'error',
+        }));
+      });
+
+      test.each(['-1', '101', '2.5'])('rejects target_coverage %s (#523)', async (value) => {
+        (document.getElementById('plan-coverage') as HTMLInputElement).value = value;
+        const event = { preventDefault: jest.fn() } as unknown as Event;
+        await savePlan(event);
+        expect(api.createPlan).not.toHaveBeenCalled();
+        expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({
+          message: 'Target Coverage must be a whole number between 0 and 100',
+        }));
+      });
+
+      test('sends target_coverage 0 as 0, not 80 (#523)', async () => {
+        (api.createPlan as jest.Mock).mockResolvedValue({});
+        (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+        (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+        (document.getElementById('plan-coverage') as HTMLInputElement).value = '0';
+        const event = { preventDefault: jest.fn() } as unknown as Event;
+        await savePlan(event);
+        expect(api.createPlan).toHaveBeenCalledWith(expect.objectContaining({ target_coverage: 0 }));
+      });
+
+      test('sends target_coverage 1 as 1 (#523)', async () => {
+        (api.createPlan as jest.Mock).mockResolvedValue({});
+        (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+        (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+        (document.getElementById('plan-coverage') as HTMLInputElement).value = '1';
+        const event = { preventDefault: jest.fn() } as unknown as Event;
+        await savePlan(event);
+        expect(api.createPlan).toHaveBeenCalledWith(expect.objectContaining({ target_coverage: 1 }));
+      });
+
+      test('rejects NaN notification_days_before (e.g. empty string after clear)', async () => {
+        (document.getElementById('plan-notify-days') as HTMLInputElement).value = 'abc';
+        const event = { preventDefault: jest.fn() } as unknown as Event;
+        await savePlan(event);
+        expect(api.createPlan).not.toHaveBeenCalled();
+        expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({ kind: 'error' }));
+      });
+
+      test('rejects out-of-range notification_days_before (0 is below min 1)', async () => {
+        (document.getElementById('plan-notify-days') as HTMLInputElement).value = '0';
+        const event = { preventDefault: jest.fn() } as unknown as Event;
+        await savePlan(event);
+        expect(api.createPlan).not.toHaveBeenCalled();
+        expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({ kind: 'error' }));
+      });
+
+      test('accepts valid integer values and proceeds to API call', async () => {
+        (api.createPlan as jest.Mock).mockResolvedValue({});
+        (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+        (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+        (document.getElementById('plan-coverage') as HTMLInputElement).value = '80';
+        (document.getElementById('plan-notify-days') as HTMLInputElement).value = '3';
+        const event = { preventDefault: jest.fn() } as unknown as Event;
+        await savePlan(event);
+        expect(api.createPlan).toHaveBeenCalledWith(expect.objectContaining({
+          target_coverage: 80,
+          notification_days_before: 3,
+        }));
+      });
+
+      test.each([
+        ['ramp-step-percent', '150', 'Ramp Step Percent must be a whole number between 1 and 100'],
+        ['ramp-step-percent', '0', 'Ramp Step Percent must be a whole number between 1 and 100'],
+        ['ramp-interval-days', '366', 'Ramp Interval Days must be a whole number between 1 and 365'],
+        ['ramp-interval-days', '0', 'Ramp Interval Days must be a whole number between 1 and 365'],
+        ['plan-notify-days', '31', 'Notification Days must be a whole number between 1 and 30'],
+        ['plan-notify-days', '0', 'Notification Days must be a whole number between 1 and 30'],
+      ])('refuses %s=%s with a toast and sends nothing (#1534)', async (inputId, value, message) => {
+        (document.querySelector('input[value="custom"]') as HTMLInputElement).checked = true;
+        (document.getElementById('ramp-step-percent') as HTMLInputElement).value = '20';
+        (document.getElementById('ramp-interval-days') as HTMLInputElement).value = '7';
+        const field = document.getElementById(inputId) as HTMLInputElement;
+        field.value = value;
+        field.dispatchEvent(new Event('blur'));
+        await savePlan({ preventDefault: jest.fn() } as unknown as Event);
+        expect(field.value).toBe(value);
+        expect(api.createPlan).not.toHaveBeenCalled();
+        expect(api.updatePlan).not.toHaveBeenCalled();
+        expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({ message, kind: 'error' }));
+      });
+
+      test('rejects fractional custom_step_percent when ramp is custom', async () => {
+        const customRadio = document.querySelector('input[value="custom"]') as HTMLInputElement;
+        customRadio.checked = true;
+        (document.getElementById('ramp-step-percent') as HTMLInputElement).value = '10.5';
+        (document.getElementById('ramp-interval-days') as HTMLInputElement).value = '7';
+        const event = { preventDefault: jest.fn() } as unknown as Event;
+        await savePlan(event);
+        expect(api.createPlan).not.toHaveBeenCalled();
+        expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({ kind: 'error' }));
+      });
+    });
+  });
+});
