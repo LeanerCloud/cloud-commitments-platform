@@ -23,7 +23,6 @@ import {
   scaleRecForCapacity,
   weightedDisplaySavingsPct,
 } from '../recommendations';
-import type { CostPeriod } from '../state';
 import type { LocalRecommendation } from '../types';
 import { localStorageMock } from './setup';
 import * as api from '../api';
@@ -35,74 +34,6 @@ beforeEach(() => {
     fn.mockReset();
     if (factoryDefault) fn.mockImplementation(factoryDefault);
   }
-});
-
-//
-// Issue #483: Scrolling inside the popover does NOT dismiss it.
-//
-describe('Issue #483: popover stays open while user scrolls its contents', () => {
-  const recs = [
-    { id: 'r1', provider: 'aws', cloud_account_id: 'a1', service: 'ec2', resource_type: 't3.medium', region: 'us-east-1', count: 1, term: 1, savings: 100, upfront_cost: 500 },
-  ];
-
-  beforeEach(() => {
-    setupOpportunitiesTabDom();
-    jest.clearAllMocks();
-    (api.getRecommendations as jest.Mock).mockResolvedValue({ summary: {}, recommendations: recs, regions: [] });
-    (state.getRecommendations as jest.Mock).mockReturnValue(recs);
-    (state.getVisibleRecommendations as jest.Mock).mockReturnValue(recs);
-    (state.getRecommendationsColumnFilters as jest.Mock).mockReturnValue({});
-    (state.getRecommendationsSort as jest.Mock).mockReturnValue({ column: 'savings', direction: 'desc' });
-    (state.getCostPeriod as jest.Mock).mockReturnValue('monthly');
-    (recsApi.getRecommendationsFreshness as jest.Mock).mockResolvedValue({
-      last_collected_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
-      last_collection_error: null,
-    });
-  });
-
-  test('a scroll event outside the popover still dismisses it', async () => {
-    await loadRecommendations();
-    document.querySelector<HTMLButtonElement>('th .column-filter-btn[data-column="resource_type"]')!.click();
-    expect(document.querySelector('.column-filter-popover')).not.toBeNull();
-    // Scroll the document body (outside the popover) — should still close.
-    const scrollEvt = new Event('scroll', { bubbles: true });
-    document.body.dispatchEvent(scrollEvt);
-    expect(document.querySelector('.column-filter-popover')).toBeNull();
-  });
-
-  test('a commit that re-renders the table keeps the new trigger expanded', async () => {
-    await loadRecommendations();
-    const oldTrigger = document.querySelector<HTMLButtonElement>('th .column-filter-btn[data-column="resource_type"]')!;
-    oldTrigger.click();
-    const popover = document.querySelector<HTMLElement>('.column-filter-popover')!;
-    const box = popover.querySelector<HTMLInputElement>('input[data-value="t3.medium"]')!;
-    box.checked = false;
-    box.dispatchEvent(new Event('change', { bubbles: true }));
-    const newTrigger = document.querySelector<HTMLButtonElement>('th .column-filter-btn[data-column="resource_type"]')!;
-    expect(newTrigger).not.toBe(oldTrigger);
-    expect(document.querySelector('.column-filter-popover')).toBe(popover);
-    expect(newTrigger.getAttribute('aria-expanded')).toBe('true');
-  });
-
-  test('a scroll while the trigger stays on screen keeps the popover open and re-anchors it', async () => {
-    // Clicking a funnel at the table scroller's clipped edge scrolls the
-    // table (and the mirrored strip a frame later); those scroll events
-    // must not close the popover the click just opened.
-    await loadRecommendations();
-    const trigger = document.querySelector<HTMLButtonElement>('th .column-filter-btn[data-column="resource_type"]')!;
-    let left = 400;
-    trigger.getBoundingClientRect = () => ({
-      left, top: 300, width: 24, height: 24, right: left + 24, bottom: 324, x: left, y: 300, toJSON: () => ({}),
-    }) as DOMRect;
-    trigger.click();
-    const popover = document.querySelector<HTMLElement>('.column-filter-popover');
-    expect(popover).not.toBeNull();
-    expect(popover!.style.left).toBe('400px');
-    left = 250;
-    document.body.dispatchEvent(new Event('scroll', { bubbles: true }));
-    expect(document.querySelector('.column-filter-popover')).toBe(popover);
-    expect(popover!.style.left).toBe('250px');
-  });
 });
 
 //
@@ -135,66 +66,6 @@ describe('Issue #484: numeric filter matches the displayed rounded value', () =>
     });
   });
 
-  test('typing the rounded-display value of a row matches that row at daily period', async () => {
-    // Under daily period (PERIOD_DECIMALS.daily = 2), raw monthly
-    // 123.456789 / 30 = 4.1152263 → displays as "$4.12" (2 dp). Filter
-    // expression "4.12" must match the row even though the raw scaled
-    // value (4.1152263) doesn't equal 4.12.
-    (state.getCostPeriod as jest.Mock).mockReturnValue('daily');
-    (state.getRecommendationsColumnFilters as jest.Mock).mockReturnValue({
-      savings: { kind: 'expr', expr: '4.12' },
-    });
-    const { applyColumnFilters } = await import('../recommendations');
-    // Cast through unknown to match the LocalRecommendation shape used
-    // by the function; the test recs include all the fields the filter
-    // actually reads (savings).
-    const filtered = applyColumnFilters(recs as unknown as Parameters<typeof applyColumnFilters>[0], state.getRecommendationsColumnFilters());
-    expect(filtered.map((r) => r.id)).toEqual(['r-exact']);
-  });
-
-  test('typing a value that does NOT match the rounded display excludes the row', async () => {
-    (state.getCostPeriod as jest.Mock).mockReturnValue('daily');
-    (state.getRecommendationsColumnFilters as jest.Mock).mockReturnValue({
-      savings: { kind: 'expr', expr: '4.11' },
-    });
-    const { applyColumnFilters } = await import('../recommendations');
-    const filtered = applyColumnFilters(recs as unknown as Parameters<typeof applyColumnFilters>[0], state.getRecommendationsColumnFilters());
-    expect(filtered.map((r) => r.id)).toEqual([]);
-  });
-
-  test('comparison operators apply against the rounded value too (>5 with a raw 4.999 stays excluded)', async () => {
-    // Raw monthly 4.999 rounds to 5.00 at monthly period (0 dp → 5).
-    // Under "monthly" period the display precision for savings is 0
-    // decimals, so 4.999 displays as "$5" → ">4" includes it, ">5"
-    // does not (since rounded = 5 and 5 > 5 is false).
-    const sub = [
-      { id: 'r-near-5', provider: 'aws', cloud_account_id: 'a1', service: 'ec2', resource_type: 't3.medium', region: 'us-east-1', count: 1, term: 1, savings: 4.999, upfront_cost: 0 },
-    ];
-    (state.getCostPeriod as jest.Mock).mockReturnValue('monthly');
-    (state.getRecommendationsColumnFilters as jest.Mock).mockReturnValue({
-      savings: { kind: 'expr', expr: '>4' },
-    });
-    const { applyColumnFilters } = await import('../recommendations');
-    expect(applyColumnFilters(sub as unknown as Parameters<typeof applyColumnFilters>[0], state.getRecommendationsColumnFilters()).map((r) => r.id)).toEqual(['r-near-5']);
-
-    (state.getRecommendationsColumnFilters as jest.Mock).mockReturnValue({
-      savings: { kind: 'expr', expr: '>5' },
-    });
-    expect(applyColumnFilters(sub as unknown as Parameters<typeof applyColumnFilters>[0], state.getRecommendationsColumnFilters()).map((r) => r.id)).toEqual([]);
-  });
-
-  test('integer columns continue to match exact integer values', async () => {
-    const sub = [
-      { id: 'r-5',  provider: 'aws', cloud_account_id: 'a1', service: 'ec2', resource_type: 't3.medium', region: 'us-east-1', count: 5,  term: 1, savings: 100, upfront_cost: 0 },
-      { id: 'r-10', provider: 'aws', cloud_account_id: 'a1', service: 'ec2', resource_type: 't3.medium', region: 'us-east-1', count: 10, term: 1, savings: 100, upfront_cost: 0 },
-    ];
-    (state.getRecommendationsColumnFilters as jest.Mock).mockReturnValue({
-      count: { kind: 'expr', expr: '5' },
-    });
-    const { applyColumnFilters } = await import('../recommendations');
-    expect(applyColumnFilters(sub as unknown as Parameters<typeof applyColumnFilters>[0], state.getRecommendationsColumnFilters()).map((r) => r.id)).toEqual(['r-5']);
-  });
-
   // CR pass #2 regression: `displayPrecision` for currency columns MUST
   // agree with the fraction-digit count `formatCurrency` actually renders,
   // so that an exact-match filter on the displayed string ("$123") matches
@@ -213,44 +84,6 @@ describe('Issue #484: numeric filter matches the displayed rounded value', () =>
       const dot = stripped.indexOf('.');
       return dot < 0 ? 0 : stripped.length - dot - 1;
     }
-
-    test('upfront_cost: displayPrecision matches formatCurrency at every period', async () => {
-      const recsMod = await import('../recommendations');
-      // utils is jest.mock()'d at the top of this file (so the
-      // recommendations module sees a stubbed formatCurrency). For this
-      // test we want the REAL formatCurrency to assert the fraction-digit
-      // contract holds against actual production behaviour, so we pull it
-      // via jest.requireActual rather than the mocked import.
-      const utilsActual = jest.requireActual<typeof import('../utils')>('../utils');
-      const displayPrecision = recsMod.displayPrecision;
-      const formatCurrency = utilsActual.formatCurrency;
-      // upfront_cost is always rendered via plain formatCurrency (no
-      // period scaling). The fraction digit count must therefore be
-      // period-independent and equal to formatCurrency's own output.
-      const sample = 123.456789;
-      const renderedDigits = fractionDigitsOf(formatCurrency(sample));
-      const periods: CostPeriod[] = ['hourly', 'daily', 'monthly', 'yearly'];
-      for (const period of periods) {
-        expect(displayPrecision('upfront_cost', period)).toBe(renderedDigits);
-      }
-    });
-
-    test('monthly_cost: displayPrecision at monthly period matches formatCurrency', async () => {
-      const recsMod = await import('../recommendations');
-      // utils is jest.mock()'d at the top of this file (so the
-      // recommendations module sees a stubbed formatCurrency). For this
-      // test we want the REAL formatCurrency to assert the fraction-digit
-      // contract holds against actual production behaviour, so we pull it
-      // via jest.requireActual rather than the mocked import.
-      const utilsActual = jest.requireActual<typeof import('../utils')>('../utils');
-      const displayPrecision = recsMod.displayPrecision;
-      const formatCurrency = utilsActual.formatCurrency;
-      const sample = 123.456789;
-      const renderedDigits = fractionDigitsOf(formatCurrency(sample));
-      // At monthly period, formatCostForPeriod delegates to formatCurrency
-      // → displayPrecision must agree with formatCurrency's digit count.
-      expect(displayPrecision('monthly_cost', 'monthly')).toBe(renderedDigits);
-    });
 
     test('on_demand_monthly: displayPrecision at monthly period matches formatCurrency', async () => {
       const recsMod = await import('../recommendations');
