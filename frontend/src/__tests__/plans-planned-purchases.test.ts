@@ -342,5 +342,98 @@ describe('Plans Module', () => {
       expect(container?.querySelector('.badge.badge-muted')?.textContent).toBe('Paused');
       expect(container?.innerHTML).not.toContain('No planned purchases');
     });
+
+    test('renders running purchase without pause/resume buttons', async () => {
+      (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({
+        purchases: [
+          {
+            id: 'purchase-1',
+            plan_id: 'plan-1',
+            plan_name: 'Test Plan',
+            scheduled_date: '2024-02-20',
+            provider: 'aws',
+            service: 'ec2',
+            resource_type: 't3.medium',
+            region: 'us-east-1',
+            count: 5,
+            term: 1,
+            payment: 'all-upfront',
+            upfront_cost: 1000,
+            estimated_savings: 200,
+            status: 'running',
+            step_number: 1,
+            total_steps: 4
+          }
+        ]
+      });
+
+      await loadPlans();
+
+      const container = document.getElementById('planned-purchases-list');
+      expect(container?.innerHTML).toContain('status-running');
+    });
+
+    test('renders completed purchase', async () => {
+      (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({
+        purchases: [
+          {
+            id: 'purchase-1',
+            plan_id: 'plan-1',
+            plan_name: 'Test Plan',
+            scheduled_date: '2024-02-20',
+            provider: 'aws',
+            service: 'ec2',
+            resource_type: 't3.medium',
+            region: 'us-east-1',
+            count: 5,
+            term: 1,
+            payment: 'all-upfront',
+            upfront_cost: 1000,
+            estimated_savings: 200,
+            status: 'completed',
+            step_number: 4,
+            total_steps: 4
+          }
+        ]
+      });
+
+      await loadPlans();
+
+      const container = document.getElementById('planned-purchases-list');
+      expect(container?.innerHTML).toContain('status-completed');
+    });
+
+    test('renders failed purchase', async () => {
+      (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({
+        purchases: [
+          {
+            id: 'purchase-1',
+            plan_id: 'plan-1',
+            plan_name: 'Test Plan',
+            scheduled_date: '2024-02-20',
+            provider: 'aws',
+            service: 'ec2',
+            resource_type: 't3.medium',
+            region: 'us-east-1',
+            count: 5,
+            term: 1,
+            payment: 'all-upfront',
+            upfront_cost: 1000,
+            estimated_savings: 200,
+            status: 'failed',
+            step_number: 2,
+            total_steps: 4
+          }
+        ]
+      });
+
+      await loadPlans();
+
+      const container = document.getElementById('planned-purchases-list');
+      expect(container?.innerHTML).toContain('status-failed');
+    });
   });
 });
