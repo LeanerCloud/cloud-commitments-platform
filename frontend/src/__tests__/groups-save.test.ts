@@ -243,4 +243,110 @@ describe('groups/groupModals', () => {
       expect(api.createGroup).not.toHaveBeenCalled();
     });
   });
+
+  describe('addPermission', () => {
+    it('should add permission item to list', () => {
+      const permissionsList = document.getElementById('permissions-list');
+      permissionsList!.innerHTML = '';
+
+      groupModals.addPermission();
+
+      const items = permissionsList?.querySelectorAll('.permission-item');
+      expect(items?.length).toBe(1);
+    });
+
+    it('should add permission with default values', () => {
+      const permissionsList = document.getElementById('permissions-list');
+      permissionsList!.innerHTML = '';
+
+      groupModals.addPermission();
+
+      const resourceInput = permissionsList?.querySelector('.perm-resource') as HTMLInputElement;
+      expect(resourceInput?.value).toBe('*');
+    });
+
+    it('should add permission with provided values', () => {
+      const permissionsList = document.getElementById('permissions-list');
+      permissionsList!.innerHTML = '';
+
+      const permission: api.Permission = {
+        action: 'approve',
+        resource: 'purchases',
+        constraints: {
+          providers: ['aws'],
+          services: ['ec2', 'rds'],
+          regions: ['us-east-1'],
+          max_amount: 5000,
+        },
+      };
+
+      groupModals.addPermission(permission);
+
+      const actionSelect = permissionsList?.querySelector('.perm-action') as HTMLSelectElement;
+      const resourceSelect = permissionsList?.querySelector('.perm-resource') as HTMLSelectElement;
+      const providersInput = permissionsList?.querySelector('.perm-providers') as HTMLInputElement;
+      const servicesInput = permissionsList?.querySelector('.perm-services') as HTMLInputElement;
+      const regionsInput = permissionsList?.querySelector('.perm-regions') as HTMLInputElement;
+      const maxAmountInput = permissionsList?.querySelector('.perm-max-amount') as HTMLInputElement;
+
+      expect(actionSelect.value).toBe('approve');
+      expect(resourceSelect.value).toBe('purchases');
+      expect(providersInput.value).toBe('aws');
+      expect(servicesInput.value).toBe('ec2, rds');
+      expect(regionsInput.value).toBe('us-east-1');
+      expect(maxAmountInput.value).toBe('5000');
+    });
+
+    it('should add remove button with click handler', () => {
+      const permissionsList = document.getElementById('permissions-list');
+      permissionsList!.innerHTML = '';
+
+      groupModals.addPermission();
+
+      const removeBtn = permissionsList?.querySelector('.remove-permission-btn');
+      expect(removeBtn).toBeTruthy();
+
+      removeBtn?.dispatchEvent(new Event('click'));
+
+      expect(permissionsList?.querySelectorAll('.permission-item').length).toBe(0);
+    });
+
+    it('should handle missing permissions list', () => {
+      document.body.innerHTML = '';
+      expect(() => groupModals.addPermission()).not.toThrow();
+    });
+
+    it('should render all action options', () => {
+      const permissionsList = document.getElementById('permissions-list');
+      permissionsList!.innerHTML = '';
+
+      groupModals.addPermission();
+
+      const actionSelect = permissionsList?.querySelector('.perm-action') as HTMLSelectElement;
+      const options = Array.from(actionSelect.options).map(opt => opt.value);
+
+      expect(options).toContain('execute');
+      expect(options).toContain('approve');
+      expect(options).toContain('create');
+      expect(options).toContain('update');
+      expect(options).toContain('delete');
+      expect(options).toContain('view');
+      expect(options).toContain('update');
+    });
+
+    it('should handle permission without constraints', () => {
+      const permissionsList = document.getElementById('permissions-list');
+      permissionsList!.innerHTML = '';
+
+      const permission: api.Permission = {
+        action: 'view',
+        resource: '*',
+      };
+
+      groupModals.addPermission(permission);
+
+      const providersInput = permissionsList?.querySelector('.perm-providers') as HTMLInputElement;
+      expect(providersInput.value).toBe('');
+    });
+  });
 });
