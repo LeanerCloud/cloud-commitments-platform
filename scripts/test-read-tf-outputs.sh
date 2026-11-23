@@ -287,9 +287,10 @@ if load_block APPLY_BLOCK build-and-deploy "Terraform Apply"; then
   set_output container_app_url 'https://app.example.azurecontainerapps.io\n::debug::exitcode: 0\n'
   set_output container_app_name 'cudly-dev-app'
   set_output resource_group_name 'cudly-dev-rg'
+  set_output container_app_migrate_job_name 'cudly-dev-app-migrate'
   run_apply_block
   expect "workflow apply: outputs reach GITHUB_OUTPUT" 0 \
-    $'existing=1\napp_url=https://app.example.azurecontainerapps.io\napp_name=cudly-dev-app\nresource_group_name=cudly-dev-rg'
+    $'existing=1\napp_url=https://app.example.azurecontainerapps.io\napp_name=cudly-dev-app\nresource_group_name=cudly-dev-rg\nmigrate_job_name=cudly-dev-app-migrate'
 
   # Pre-fix this exited 0 and wrote `resource_group_name=` (empty), so the
   # failure surfaced later in test-deployment as "Terraform outputs missing".

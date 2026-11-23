@@ -115,6 +115,11 @@ output "container_app_name" {
   value       = var.compute_platform == "container-apps" ? module.compute_container_apps[0].container_app_name : null
 }
 
+output "container_app_migrate_job_name" {
+  description = "Container Apps job that runs the database migrations (started by deploy-azure.yml)"
+  value       = var.compute_platform == "container-apps" ? module.compute_container_apps[0].migrate_job_name : null
+}
+
 output "container_app_url" {
   description = "Container App URL"
   value       = var.compute_platform == "container-apps" ? module.compute_container_apps[0].container_app_url : null

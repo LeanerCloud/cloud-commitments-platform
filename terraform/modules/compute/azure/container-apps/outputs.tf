@@ -61,3 +61,8 @@ output "recommendation_schedule" {
   description = "Schedule for recommendations workflow"
   value       = var.enable_scheduled_tasks ? "Daily at ${local.schedule_hour}:00 UTC" : null
 }
+
+output "migrate_job_name" {
+  description = "Container Apps job that applies database migrations once (started by the deploy workflow)"
+  value       = azurerm_container_app_job.migrate.name
+}

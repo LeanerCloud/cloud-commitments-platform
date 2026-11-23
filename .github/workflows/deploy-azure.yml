@@ -298,7 +298,8 @@ jobs:
           bash "${GITHUB_WORKSPACE}/scripts/read-tf-outputs.sh" \
             app_url=container_app_url \
             app_name=container_app_name \
-            resource_group_name=resource_group_name
+            resource_group_name=resource_group_name \
+            migrate_job_name=container_app_migrate_job_name
 
       # The provider fails the data read outright when the custom role is absent,
       # so a Terraform precondition can never run for this case. Issue #1794: the
@@ -357,6 +358,45 @@ jobs:
                "CUDly Reservation Purchaser (custom) - <subscription-id>";
                the bootstrap builds the name from its own var.name_suffix.
           EOT
+
+      # One-shot migration runner (#1966, mirrors the AWS step from #31): starts
+      # one execution of the Container Apps job that the apply above just
+      # pointed at the new image (`/app/cudly --migrate`), waits for it and fails
+      # the deploy unless it ends Succeeded. Prod is excluded until the owner
+      # confirms it may migrate inside the deploy job (plan decision D1); it
+      # migrates on demand with the command in docs/DEPLOYMENT.md. The lazy path
+      # (auto_migrate) is still on until the owner flips it after a verified
+      # apply.
+      - name: Run database migrations
+        if: needs.prepare.outputs.target_environment != 'prod'
+        timeout-minutes: 25
+        env:
+          JOB_NAME: ${{ steps.deploy.outputs.migrate_job_name }}
+          RESOURCE_GROUP: ${{ steps.deploy.outputs.resource_group_name }}
+        run: |
+          set -euo pipefail
+          if [ -z "$JOB_NAME" ] || [ -z "$RESOURCE_GROUP" ]; then
+            echo "::error::Terraform did not output the migration job or resource group; cannot run migrations."
+            exit 1
+          fi
+          execution="$(az containerapp job start --name "$JOB_NAME" --resource-group "$RESOURCE_GROUP" --query name --output tsv)"
+          echo "Started execution $execution of job $JOB_NAME"
+          # The replica timeout (20 min) bounds the execution; the step timeout
+          # above covers the polling around it.
+          while true; do
+            status="$(az containerapp job execution show --name "$JOB_NAME" --resource-group "$RESOURCE_GROUP" \
+              --job-execution-name "$execution" --query properties.status --output tsv)"
+            echo "Execution $execution status: $status"
+            case "$status" in
+              Succeeded) break ;;
+              Running | Processing | Unknown) sleep 15 ;;
+              *)
+                echo "::error::Migration execution $execution ended with status $status. See the job's console logs in Log Analytics (ContainerAppConsoleLogs_CL, ContainerJobName_s == $JOB_NAME)."
+                exit 1
+                ;;
+            esac
+          done
+          echo "migrations ok: Container Apps job $JOB_NAME execution $execution" >> "$GITHUB_STEP_SUMMARY"
 
       # A "Release state lock on failure" step used to break the lease here on
       # `failure() || cancelled()`. Removed with #1801. On failure Terraform
