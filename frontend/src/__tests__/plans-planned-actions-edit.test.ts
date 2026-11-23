@@ -11,6 +11,7 @@ import {
 } from './plans-harness';
 import {
   loadPlans,
+  savePlan,
   closePlanModal,
   openNewPlanModal,
   _resetRampHandlersForTest,
@@ -303,6 +304,153 @@ describe('Plans Module', () => {
       // Resume must give visible feedback via a success toast.
       expect(mockShowToast).toHaveBeenCalledWith(
         expect.objectContaining({ message: 'Purchase resumed', kind: 'success' }));
+    });
+  });
+
+  describe('savePlan', () => {
+    beforeEach(() => {
+      closePlanModal(); // drop a selection or bound-edit state a previous test left open
+      // Set up form values
+      (document.getElementById('plan-name') as HTMLInputElement).value = 'New Plan';
+      (document.getElementById('plan-description') as HTMLTextAreaElement).value = 'Test description';
+      (document.getElementById('plan-provider') as HTMLSelectElement).value = 'aws';
+      (document.getElementById('plan-service') as HTMLSelectElement).value = 'ec2';
+      (document.getElementById('plan-term') as HTMLSelectElement).value = '1';
+      (document.getElementById('plan-payment') as HTMLSelectElement).value = 'all-upfront';
+      (document.getElementById('plan-coverage') as HTMLInputElement).value = '80';
+      (document.getElementById('plan-auto-purchase') as HTMLInputElement).checked = true;
+      (document.getElementById('plan-max-step-commitment') as HTMLInputElement).value = '100.10';
+      (document.getElementById('plan-notify-days') as HTMLInputElement).value = '3';
+      (document.getElementById('plan-enabled') as HTMLInputElement).checked = true;
+      // Universal-plans fix: savePlan rejects an empty Target Accounts list,
+      // so default the hidden field to a single account UUID for every test
+      // in this block. Tests that exercise the empty-accounts rejection set
+      // it back to '' explicitly inside the test.
+      (document.getElementById('plan-account-ids') as HTMLInputElement).value = '11111111-1111-1111-1111-111111111111';
+    });
+
+    test('prevents default form submission', async () => {
+      (api.createPlan as jest.Mock).mockResolvedValue({});
+      (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+
+      const event = { preventDefault: jest.fn() } as unknown as Event;
+      await savePlan(event);
+
+      expect(event.preventDefault).toHaveBeenCalled();
+    });
+
+    test('creates new plan when no plan ID', async () => {
+      (api.createPlan as jest.Mock).mockResolvedValue({});
+      (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+      (document.getElementById('plan-id') as HTMLInputElement).value = '';
+
+      const event = { preventDefault: jest.fn() } as unknown as Event;
+      await savePlan(event);
+
+      expect(api.createPlan).toHaveBeenCalled();
+      // The plan description is not stored (the field is disabled in the form), so it is not sent.
+      expect((api.createPlan as jest.Mock).mock.calls[0][0]).not.toHaveProperty('description');
+      expect(api.createPlan).toHaveBeenCalledWith(expect.objectContaining({ max_step_commitment: 100.10 }));
+      // PR #861: no follow-up setPlanAccounts on the create path.
+      expect(api.setPlanAccounts).not.toHaveBeenCalled();
+      expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({ message: 'Plan created successfully' }));
+    });
+
+    test.each(['1.005', '0.015', '1e3', 'NaN', 'Infinity', '0', '-1', '1000000000000001', '999999999999999.99'])('rejects an invalid or inexact cap %s', async (cap) => {
+      (document.getElementById('plan-max-step-commitment') as HTMLInputElement).value = cap;
+      await savePlan({ preventDefault: jest.fn() } as unknown as Event);
+      expect(api.createPlan).not.toHaveBeenCalled();
+      expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({ kind: 'error', message: expect.stringContaining('commitment') }));
+    });
+
+    test.each(['', '1.005'])('opens Advanced settings and focuses the cap on invalid cap %j', async (value) => {
+      const form = document.getElementById('plan-form')!;
+      const advanced = document.createElement('details');
+      advanced.id = 'plan-advanced-settings';
+      advanced.appendChild(document.getElementById('plan-max-step-commitment')!);
+      form.appendChild(advanced);
+      const cap = document.getElementById('plan-max-step-commitment') as HTMLInputElement;
+      cap.value = value;
+      advanced.open = false;
+      await savePlan({ preventDefault: jest.fn() } as unknown as Event);
+      expect(api.createPlan).not.toHaveBeenCalled();
+      expect(advanced.open).toBe(true);
+      expect(document.activeElement).toBe(cap);
+    });
+
+    test('requires a cap for automatic purchases', async () => {
+      (document.getElementById('plan-max-step-commitment') as HTMLInputElement).value = '';
+      await savePlan({ preventDefault: jest.fn() } as unknown as Event);
+      expect(api.createPlan).not.toHaveBeenCalled();
+      expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('required') }));
+    });
+
+    test.each(['0.01', '100.10', '100000000000000.10', '1000000000000000'])('submits exact cap %s unchanged', async (cap) => {
+      (document.getElementById('plan-max-step-commitment') as HTMLInputElement).value = cap;
+      (api.createPlan as jest.Mock).mockResolvedValue({});
+      (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+      await savePlan({ preventDefault: jest.fn() } as unknown as Event);
+      expect(api.createPlan).toHaveBeenCalledWith(expect.objectContaining({ max_step_commitment: Number(cap) }));
+    });
+
+    test('clears an optional manual cap explicitly on edit', async () => {
+      (document.getElementById('plan-id') as HTMLInputElement).value = 'plan-123';
+      (document.getElementById('plan-auto-purchase') as HTMLInputElement).checked = false;
+      (document.getElementById('plan-max-step-commitment') as HTMLInputElement).value = '';
+      (api.updatePlan as jest.Mock).mockResolvedValue({});
+      (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+      await savePlan({ preventDefault: jest.fn() } as unknown as Event);
+      expect(api.updatePlan).toHaveBeenCalledWith('plan-123', expect.objectContaining({ max_step_commitment: null, auto_purchase: false }));
+    });
+
+    test('allows a manual plan without a cap', async () => {
+      (document.getElementById('plan-auto-purchase') as HTMLInputElement).checked = false;
+      (document.getElementById('plan-max-step-commitment') as HTMLInputElement).value = '';
+      (api.createPlan as jest.Mock).mockResolvedValue({});
+      (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+      await savePlan({ preventDefault: jest.fn() } as unknown as Event);
+      expect(api.createPlan).toHaveBeenCalledWith(expect.objectContaining({ max_step_commitment: null }));
+    });
+
+    test('updates existing plan when plan ID present', async () => {
+      (api.updatePlan as jest.Mock).mockResolvedValue({});
+      (api.setPlanAccounts as jest.Mock).mockResolvedValue(undefined);
+      (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+      (document.getElementById('plan-id') as HTMLInputElement).value = 'plan-123';
+
+      const event = { preventDefault: jest.fn() } as unknown as Event;
+      await savePlan(event);
+
+      expect(api.updatePlan).toHaveBeenCalledWith('plan-123', expect.any(Object));
+      // PR #861: update path still calls setPlanAccounts (no atomic backend write on PUT).
+      expect(api.setPlanAccounts).toHaveBeenCalledWith('plan-123', expect.any(Array));
+      expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({ message: 'Plan updated successfully' }));
+    });
+
+    test('reports a partial save when the plan row saved but the account write failed (#1057)', async () => {
+      (api.updatePlan as jest.Mock).mockResolvedValue({});
+      (api.setPlanAccounts as jest.Mock).mockRejectedValue(new Error('accounts boom'));
+      (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+      (document.getElementById('plan-id') as HTMLInputElement).value = 'plan-123';
+      console.error = jest.fn();
+      const modal = document.getElementById('plan-modal');
+      modal?.classList.remove('hidden');
+
+      await savePlan({ preventDefault: jest.fn() } as unknown as Event);
+
+      expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({
+        kind: 'error',
+        message: 'The plan settings were saved, but the account change failed: accounts boom. Review the target accounts and save again.',
+      }));
+      expect(api.getPlans).toHaveBeenCalled();
+      expect(modal?.classList.contains('hidden')).toBe(false);
     });
   });
 });
