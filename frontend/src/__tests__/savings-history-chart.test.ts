@@ -6,7 +6,7 @@
 
 // The harness registers the module mocks, so it must be imported first.
 import './savings-history-harness';
-import { loadSavingsHistory } from '../modules/savings-history';
+import { loadSavingsHistory, savingsChart } from '../modules/savings-history';
 import { getSavingsAnalytics } from '../api';
 import { Chart } from 'chart.js';
 
@@ -283,6 +283,103 @@ describe('Savings History Module', () => {
         dataset: { label: 'Period Savings' }
       };
       expect(tooltipLabelCallback(undefinedContext)).toBe('Period Savings: $0.00/mo');
+    });
+  });
+
+  describe('chart formatting', () => {
+    test('uses linear x-axis type for daily/weekly/monthly interval (QA 2.2)', async () => {
+      const mockData = {
+        data_points: [
+          { timestamp: '2024-01-15T00:00:00Z', total_savings: 10, cumulative_savings: 10, total_upfront: 100, purchase_count: 1 }
+        ]
+      };
+      (getSavingsAnalytics as jest.Mock).mockResolvedValue(mockData);
+
+      const periodSelect = document.getElementById('savings-period') as HTMLSelectElement;
+      periodSelect.value = '30d';
+
+      await loadSavingsHistory();
+
+      const chartCall = (Chart as unknown as jest.Mock).mock.calls[0];
+      const xAxis = chartCall[1].options.scales.x;
+      // x-axis must be linear (not category) so leftmost tick is the period start
+      expect(xAxis.type).toBe('linear');
+      expect(typeof xAxis.min).toBe('number');
+      expect(typeof xAxis.max).toBe('number');
+      // Data points should be {x, y} objects, not scalars
+      const dataset0 = chartCall[1].data.datasets[0];
+      expect(dataset0.data[0]).toMatchObject({ x: expect.any(Number), y: expect.any(Number) });
+    });
+
+    test('uses linear x-axis with date+time tick format for hourly interval (QA 2.2)', async () => {
+      const mockData = {
+        data_points: [
+          { timestamp: '2024-01-15T14:00:00Z', total_savings: 10, cumulative_savings: 10, total_upfront: 100, purchase_count: 1 }
+        ]
+      };
+      (getSavingsAnalytics as jest.Mock).mockResolvedValue(mockData);
+
+      const periodSelect = document.getElementById('savings-period') as HTMLSelectElement;
+      periodSelect.value = '7d';
+
+      await loadSavingsHistory();
+
+      const chartCall = (Chart as unknown as jest.Mock).mock.calls[0];
+      const xAxis = chartCall[1].options.scales.x;
+      expect(xAxis.type).toBe('linear');
+      // Tick callback should format timestamps as date strings (not raw ms numbers)
+      const tickResult = xAxis.ticks.callback(new Date('2024-01-15T14:00:00Z').getTime());
+      expect(typeof tickResult).toBe('string');
+      expect(tickResult.length).toBeGreaterThan(0);
+    });
+
+    test('configures point radius based on data point count', async () => {
+      // Create more than 50 data points
+      const manyDataPoints = Array.from({ length: 60 }, (_, i) => ({
+        timestamp: `2024-01-01T${i % 24}:00:00Z`,
+        total_savings: 10,
+        cumulative_savings: 10 * (i + 1),
+        total_upfront: 100,
+        purchase_count: 1
+      }));
+
+      (getSavingsAnalytics as jest.Mock).mockResolvedValue({
+        data_points: manyDataPoints
+      });
+      (document.getElementById('savings-series') as HTMLSelectElement).value = 'cumulative';
+
+      await loadSavingsHistory();
+
+      const chartCall = (Chart as unknown as jest.Mock).mock.calls[0];
+      const datasets = chartCall[1].data.datasets;
+      // With many data points, radius should be 0
+      expect(datasets[0].pointRadius).toBe(0);
+    });
+
+    test('configures point radius for fewer data points', async () => {
+      const fewDataPoints = [
+        { timestamp: '2024-01-01T00:00:00Z', total_savings: 10, cumulative_savings: 10, total_upfront: 100, purchase_count: 1 },
+        { timestamp: '2024-01-02T00:00:00Z', total_savings: 20, cumulative_savings: 30, total_upfront: 200, purchase_count: 1 }
+      ];
+
+      (getSavingsAnalytics as jest.Mock).mockResolvedValue({
+        data_points: fewDataPoints
+      });
+      (document.getElementById('savings-series') as HTMLSelectElement).value = 'cumulative';
+
+      await loadSavingsHistory();
+
+      const chartCall = (Chart as unknown as jest.Mock).mock.calls[0];
+      const datasets = chartCall[1].data.datasets;
+      // With few data points, radius should be non-zero
+      expect(datasets[0].pointRadius).toBe(3);
+    });
+  });
+
+  describe('savingsChart export', () => {
+    test('savingsChart is exported', () => {
+      // The chart is managed by the module
+      expect(savingsChart).toBeDefined();
     });
   });
 });
