@@ -288,3 +288,46 @@ func (s *PurchaseSuppression) AppliesTo(v *SuppressionVariant) bool {
 	}
 	return azConfigOK && a == b
 }
+
+// RecommendationFilter parameterises ListStoredRecommendations and the
+// handler-facing scheduler.ListRecommendations wrapper. Zero-value fields
+// mean "no filter"; non-empty AccountIDs restricts to the given IDs.
+//
+// MinSavingsUSD is a dollar floor: only recommendations whose monthly savings
+// are >= MinSavingsUSD are returned. 0 means no floor.
+//
+// MinSavingsPct is a percentage floor (0–100): only recommendations whose
+// effective savings percentage (savings/on-demand*100) meets or exceeds this
+// threshold are returned. 0 means no floor. Applied in-process after the DB
+// query rather than in SQL (avoids a computed column). These two filters are
+// independent and can be combined.
+type RecommendationFilter struct {
+	Provider                     string   // "aws" / "azure" / "gcp" / "" (all)
+	Service                      string   // "" = all services
+	Region                       string   // "" = all regions
+	ID                           string   // "" = all ids; non-empty = exact match on the id column
+	AccountIDs                   []string // nil/empty = all accounts
+	MinSavingsUSD                float64  // 0 = no floor on monthly savings dollar amount
+	MinSavingsPct                float64  // 0 = no floor on savings percentage (0–100 scale)
+	RequireAzurePricingMigration bool
+}
+
+// RecommendationScanKey is a stored recommendation's position in the keyset
+// scan order of ListStoredRecommendationsChunk (issue #981): the application
+// recommendation ID compared byte-wise, then the cache table's UUID primary
+// key (RowID), which keeps rows that share an ID in a total order.
+type RecommendationScanKey struct {
+	ID    string
+	RowID string
+}
+
+// RecommendationChunk is one keyset read of the recommendations cache.
+// Recs holds the rows that passed the filter, in scan order. Last is the
+// position of the last row read (nil when no row was read) and is where the
+// next chunk resumes. Done is true when fewer rows than the limit were read,
+// so nothing matches after Last.
+type RecommendationChunk struct {
+	Last *RecommendationScanKey
+	Recs []RecommendationRecord
+	Done bool
+}
