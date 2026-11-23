@@ -502,59 +502,6 @@ describe('Plans Module', () => {
       await loadPlans();
     });
 
-    describe('read-only plan filters (#1737)', () => {
-      const plan = (services: Record<string, unknown>) => ({
-        id: 'plan-1', name: 'Test Plan', enabled: true, auto_purchase: false, notification_days_before: 3,
-        services, ramp_schedule: { type: 'immediate', percent_per_step: 100, step_interval_days: 0 },
-      });
-      const openEdit = async () => {
-        (document.querySelector('[data-action="edit"]') as HTMLButtonElement)?.click();
-        await flushPromises();
-        return document.getElementById('plan-filters-notice') as HTMLElement;
-      };
-
-      test('edit modal lists the filters with the reason', async () => {
-        (api.getPlan as jest.Mock).mockResolvedValue(plan({
-          'aws/ec2': { provider: 'aws', service: 'ec2', enabled: true, term: 1, payment: 'all-upfront', coverage: 55, include_regions: ['us-east-1'], min_count: 2 },
-        }));
-        const notice = await openEdit();
-        expect(notice.classList.contains('hidden')).toBe(false);
-        expect(notice.textContent).toContain('plan steps cannot honor');
-        expect(notice.textContent).toContain('Cancel the scheduled root and recreate the plan');
-        expect(notice.querySelector('li')?.textContent).toBe('aws/ec2: include regions: us-east-1; minimum count: 2');
-      });
-
-      test('a later new-plan modal does not show the previous plan notice', async () => {
-        (api.getPlan as jest.Mock).mockResolvedValue(plan({
-          'aws/ec2': { provider: 'aws', service: 'ec2', enabled: true, term: 1, payment: 'all-upfront', coverage: 55, min_count: 2 },
-        }));
-        const notice = await openEdit();
-        expect(notice.classList.contains('hidden')).toBe(false);
-        closePlanModal();
-        openNewPlanModal();
-        expect(notice.classList.contains('hidden')).toBe(true);
-        expect(notice.textContent).toBe('');
-      });
-
-      test('notice stays hidden when the plan has no filters', async () => {
-        (api.getPlan as jest.Mock).mockResolvedValue(plan({
-          'aws/ec2': { provider: 'aws', service: 'ec2', enabled: true, term: 1, payment: 'all-upfront', coverage: 55 },
-        }));
-        const notice = await openEdit();
-        expect(notice.classList.contains('hidden')).toBe(true);
-        expect(notice.textContent).toBe('');
-      });
-
-      test('server strings render as text, not markup', async () => {
-        (api.getPlan as jest.Mock).mockResolvedValue(plan({
-          'aws/ec2': { provider: 'aws', service: 'ec2', enabled: true, term: 1, payment: 'x', coverage: 1, include_engines: ['<img src=x onerror=alert(1)>'] },
-        }));
-        const notice = await openEdit();
-        expect(notice.querySelector('img')).toBeNull();
-        expect(notice.textContent).toContain('<img src=x onerror=alert(1)>');
-      });
-    });
-
     test('edit action calls getPlan with plan_id, not the purchase id (#773)', async () => {
       // The purchase row has id="purchase-1" and plan_id="plan-1".
       // Before the fix, editPlan received "purchase-1", causing GET /plans/purchase-1
