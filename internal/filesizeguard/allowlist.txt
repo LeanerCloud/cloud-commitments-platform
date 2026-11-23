@@ -10,7 +10,6 @@ internal/api/middleware.go	568	2026-11-23	split pending #341
 internal/api/scoping.go	546	2026-11-23	split pending #341
 internal/api/types.go	1199	2026-11-23	split pending #341 (hot: 15 commits in 14 days)
 internal/api/validation.go	878	2026-11-23	split pending #341 (hot: concurrent branches touch it)
-internal/auth/service_apikeys.go	575	2026-11-23	split pending #341
 internal/auth/service_mfa.go	569	2026-11-23	split pending #341
 internal/config/interfaces.go	1060	2026-11-23	split pending #341 (hot: 10 commits in 14 days)
 internal/config/store_postgres_ladder.go	540	2026-11-23	split pending #341
