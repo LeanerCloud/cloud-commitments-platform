@@ -27,10 +27,22 @@ func ladderNotifier(s email.SenderInterface) purchase.ScheduledNotifier {
 	return s
 }
 
-// handleLadderFire claims due ladder tranches into scheduled executions. It is
-// deliberately not registered as a scheduled task yet: nothing can run it
-// until the ladder_fire task is wired in, and every purchase it makes ready
-// still needs the revoke-window notice and the execute-time recheck.
+type ladderRIPricerSource interface {
+	LadderRIPricer(ctx context.Context, cloudAccountID, region string) (purchase.RIOfferingPricer, error)
+}
+
+// ladderRIPricerFactory is the purchase manager's RI pricer, or nil when the
+// manager has none, which leaves RI tranches unresolved.
+func (app *Application) ladderRIPricerFactory() purchase.LadderRIPricerFactory {
+	if src, ok := app.Purchase.(ladderRIPricerSource); ok {
+		return src.LadderRIPricer
+	}
+	return nil
+}
+
+// handleLadderFire claims due ladder tranches into scheduled executions. The
+// ladder_fire task runs it; every purchase it makes ready still needs the
+// revoke-window notice and the execute-time recheck.
 func (app *Application) handleLadderFire(ctx context.Context) (purchase.LadderFireResult, error) {
 	store, ok := app.Config.(purchase.LadderFireStore)
 	if !ok {
@@ -43,6 +55,7 @@ func (app *Application) handleLadderFire(ctx context.Context) (purchase.LadderFi
 	res, err := purchase.RunLadderFire(ctx, purchase.LadderFireDeps{
 		Store:        store,
 		Registry:     purchase.NewLadderInstrumentRegistry(),
+		RIPricer:     app.ladderRIPricerFactory(),
 		Notifier:     ladderNotifier(app.Email),
 		OwnAccountID: accountID,
 		Region:       region,

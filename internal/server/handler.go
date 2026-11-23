@@ -79,6 +79,10 @@ const (
 	// It is not gated by the ladder switches, so in-flight tranches keep
 	// settling after a switch is turned off.
 	TaskLadderReconcile ScheduledTaskType = "ladder_reconcile"
+	// TaskLadderFire claims due ladder tranches into scheduled executions. It
+	// is gated by laddering_enabled, ladder_execution_enabled and each config's
+	// auto_approve mode, and no schedule sends it by default.
+	TaskLadderFire ScheduledTaskType = "ladder_fire"
 )
 
 // scheduledEventActions maps a raw scheduled-event action string to its
@@ -98,6 +102,7 @@ var scheduledEventActions = map[string]ScheduledTaskType{
 	"finalize_revocations":        TaskFinalizeRevocations,
 	"ladder_run":                  TaskLadderRun,
 	"ladder_reconcile":            TaskLadderReconcile,
+	"ladder_fire":                 TaskLadderFire,
 }
 
 // runScheduledTask runs a scheduled task by type.
@@ -210,6 +215,7 @@ func (app *Application) dispatchTask(ctx context.Context, taskType ScheduledTask
 		TaskFinalizeRevocations: func(c context.Context, _ ScheduledTaskParams) (any, error) { return app.handleFinalizeSweep(c) },
 		TaskLadderRun:           func(c context.Context, _ ScheduledTaskParams) (any, error) { return app.handleLadderRun(c) },
 		TaskLadderReconcile:     func(c context.Context, _ ScheduledTaskParams) (any, error) { return app.handleLadderReconcile(c) },
+		TaskLadderFire:          func(c context.Context, _ ScheduledTaskParams) (any, error) { return app.handleLadderFire(c) },
 	}
 	handler, ok := handlers[taskType]
 	if !ok {

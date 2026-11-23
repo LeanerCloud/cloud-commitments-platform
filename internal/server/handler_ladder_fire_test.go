@@ -144,12 +144,6 @@ func TestLadderFire_NoDashboardURLRefusesTheSweep(t *testing.T) {
 	assert.Zero(t, store.claims)
 }
 
-func TestLadderFire_IsNotARegisteredTask(t *testing.T) {
-	t.Parallel()
-	_, registered := scheduledEventActions["ladder_fire"]
-	assert.False(t, registered, "registering ladder_fire is a deliberate later step")
-}
-
 func TestLadderFire_OtherProcessAccountRefusesTheSweep(t *testing.T) {
 	t.Parallel()
 	store := &fireFakeStore{}
