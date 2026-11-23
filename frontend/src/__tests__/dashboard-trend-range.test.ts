@@ -183,5 +183,100 @@ describe('Dashboard Module', () => {
       expect(xScale.max - xScale.min).toBeGreaterThanOrEqual(6 * 86400_000);
       expect(xScale.max - xScale.min).toBeLessThanOrEqual(8 * 86400_000);
     });
+
+    test('data points use {x: timestamp_ms, y: value} so they are positioned by real date (QA 3.1)', async () => {
+      const purchaseTs = '2024-06-15T12:00:00Z';
+      (api.getSavingsAnalytics as jest.Mock).mockResolvedValue({
+        data_points: [
+          { timestamp: purchaseTs, cumulative_savings: 250, total_savings: 10, total_upfront: 500, purchase_count: 1 },
+          { timestamp: '2024-06-16T12:00:00Z', cumulative_savings: 260, total_savings: 10, total_upfront: 500, purchase_count: 1 },
+        ],
+      });
+
+      await loadSavingsTrendChart();
+
+      const chartCall = (Chart as unknown as jest.Mock).mock.calls[0];
+      const dataset = chartCall[1].data.datasets[0];
+      expect(dataset.data[0]).toMatchObject({ x: new Date(purchaseTs).getTime(), y: 250 });
+    });
+
+    // Issue #188: one data point would paint a lone dot on a blank canvas.
+    test('a single data point shows the sparse-data message instead of a chart (#188)', async () => {
+      (api.getSavingsAnalytics as jest.Mock).mockResolvedValue({
+        data_points: [{ timestamp: '2026-10-20T12:00:00Z', cumulative_savings: 1.1, total_savings: 1.1, total_upfront: 0, purchase_count: 1 }],
+      });
+      (Chart as unknown as jest.Mock).mockClear();
+
+      await loadSavingsTrendChart();
+
+      const canvas = document.getElementById('savings-trend-chart');
+      const empty = document.getElementById('savings-trend-empty');
+      expect(canvas?.classList.contains('hidden')).toBe(true);
+      expect(empty?.classList.contains('hidden')).toBe(false);
+      // formatCurrency is mocked in this file; the exact copy is pinned in chart-utils.test.ts.
+      expect(empty?.textContent).toContain('Not enough history yet to show a trend.');
+      expect(empty?.textContent).toContain('Oct 20, 2026');
+      expect(Chart).not.toHaveBeenCalled();
+    });
+
+    test('going from one data point back to two redraws the chart and hides the sparse message (#188)', async () => {
+      const one = { timestamp: '2026-10-20T12:00:00Z', cumulative_savings: 1.1, total_savings: 1.1, total_upfront: 0, purchase_count: 1 };
+      (api.getSavingsAnalytics as jest.Mock).mockResolvedValue({ data_points: [one] });
+      await loadSavingsTrendChart();
+      (api.getSavingsAnalytics as jest.Mock).mockResolvedValue({
+        data_points: [one, { ...one, timestamp: '2026-10-21T12:00:00Z', cumulative_savings: 2.2 }],
+      });
+      (Chart as unknown as jest.Mock).mockClear();
+
+      await loadSavingsTrendChart();
+
+      expect(Chart).toHaveBeenCalledTimes(1);
+      expect(document.getElementById('savings-trend-chart')?.classList.contains('hidden')).toBe(false);
+      expect(document.getElementById('savings-trend-empty')?.classList.contains('hidden')).toBe(true);
+    });
+
+    test('fetch error shows error stub and hides canvas (not the empty-axes path) (QA 3.1)', async () => {
+      (api.getSavingsAnalytics as jest.Mock).mockRejectedValue(new Error('503'));
+
+      await loadSavingsTrendChart();
+
+      const canvas = document.getElementById('savings-trend-chart');
+      const empty = document.getElementById('savings-trend-empty');
+      expect(canvas?.classList.contains('hidden')).toBe(true);
+      expect(empty?.classList.contains('hidden')).toBe(false);
+    });
+
+    // QA 3.2: tooltip title callback must return a formatted date string, not
+    // the raw 13-digit millisecond timestamp that Chart.js renders by default
+    // when no title callback is configured.
+    test('tooltip title callback returns a formatted date string, not a raw ms timestamp (QA 3.2)', async () => {
+      const purchaseTs = '2024-06-15T12:00:00Z';
+      (api.getSavingsAnalytics as jest.Mock).mockResolvedValue({
+        data_points: [
+          { timestamp: purchaseTs, cumulative_savings: 250, total_savings: 10, total_upfront: 500, purchase_count: 1 },
+          { timestamp: '2024-06-16T12:00:00Z', cumulative_savings: 260, total_savings: 10, total_upfront: 500, purchase_count: 1 },
+        ],
+      });
+
+      await loadSavingsTrendChart();
+
+      const chartCall = (Chart as unknown as jest.Mock).mock.calls[0];
+      const titleCb = chartCall[1].options.plugins.tooltip.callbacks.title as
+        (items: Array<{ raw: { x: number; y: number } }>) => string;
+
+      const xMs = new Date(purchaseTs).getTime();
+      const result = titleCb([{ raw: { x: xMs, y: 250 } }]);
+
+      // Must be a non-empty string.
+      expect(typeof result).toBe('string');
+      expect(result.length).toBeGreaterThan(0);
+      // Must NOT be the raw numeric millisecond value.
+      expect(result).not.toBe(String(xMs));
+      expect(result).not.toMatch(/^\d{13}$/);
+      // Must contain recognizable date text (month abbreviation).
+      expect(result).toMatch(/Jun\s+\d+/);
+      // Must carry the year so points a year apart are distinguishable (#53).
+      expect(result).toMatch(/2024/);
+    });
   });
 });
