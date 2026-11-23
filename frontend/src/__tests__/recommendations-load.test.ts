@@ -344,5 +344,136 @@ describe('Recommendations Module', () => {
       expect(cardValue(/Monthly Savings/)).toMatch(/^\$350$/); // 150 + 200
       expect(cardValue(/Upfront/)).toMatch(/^\$1,?000$/); // 1000 + 0
     });
+
+    test('KPI "Total Recommendations" and "Showing X of X" agree on the same variant count (closes #748)', async () => {
+      // 2 cells, 2 variants each = 4 total variants.
+      // Before #748 the KPI showed 2 (cell count) while "Showing of" showed 4
+      // (variant count). After the fix both display 4.
+      const recs = [
+        { id: 'cell1-v1', provider: 'aws', cloud_account_id: 'a1', service: 'ec2', resource_type: 't3.medium', region: 'us-east-1', count: 1, term: 1, payment_option: 'no-upfront',  savings: 100, upfront_cost: 0 },
+        { id: 'cell1-v2', provider: 'aws', cloud_account_id: 'a1', service: 'ec2', resource_type: 't3.medium', region: 'us-east-1', count: 1, term: 1, payment_option: 'all-upfront', savings: 150, upfront_cost: 1000 },
+        { id: 'cell2-v1', provider: 'aws', cloud_account_id: 'a1', service: 'rds', resource_type: 'db.t3',     region: 'us-east-1', count: 1, term: 1, payment_option: 'no-upfront',  savings: 200, upfront_cost: 0 },
+        { id: 'cell2-v2', provider: 'aws', cloud_account_id: 'a1', service: 'rds', resource_type: 'db.t3',     region: 'us-east-1', count: 1, term: 1, payment_option: 'all-upfront', savings: 250, upfront_cost: 2000 },
+      ];
+      (api.getRecommendations as jest.Mock).mockResolvedValue({
+        summary: { total_count: 4, total_monthly_savings: 700, total_upfront_cost: 3000, avg_payback_months: 2 },
+        recommendations: recs,
+        regions: [],
+      });
+      (state.getRecommendations as jest.Mock).mockReturnValue(recs);
+      (state.getVisibleRecommendations as jest.Mock).mockReturnValue(recs);
+      (state.getRecommendationsColumnFilters as jest.Mock).mockReturnValue({});
+      (state.getSelectedRecommendationIDs as jest.Mock).mockReturnValue(new Set());
+
+      await loadRecommendations();
+
+      // KPI card value.
+      const summary = document.getElementById('recommendations-summary');
+      const kpiCard = Array.from(summary?.querySelectorAll('.card') ?? [])
+        .find((c) => /Recommendations/.test(c.querySelector('h3')?.textContent ?? ''));
+      const kpiValue = kpiCard?.querySelector('.value')?.textContent ?? '';
+
+      // "Showing X of X" live region value.
+      const liveText = document.querySelector('.recommendations-filter-live')?.textContent ?? '';
+      const match = liveText.match(/Showing (\d+) of (\d+)/);
+      const showingVisible = match?.[1] ?? '';
+      const showingLoaded = match?.[2] ?? '';
+
+      // Both KPI and "Showing of" must report the same variant count (4).
+      expect(kpiValue).toBe('4');
+      expect(showingLoaded).toBe('4');
+      expect(kpiValue).toBe(showingLoaded);
+      // Parity between visible and loaded when no filter is active.
+      expect(showingVisible).toBe(showingLoaded);
+    });
+
+    test('row checkbox change event updates summary cards in place (PR #283 CR pass-2)', async () => {
+      // Regression guard for the real DOM event path: verifies that dispatching
+      // a `change` event on a row checkbox updates summary cards WITHOUT a
+      // second loadRecommendations() call. The earlier mock-and-reload test
+      // above confirms the rendering math; this test confirms the event
+      // handler itself triggers renderRecommendationsList.
+      //
+      // Each rec is a DISTINCT cell (different resource_type) so they render as
+      // flat rows — not grouped summary rows — making their checkboxes directly
+      // queryable from the DOM. Multi-variant cells collapse into a summary row
+      // with a chevron button; variant-level checkboxes are only in the DOM when
+      // the cell is expanded.
+      //
+      // Mock coordination: addSelectedRecommendation / removeSelectedRecommendation
+      // mutate a shared Set so getSelectedRecommendationIDs reflects the toggle
+      // immediately — the same pattern used by checkboxes-evict-siblings tests.
+      const recs = [
+        { id: 'rec-a', provider: 'aws', cloud_account_id: 'a1', service: 'ec2', resource_type: 't3.medium', region: 'us-east-1', count: 1, term: 1, savings: 150, upfront_cost: 1000 },
+        { id: 'rec-b', provider: 'aws', cloud_account_id: 'a1', service: 'rds', resource_type: 'db.t3',     region: 'us-east-1', count: 1, term: 1, savings: 200, upfront_cost: 0 },
+      ];
+      (api.getRecommendations as jest.Mock).mockResolvedValue({
+        summary: { total_count: 2, total_monthly_savings: 350, total_upfront_cost: 1000, avg_payback_months: 1 },
+        recommendations: recs,
+        regions: [],
+      });
+      (state.getRecommendations as jest.Mock).mockReturnValue(recs);
+      (state.getVisibleRecommendations as jest.Mock).mockReturnValue(recs);
+      (state.getRecommendationsColumnFilters as jest.Mock).mockReturnValue({});
+
+      // Wire add/remove to a shared Set so getSelectedRecommendationIDs
+      // reflects in-flight selection state after every checkbox event.
+      const selectedIds = new Set<string>();
+      (state.getSelectedRecommendationIDs as jest.Mock).mockImplementation(() => new Set(selectedIds));
+      (state.addSelectedRecommendation as jest.Mock).mockImplementation((id: string) => { selectedIds.add(id); });
+      (state.removeSelectedRecommendation as jest.Mock).mockImplementation((id: string) => { selectedIds.delete(id); });
+      (state.clearSelectedRecommendations as jest.Mock).mockImplementation(() => { selectedIds.clear(); });
+
+      // Initial render: no selection, cards show full-set values.
+      await loadRecommendations();
+
+      const cardValue = (titlePattern: RegExp): string => {
+        const summary = document.getElementById('recommendations-summary');
+        const card = Array.from(summary?.querySelectorAll('.card') ?? [])
+          .find((c) => titlePattern.test(c.querySelector('h3')?.textContent ?? ''));
+        return card?.querySelector('.value')?.textContent ?? '';
+      };
+
+      // Each rec is its own cell → 2 cells, each with 1 variant → range = single value.
+      expect(cardValue(/Recommendations/)).toBe('2');
+
+      // Fire the real DOM change event on rec-a's checkbox — do NOT
+      // call loadRecommendations() again. The handler inside recommendations.ts
+      // calls renderRecommendationsList() which updates the cards in place.
+      const checkbox = document.querySelector<HTMLInputElement>('input[data-rec-id="rec-a"]');
+      expect(checkbox).not.toBeNull();
+      checkbox!.checked = true;
+      checkbox!.dispatchEvent(new Event('change'));
+
+      // Cards must now reflect only rec-a ($150 savings / $1000 upfront).
+      expect(cardValue(/Monthly Savings/)).toMatch(/^\$150$/);
+      expect(cardValue(/Upfront/)).toMatch(/^\$1,?000$/);
+      // Recommendations card must show "1 selected".
+      expect(cardValue(/Recommendations/)).toBe('1');
+    });
+
+    test('row checkboxes carry distinct accessible names (issue #746)', async () => {
+      const recs = [
+        { id: 'rec-a', provider: 'aws', cloud_account_id: 'a1', service: 'ec2', resource_type: 't3.medium', region: 'us-east-1', count: 1, term: 1, payment: 'no-upfront', savings: 150, upfront_cost: 1000 },
+        { id: 'rec-b', provider: 'aws', cloud_account_id: 'a1', service: 'rds', resource_type: 'db.t3', region: 'eu-west-1', count: 1, term: 3, payment: 'all-upfront', savings: 200, upfront_cost: 0 },
+      ];
+      (api.getRecommendations as jest.Mock).mockResolvedValue({
+        summary: { total_count: 2, total_monthly_savings: 350, total_upfront_cost: 1000, avg_payback_months: 1 },
+        recommendations: recs,
+        regions: [],
+      });
+      (state.getRecommendations as jest.Mock).mockReturnValue(recs);
+      (state.getVisibleRecommendations as jest.Mock).mockReturnValue(recs);
+      (state.getRecommendationsColumnFilters as jest.Mock).mockReturnValue({});
+      await loadRecommendations();
+
+      const label = (id: string) =>
+        document.querySelector<HTMLInputElement>(`input[data-rec-id="${id}"]`)?.getAttribute('aria-label') ?? '';
+      expect(label('rec-a')).toContain('ec2');
+      expect(label('rec-a')).toContain('t3.medium');
+      expect(label('rec-a')).toContain('us-east-1');
+      expect(label('rec-b')).toContain('rds');
+      expect(label('rec-a')).not.toBe(label('rec-b'));
+    });
   });
 });
