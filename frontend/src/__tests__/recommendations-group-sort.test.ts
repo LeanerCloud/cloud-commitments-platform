@@ -405,4 +405,65 @@ describe('Issue #494: deterministic group sort on multi-variant cells', () => {
     expect(indexOrFail(order, 'finite-pct'))
       .toBeLessThan(indexOrFail(order, 'allnull-pct'));
   });
+
+  //
+  // Determinism: repeating the same sort yields the same order.
+  //
+  // The pre-#494 bug also surfaced as "two clicks of the same header may
+  // produce a different broken order" because every cell tied -> fallback to
+  // browser sort stability, which is implementation-defined for old V8 builds
+  // and varies across JS engines. With the new comparator every cell has a
+  // distinct score (or, if genuinely tied, a stable cellKey tiebreaker), so
+  // repeated invocations MUST produce the same order.
+  //
+  // Selection-independent Term sort: cells with different term distributions
+  // must sort correctly by cellSummary score (termMin*100+termMax) regardless
+  // of which variants the user has selected. Fix for Issue #768: the previous
+  // "selected-variant short-circuit" in cellScoreFor() switched the score to
+  // the selected variant's individual term value, which caused rows to reorder
+  // on every checkbox toggle.
+  //
+  test('Term sort is selection-independent: cells rank by term distribution not by selected variant', async () => {
+    // cell-1y-only: both variants are term=1 (termMin=1, termMax=1, score=101)
+    const cell1yOnly: LocalRecommendation[] = [
+      { id: '1yonly-nu', provider: 'aws', cloud_account_id: 'a1', service: 'ec2',
+        resource_type: '1y-only', region: 'us-east-1', count: 1, term: 1,
+        payment: 'no-upfront', savings: 100, upfront_cost: 0, monthly_cost: 50 } as unknown as LocalRecommendation,
+      { id: '1yonly-au', provider: 'aws', cloud_account_id: 'a1', service: 'ec2',
+        resource_type: '1y-only', region: 'us-east-1', count: 1, term: 1,
+        payment: 'all-upfront', savings: 110, upfront_cost: 800, monthly_cost: 0 } as unknown as LocalRecommendation,
+    ];
+    // cell-mixed: term=1 and term=3 variants (termMin=1, termMax=3, score=103)
+    const cellMixed = multiVariantCell({
+      resourceType: 'mixed', payment1y: 'no-upfront', payment3y: 'no-upfront',
+      upfront1y: 0, upfront3y: 0,
+    });
+    // cell-3y-only: both variants are term=3 (termMin=3, termMax=3, score=303)
+    const cell3yOnly: LocalRecommendation[] = [
+      { id: '3yonly-nu', provider: 'aws', cloud_account_id: 'a1', service: 'ec2',
+        resource_type: '3y-only', region: 'us-east-1', count: 1, term: 3,
+        payment: 'no-upfront', savings: 300, upfront_cost: 0, monthly_cost: 40 } as unknown as LocalRecommendation,
+      { id: '3yonly-au', provider: 'aws', cloud_account_id: 'a1', service: 'ec2',
+        resource_type: '3y-only', region: 'us-east-1', count: 1, term: 3,
+        payment: 'all-upfront', savings: 320, upfront_cost: 2400, monthly_cost: 0 } as unknown as LocalRecommendation,
+    ];
+    const recs = [...cell3yOnly, ...cellMixed, ...cell1yOnly];
+
+    // Select the 3yr variant from the mixed cell. Under the old (buggy) code
+    // this caused mixed-cell's score to become 3*100+3=303, tying it with
+    // 3y-only and pushing it behind 1y-only in asc order.
+    setupTestFixture(recs, { column: 'term', direction: 'asc' });
+    (state.getSelectedRecommendationIDs as jest.Mock).mockReturnValue(
+      new Set(['mixed-3y']),
+    );
+    await loadRecommendations();
+
+    const order = renderedCellOrder();
+    // Expected under term asc (selection must NOT affect order):
+    //   1y-only (score=101) < mixed (score=103) < 3y-only (score=303)
+    expect(indexOrFail(order, '1y-only'))
+      .toBeLessThan(indexOrFail(order, 'mixed'));
+    expect(indexOrFail(order, 'mixed'))
+      .toBeLessThan(indexOrFail(order, '3y-only'));
+  });
 });
