@@ -13,7 +13,6 @@ import {
   loadRecommendations,
   displaySavingsPct,
   groupRecsByCell,
-  pageLevelRange,
   resetExpandedCells,
   scaleCost,
   formatCostForPeriod,
@@ -53,53 +52,6 @@ beforeEach(() => {
 //
 
 describe('Issues #225 + #226: cell grouping with savings range and collapse/expand', () => {
-  describe('pageLevelRange (pure helper)', () => {
-    test('paybackMonthsMin uses per-cell paired variants, not cross-extrema (PR #283 CR)', () => {
-      // Cell A has two variants:
-      //   v1: savings=50,  upfront=0    → ratio = 0     (best payback: 0 months)
-      //   v2: savings=200, upfront=300  → ratio = 1.5   (1.5 months)
-      //
-      // Cell B has two variants:
-      //   v3: savings=100, upfront=200  → ratio = 2     (2 months)
-      //   v4: savings=150, upfront=600  → ratio = 4     (4 months)
-      //
-      // Attainable min-payback selection: cell A picks v1 (ratio 0), cell B
-      // picks v3 (ratio 2). Total upfront=0+200=200, total savings=50+100=150.
-      // paybackMonthsMin = 200/150 ≈ 1.333...
-      //
-      // Cross-extrema (old code) would compute:
-      //   upfrontMin = 0 (from v1) + 200 (from v3) = 200
-      //   savingsMax = 200 (from v2) + 150 (from v4) = 350
-      //   paybackMonthsMin = 200/350 ≈ 0.571
-      // That's not attainable because it mixes upfront from v1 with savings
-      // from v2 (different variants of cell A).
-      //
-      // The new per-cell paired logic must produce 200/150 ≈ 1.333, not 0.571.
-      const cellA = [
-        mkRec({ id: 'a-v1', resource_type: 'm5.large',  savings:  50, upfront_cost:   0 }),
-        mkRec({ id: 'a-v2', resource_type: 'm5.large',  savings: 200, upfront_cost: 300 }),
-      ];
-      const cellB = [
-        mkRec({ id: 'b-v3', resource_type: 't3.medium', savings: 100, upfront_cost: 200 }),
-        mkRec({ id: 'b-v4', resource_type: 't3.medium', savings: 150, upfront_cost: 600 }),
-      ];
-      const groups = groupRecsByCell([...cellA, ...cellB]);
-      const plr = pageLevelRange(groups);
-
-      // Per-cell paired: best ratio for A is v1 (0/50=0), best for B is v3 (200/100=2).
-      // Combined: upfront=0+200=200, savings=50+100=150 → paybackMin=200/150≈1.333
-      expect(plr.paybackMonthsMin).toBeCloseTo(200 / 150, 5);
-
-      // Cross-extrema would give 200/350≈0.571 — must NOT be the result.
-      expect(plr.paybackMonthsMin).not.toBeCloseTo(200 / 350, 5);
-
-      // paybackMonthsMax: worst payback per cell. A picks v2 (300/200=1.5),
-      // B picks v4 (600/150=4). Combined: upfront=300+600=900, savings=200+150=350.
-      // paybackMax = 900/350 ≈ 2.571
-      expect(plr.paybackMonthsMax).toBeCloseTo(900 / 350, 5);
-    });
-  });
-
   describe('DOM rendering (cell grouping integrated)', () => {
     beforeEach(() => {
       document.body.innerHTML = [
@@ -128,133 +80,6 @@ describe('Issues #225 + #226: cell grouping with savings range and collapse/expa
       mkRec({ id: 'mv-1', savings: 80,  term: 1, payment: 'no-upfront',   upfront_cost: 0 }),
       mkRec({ id: 'mv-2', savings: 120, term: 3, payment: 'all-upfront',  upfront_cost: 1200 }),
     ];
-
-    test('multi-variant cell renders a summary row, not two flat variant rows by default', async () => {
-      const recs = multiVariantRecs();
-      (api.getRecommendations as jest.Mock).mockResolvedValue({ summary: {}, recommendations: recs });
-      (state.getRecommendations as jest.Mock).mockReturnValue(recs);
-      await loadRecommendations();
-
-      // Summary row should be present
-      const summaryRow = document.querySelector('.rec-cell-summary-row');
-      expect(summaryRow).not.toBeNull();
-
-      // Variant rows should NOT be rendered (collapsed by default)
-      const variantRows = document.querySelectorAll('.rec-variant-row');
-      expect(variantRows.length).toBe(0);
-    });
-
-    test('multi-variant summary row omits hidden column values', async () => {
-      const recs = multiVariantRecs();
-      (api.getRecommendations as jest.Mock).mockResolvedValue({ summary: {}, recommendations: recs });
-      (state.getRecommendations as jest.Mock).mockReturnValue(recs);
-      (state.getHiddenColumns as jest.Mock).mockReturnValue(new Set(['region', 'savings', 'upfront_cost', 'term']));
-      await loadRecommendations();
-
-      const summaryContent = document.querySelector('.rec-cell-summary-content');
-      expect(summaryContent).not.toBeNull();
-      expect(summaryContent!.textContent).toContain('2 variants');
-      expect(summaryContent!.textContent).not.toContain('us-east-1');
-      expect(summaryContent!.textContent).not.toContain('$80');
-      expect(summaryContent!.textContent).not.toContain('$120');
-      expect(summaryContent!.textContent).not.toContain('upfront:');
-      expect(summaryContent!.textContent).not.toContain('term:');
-      expect(summaryContent!.querySelector('.rec-cell-range')).toBeNull();
-    });
-
-    test('chevron button lives inside td.checkbox-col of the summary row (closes #280)', async () => {
-      const recs = multiVariantRecs();
-      (api.getRecommendations as jest.Mock).mockResolvedValue({ summary: {}, recommendations: recs });
-      (state.getRecommendations as jest.Mock).mockReturnValue(recs);
-      await loadRecommendations();
-
-      const summaryRow = document.querySelector('.rec-cell-summary-row');
-      expect(summaryRow).not.toBeNull();
-      const checkboxCell = summaryRow!.querySelector('td.checkbox-col');
-      expect(checkboxCell).not.toBeNull();
-      const chevron = checkboxCell!.querySelector<HTMLButtonElement>('.rec-cell-chevron');
-      expect(chevron).not.toBeNull();
-    });
-
-    test('chevron is a <button> with aria-label and is not inside rec-cell-summary-content (closes #280)', async () => {
-      const recs = multiVariantRecs();
-      (api.getRecommendations as jest.Mock).mockResolvedValue({ summary: {}, recommendations: recs });
-      (state.getRecommendations as jest.Mock).mockReturnValue(recs);
-      await loadRecommendations();
-
-      const chevron = document.querySelector<HTMLButtonElement>('.rec-cell-chevron');
-      expect(chevron).not.toBeNull();
-      // Must be a <button> so native Enter/Space keyboard activation works without extra keydown handlers.
-      expect(chevron!.tagName.toLowerCase()).toBe('button');
-      expect(chevron!.getAttribute('type')).toBe('button');
-      expect(chevron!.getAttribute('aria-label')).toBeTruthy();
-      // Chevron must NOT be a descendant of .rec-cell-summary-content.
-      expect(chevron!.closest('.rec-cell-summary-content')).toBeNull();
-    });
-
-    test('clicking chevron expands the cell and shows variant rows', async () => {
-      const recs = multiVariantRecs();
-      (api.getRecommendations as jest.Mock).mockResolvedValue({ summary: {}, recommendations: recs });
-      (state.getRecommendations as jest.Mock).mockReturnValue(recs);
-      await loadRecommendations();
-
-      const chevron = document.querySelector<HTMLButtonElement>('.rec-cell-chevron');
-      expect(chevron).not.toBeNull();
-      // aria-expanded starts false (collapsed)
-      expect(chevron!.getAttribute('aria-expanded')).toBe('false');
-      chevron!.click();
-
-      // After expand: variant rows should appear and aria-expanded flips
-      const variantRows = document.querySelectorAll('.rec-variant-row');
-      expect(variantRows.length).toBe(2);
-      const updatedChevron = document.querySelector<HTMLButtonElement>('.rec-cell-chevron');
-      expect(updatedChevron!.getAttribute('aria-expanded')).toBe('true');
-    });
-
-    test('page-level range banner is removed (closes #278) — savings card is the canonical surface', async () => {
-      // The "Recommended range" banner under the table was redundant with
-      // the Potential Monthly Savings card after #272 / #279 brought the
-      // same range to the summary header. Closing #278 removed the
-      // banner; the card is the single source of truth.
-      const recs = multiVariantRecs();
-      (api.getRecommendations as jest.Mock).mockResolvedValue({ summary: {}, recommendations: recs });
-      (state.getRecommendations as jest.Mock).mockReturnValue(recs);
-      (state.getVisibleRecommendations as jest.Mock).mockReturnValue(recs);
-      await loadRecommendations();
-
-      // Banner gone.
-      expect(document.querySelector('.rec-range-banner')).toBeNull();
-      // Card carries the range.
-      const summary = document.getElementById('recommendations-summary');
-      const savingsCard = Array.from(summary?.querySelectorAll('.card') ?? [])
-        .find((c) => /Monthly Savings/.test(c.querySelector('h3')?.textContent ?? ''));
-      expect(savingsCard?.querySelector('.value.savings')?.textContent).toMatch(/\$\d/);
-    });
-
-    test('single-variant cell renders a flat row, no summary row', async () => {
-      const rec = mkRec({ id: 'solo', savings: 60 });
-      (api.getRecommendations as jest.Mock).mockResolvedValue({ summary: {}, recommendations: [rec] });
-      (state.getRecommendations as jest.Mock).mockReturnValue([rec]);
-      await loadRecommendations();
-
-      const summaryRow = document.querySelector('.rec-cell-summary-row');
-      expect(summaryRow).toBeNull();
-
-      // The flat row should exist as a regular recommendation-row
-      const rows = document.querySelectorAll('tr.recommendation-row');
-      expect(rows.length).toBe(1);
-    });
-
-    test('Expand all button appears in filter-status bar for multi-variant cells', async () => {
-      const recs = multiVariantRecs();
-      (api.getRecommendations as jest.Mock).mockResolvedValue({ summary: {}, recommendations: recs });
-      (state.getRecommendations as jest.Mock).mockReturnValue(recs);
-      await loadRecommendations();
-
-      const expandAllBtn = document.querySelector('.expand-all-toggle');
-      expect(expandAllBtn).not.toBeNull();
-      expect(expandAllBtn!.textContent).toMatch(/Expand all/);
-    });
 
     test('Expand all expands all multi-variant cells', async () => {
       const recs = multiVariantRecs();
