@@ -7,6 +7,7 @@
 // The harness registers the module mocks, so it must be imported first.
 import {
   mockConfirmDialog,
+  mockShowToast,
   setupSettingsTest,
 } from './settings-harness';
 import {
@@ -185,6 +186,131 @@ describe('Settings Module', () => {
     // a dedicated card in index.html so users can pin term/payment per
     // workload independently. Lambda is intentionally absent — it has no
     // standalone SP product (Lambda commitments roll into Compute SP).
+    test('prevents default form submission', async () => {
+      (api.updateConfig as jest.Mock).mockResolvedValue({});
+
+      const event = { preventDefault: jest.fn() } as unknown as Event;
+      await saveGlobalSettings(event);
+
+      expect(event.preventDefault).toHaveBeenCalled();
+    });
+
+    test('collects form data and calls updateConfig', async () => {
+      // Load a config that differs in every field, then fill the form, so each
+      // field is dirty and the PUT carries all of them.
+      (api.getConfig as jest.Mock).mockResolvedValue({
+        global: {
+          enabled_providers: ['azure'],
+          notification_email: 'old@test.com',
+          auto_collect: false,
+          default_term: 1,
+          default_payment: 'no-upfront',
+          default_coverage: 10,
+          notification_days_before: 5,
+          grace_period_days: { aws: 1, azure: 2, gcp: 3 },
+          recommendations_cache_stale_hours: 12,
+          recommendations_lookback_days: 30,
+        },
+        services: [],
+      });
+      await loadGlobalSettings();
+      fillForm();
+      (api.updateConfig as jest.Mock).mockClear().mockResolvedValue({});
+      window.alert = jest.fn();
+
+      const event = { preventDefault: jest.fn() } as unknown as Event;
+      await saveGlobalSettings(event);
+
+      // The harness has no schedule, grace, stale-hours, lookback, offering-class
+      // or approver elements, so those read the same before and after and are
+      // not sent.
+      expect(api.updateConfig).toHaveBeenCalledWith({
+        enabled_providers: ['aws', 'gcp'],
+        notification_email: 'test@test.com',
+        auto_collect: true,
+        default_term: 3,
+        default_payment: 'all-upfront',
+        default_coverage: 80,
+        notification_days_before: 3,
+      });
+    });
+
+    test('shows success alert on save', async () => {
+      (api.updateConfig as jest.Mock).mockResolvedValue({});
+      window.alert = jest.fn();
+
+      const event = { preventDefault: jest.fn() } as unknown as Event;
+      await saveGlobalSettings(event);
+
+      expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({
+        message: 'Settings saved successfully',
+        kind: 'success',
+      }));
+    });
+
+    test('sends require_different_approver: true when the 4-eyes checkbox is checked (issue #1005)', async () => {
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.id = 'setting-require-different-approver';
+      checkbox.checked = true;
+      document.getElementById('global-settings-form')?.appendChild(checkbox);
+
+      (api.updateConfig as jest.Mock).mockResolvedValue({});
+      window.alert = jest.fn();
+
+      const event = { preventDefault: jest.fn() } as unknown as Event;
+      await saveGlobalSettings(event);
+
+      expect(api.updateConfig).toHaveBeenCalledWith(expect.objectContaining({
+        require_different_approver: true,
+      }));
+    });
+
+    test('sends experimental_gcp_plan_term from the checkbox (issue #858)', async () => {
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.id = 'setting-experimental-gcp-plan-term';
+      checkbox.checked = true;
+      document.getElementById('global-settings-form')?.appendChild(checkbox);
+
+      (api.updateConfig as jest.Mock).mockResolvedValue({});
+      window.alert = jest.fn();
+
+      const event = { preventDefault: jest.fn() } as unknown as Event;
+      await saveGlobalSettings(event);
+
+      expect(api.updateConfig).toHaveBeenCalledWith(expect.objectContaining({
+        experimental_gcp_plan_term: true,
+      }));
+    });
+
+    test('shows error alert on failure', async () => {
+      (api.updateConfig as jest.Mock).mockRejectedValue(new Error('Save failed'));
+      window.alert = jest.fn();
+
+      const event = { preventDefault: jest.fn() } as unknown as Event;
+      await saveGlobalSettings(event);
+
+      expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({
+        message: 'Failed to save settings: Save failed',
+        kind: 'error',
+      }));
+    });
+
+    test('handles missing form elements gracefully', async () => {
+      // Remove all form elements
+      document.body.innerHTML = '';
+      (api.updateConfig as jest.Mock).mockResolvedValue({});
+      window.alert = jest.fn();
+
+      const event = { preventDefault: jest.fn() } as unknown as Event;
+      await expect(saveGlobalSettings(event)).resolves.toBeUndefined();
+
+      // No provider checkbox exists, so the empty list is refused (#1531)
+      // instead of being written.
+      expect(api.updateConfig).not.toHaveBeenCalled();
+    });
+
     test('four per-plan-type SP cards present in index.html (issue #22)', () => {
       const fs = require('fs') as typeof import('fs');
       const path = require('path') as typeof import('path');
