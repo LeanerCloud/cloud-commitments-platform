@@ -2,6 +2,7 @@
  * Unit tests for API module
  */
 import { localStorageMock, sessionStorageMock, fetchMock } from './setup';
+import { mockSessionStart } from './api-harness';
 import {
   initAuth,
   setAuthenticated,
@@ -38,13 +39,6 @@ import {
 } from '../api';
 import { base64Encode } from '../api/client';
 import type { CreatePlanRequest, Config, Recommendation, UpcomingPurchasesResponse } from '../api';
-
-// A successful login or setup is followed by a /auth/me check of the session cookie.
-function mockSessionStart(body: unknown, me: { status: number; body: unknown } = { status: 200, body: { id: 'u', email: 'a@b.c', groups: [], csrf_token: 'csrf-me' } }): void {
-  fetchMock.mockImplementation((url: string) => Promise.resolve(url.endsWith('/auth/me')
-    ? { ok: me.status < 400, status: me.status, json: () => Promise.resolve(me.body) }
-    : { ok: true, status: 200, json: () => Promise.resolve(body) }));
-}
 
 describe('Authentication', () => {
   beforeEach(() => {
