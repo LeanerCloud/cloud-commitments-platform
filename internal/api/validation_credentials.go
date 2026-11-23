@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/credentials"
 )
 
 // gcpClientEmailRegex matches a GCP service-account email.
@@ -185,4 +187,100 @@ func validateFlatPayload(credentialType string, payload map[string]interface{}, 
 		}
 	}
 	return nil
+}
+
+// validateGCPWIFPayload checks that the WIF config payload has every required
+// key, allows optional GCP fields, and does not contain unknown keys. The
+// `credential_source` value may be a nested object; everything else must be a
+// non-empty string.
+func validateGCPWIFPayload(payload map[string]interface{}) error {
+	allowed := buildAllowedSet(gcpWIFConfigRequired, gcpWIFConfigOptional)
+	if err := rejectUnknownKeys("gcp_workload_identity_config", payload, allowed); err != nil {
+		return err
+	}
+	for _, key := range gcpWIFConfigRequired {
+		if err := validateGCPWIFRequiredKey(payload, key); err != nil {
+			return err
+		}
+	}
+	return validateGCPWIFEndpointKeys(payload)
+}
+
+// validateGCPWIFEndpointKeys checks the config's token exchange and
+// service-account impersonation URLs with credentials.ValidateGCPWIFEndpoints,
+// the same check the resolver runs before it uses a stored config. Runs after
+// the required-key checks, so token_url is a non-empty string here.
+func validateGCPWIFEndpointKeys(payload map[string]interface{}) error {
+	tokenURL, ok := payload["token_url"].(string)
+	if !ok {
+		return NewClientError(400, "credentials payload key \"token_url\" must be a non-empty string")
+	}
+	impersonationURL := ""
+	if v, ok := payload["service_account_impersonation_url"]; ok {
+		s, isStr := v.(string)
+		if !isStr || strings.TrimSpace(s) == "" {
+			return NewClientError(400, "credentials payload key \"service_account_impersonation_url\" must be a non-empty string")
+		}
+		impersonationURL = s
+	}
+	if err := credentials.ValidateGCPWIFEndpoints(tokenURL, impersonationURL); err != nil {
+		return NewClientError(400, "credentials payload for gcp_workload_identity_config: "+err.Error())
+	}
+	return nil
+}
+
+// validateGCPWIFRequiredKey checks one required GCP WIF key, treating
+// "credential_source" specially as a nested object.
+func validateGCPWIFRequiredKey(payload map[string]interface{}, key string) error {
+	v, ok := payload[key]
+	if !ok {
+		return NewClientError(400, fmt.Sprintf("credentials payload for gcp_workload_identity_config missing required key %q", key))
+	}
+	if key == "credential_source" {
+		if _, isMap := v.(map[string]interface{}); !isMap {
+			return NewClientError(400, "credentials payload key \"credential_source\" must be an object")
+		}
+		return nil
+	}
+	s, isStr := v.(string)
+	if !isStr || strings.TrimSpace(s) == "" {
+		return NewClientError(400, fmt.Sprintf("credentials payload key %q must be a non-empty string", key))
+	}
+	return nil
+}
+
+// buildAllowedSet collapses required + optional key lists into a lookup set.
+func buildAllowedSet(required, optional []string) map[string]bool {
+	allowed := make(map[string]bool, len(required)+len(optional))
+	for _, k := range required {
+		allowed[k] = true
+	}
+	for _, k := range optional {
+		allowed[k] = true
+	}
+	return allowed
+}
+
+// rejectUnknownKeys returns 400 when any payload key is outside the allowed set.
+func rejectUnknownKeys(credentialType string, payload map[string]interface{}, allowed map[string]bool) error {
+	for key := range payload {
+		if !allowed[key] {
+			return NewClientError(400, fmt.Sprintf("credentials payload for %s contains unknown key %q", credentialType, key))
+		}
+	}
+	return nil
+}
+
+// payloadDepth returns the maximum nesting depth of m, counting the top-level
+// map as depth 1. A nested map adds 1; non-map values do not.
+func payloadDepth(m map[string]interface{}, current int) int {
+	maxDepth := current
+	for _, v := range m {
+		if nested, ok := v.(map[string]interface{}); ok {
+			if d := payloadDepth(nested, current+1); d > maxDepth {
+				maxDepth = d
+			}
+		}
+	}
+	return maxDepth
 }
