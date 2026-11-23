@@ -148,3 +148,62 @@ func validatePurchaseRecommendation(rec *config.RecommendationRecord, idx int) (
 	rec.Payment = payment
 	return adjustment, nil
 }
+
+// paymentAdjustmentFor builds the caller-facing coercion notice for a single
+// rec, or returns nil when there is nothing to disclose: either the token was
+// left alone, or it was only respelled into the target provider's vocabulary
+// for the same billing schedule (see config.PaymentCoercionChangesSchedule).
+//
+// requested is the caller's token after trim/lowercase; applied is the
+// provider-canonical token the purchase will actually carry.
+func paymentAdjustmentFor(idx int, provider, service, requested, applied string) *PaymentAdjustment {
+	if !config.PaymentCoercionChangesSchedule(requested, applied) {
+		return nil
+	}
+	return &PaymentAdjustment{
+		RecIndex:               idx,
+		Provider:               provider,
+		Service:                service,
+		RequestedPaymentOption: requested,
+		AppliedPaymentOption:   applied,
+		Reason: fmt.Sprintf("payment option %q is not in %s's supported set (%s); the closest supported option %q was applied",
+			requested, provider, strings.Join(config.ValidPaymentOptionsByProvider[provider], ", "), applied),
+	}
+}
+
+// validateCapacityConsistency cross-checks the client-supplied capacity_percent
+// against the scaled rec counts so the audit record can't claim a capacity that
+// disagrees with what was actually purchased (#647). The frontend scales each
+// rec as floor(RecommendedCount * pct / 100); this recomputes that and rejects
+// any rec where the scaled Count doesn't match. Recs that don't carry a
+// RecommendedCount (0 / absent: legacy callers, single-rec full-capacity
+// purchases, retry replays) are skipped — the field is opt-in, so its absence
+// means "no claim to verify" rather than a failure. Savings Plans rows are
+// skipped too: their count is the placeholder 1 and capacity_percent scales
+// the hourly commitment server-side (priceFromStored, #1959).
+// capacityPercent is the already-defaulted/bounded value (1..100) from
+// validateExecutePurchaseRequest.
+func validateCapacityConsistency(recs []config.RecommendationRecord, capacityPercent int) error {
+	for i := range recs {
+		rec := recs[i]
+		if rec.RecommendedCount <= 0 || isSavingsPlanSlug(rec.Service) {
+			continue
+		}
+		expected := rec.RecommendedCount * capacityPercent / 100
+		if expected != rec.Count {
+			return NewClientError(400, fmt.Sprintf(
+				"recommendation %d: count %d is inconsistent with capacity_percent %d%% of recommended_count %d (expected %d)",
+				i, rec.Count, capacityPercent, rec.RecommendedCount, expected))
+		}
+	}
+	return nil
+}
+
+// isSavingsPlanSlug reports whether service is in the Savings Plans slug
+// family (umbrella, hyphenated and dash-free per-type, legacy
+// "savings-plans"), case-insensitive. Broader than common.IsSavingsPlan, which
+// misses the dash-free per-type slugs.
+func isSavingsPlanSlug(service string) bool {
+	svc := strings.ToLower(strings.TrimSpace(service))
+	return strings.HasPrefix(svc, "savings-plans") || strings.HasPrefix(svc, "savingsplans")
+}

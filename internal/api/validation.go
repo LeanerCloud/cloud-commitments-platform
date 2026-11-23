@@ -13,7 +13,6 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 
-	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/credentials"
 )
 
@@ -27,31 +26,6 @@ const (
 
 // uuidRegex validates UUID format (used for path parameters).
 var uuidRegex = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
-
-// gcpClientEmailRegex matches a GCP service-account email.
-// Pattern: <name>@<project>.iam.gserviceaccount.com
-// The service-account name component may contain alphanumerics, dots, hyphens,
-// and underscores. The project ID component may contain alphanumerics, dots, and
-// hyphens. Rejecting any value that does not match prevents URL path injection in
-// BuildGCPFederatedCredential (issue #405).
-var gcpClientEmailRegex = regexp.MustCompile(`^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.iam\.gserviceaccount\.com$`)
-
-// awsRoleARNRegex matches a valid IAM role ARN across commercial, China, and GovCloud
-// partitions. The role-name portion is restricted to the IAM-permitted character
-// set ([A-Za-z0-9+=,.@_-]) for both the optional path segments and the final
-// name. Limiting the trailing portion prevents whitespace, newlines, or other
-// control characters from sneaking past validation and reaching
-// stscreds.NewAssumeRoleProvider (issue #413).
-var awsRoleARNRegex = regexp.MustCompile(`^arn:(aws|aws-cn|aws-us-gov):iam::[0-9]{12}:role/(?:[A-Za-z0-9+=,.@_-]+/)*[A-Za-z0-9+=,.@_-]+$`)
-
-// awsWebIdentityTokenFilePrefixes lists the only path prefixes accepted for
-// aws_web_identity_token_file. Restricting to known EKS/Kubernetes mount points
-// prevents arbitrary host-file reads when the credential resolver reads the file
-// and sends its content to AWS STS (issue #403).
-var awsWebIdentityTokenFilePrefixes = []string{
-	"/var/run/secrets/eks.amazonaws.com/serviceaccount/",
-	"/var/run/secrets/kubernetes.io/serviceaccount/",
-}
 
 // validProviders are the allowed provider values.
 // The concrete providers are mirrored in frontend/src/history.ts VALID_PROVIDERS;
@@ -70,57 +44,6 @@ var serviceNameRegex = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 
 // regionNameRegex validates AWS/Azure/GCP region names - requires at least one character.
 var regionNameRegex = regexp.MustCompile(`^[a-z0-9-]+$`)
-
-// validateGCPClientEmail returns a 400 error when gcp_client_email is non-empty
-// but does not match the GCP service-account email format. An empty value is
-// allowed (field is optional when auth mode does not require impersonation).
-func validateGCPClientEmail(email string) error {
-	if email == "" {
-		return nil
-	}
-	if !gcpClientEmailRegex.MatchString(email) {
-		return NewClientError(400, "gcp_client_email must be a valid GCP service-account email "+
-			"(format: name@project.iam.gserviceaccount.com)")
-	}
-	return nil
-}
-
-// validateAWSRoleARN returns a 400 error when aws_role_arn is non-empty but
-// does not match the IAM role ARN format for any AWS partition. An empty value
-// is allowed (self-account onboarding uses an empty role ARN to mean "ambient
-// credentials").
-func validateAWSRoleARN(arn string) error {
-	if arn == "" {
-		return nil
-	}
-	if !awsRoleARNRegex.MatchString(arn) {
-		return NewClientError(400, "aws_role_arn must be a valid IAM role ARN "+
-			"(format: arn:aws:iam::<12-digit-account-id>:role/<name>)")
-	}
-	return nil
-}
-
-// validateAWSWebIdentityTokenFile returns a 400 error when the path is non-empty
-// but does not start with one of the allowed prefixes, or contains path traversal
-// sequences. An empty value is allowed (the resolver falls back to the
-// AWS_WEB_IDENTITY_TOKEN_FILE environment variable).
-func validateAWSWebIdentityTokenFile(path string) error {
-	if path == "" {
-		return nil
-	}
-	// Block path traversal regardless of prefix match.
-	if strings.Contains(path, "..") {
-		return NewClientError(400, "aws_web_identity_token_file must not contain path traversal sequences")
-	}
-	for _, prefix := range awsWebIdentityTokenFilePrefixes {
-		if strings.HasPrefix(path, prefix) {
-			return nil
-		}
-	}
-	return NewClientError(400, "aws_web_identity_token_file must start with an allowed prefix "+
-		"(/var/run/secrets/eks.amazonaws.com/serviceaccount/ or "+
-		"/var/run/secrets/kubernetes.io/serviceaccount/)")
-}
 
 // validateProvider checks if a provider value is valid.
 func validateProvider(provider string) error {
@@ -556,65 +479,6 @@ func parseAccountIDs(raw string) ([]string, error) {
 		ids = append(ids, strings.ToLower(trimmed))
 	}
 	return ids, nil
-}
-
-// paymentAdjustmentFor builds the caller-facing coercion notice for a single
-// rec, or returns nil when there is nothing to disclose: either the token was
-// left alone, or it was only respelled into the target provider's vocabulary
-// for the same billing schedule (see config.PaymentCoercionChangesSchedule).
-//
-// requested is the caller's token after trim/lowercase; applied is the
-// provider-canonical token the purchase will actually carry.
-func paymentAdjustmentFor(idx int, provider, service, requested, applied string) *PaymentAdjustment {
-	if !config.PaymentCoercionChangesSchedule(requested, applied) {
-		return nil
-	}
-	return &PaymentAdjustment{
-		RecIndex:               idx,
-		Provider:               provider,
-		Service:                service,
-		RequestedPaymentOption: requested,
-		AppliedPaymentOption:   applied,
-		Reason: fmt.Sprintf("payment option %q is not in %s's supported set (%s); the closest supported option %q was applied",
-			requested, provider, strings.Join(config.ValidPaymentOptionsByProvider[provider], ", "), applied),
-	}
-}
-
-// validateCapacityConsistency cross-checks the client-supplied capacity_percent
-// against the scaled rec counts so the audit record can't claim a capacity that
-// disagrees with what was actually purchased (#647). The frontend scales each
-// rec as floor(RecommendedCount * pct / 100); this recomputes that and rejects
-// any rec where the scaled Count doesn't match. Recs that don't carry a
-// RecommendedCount (0 / absent: legacy callers, single-rec full-capacity
-// purchases, retry replays) are skipped — the field is opt-in, so its absence
-// means "no claim to verify" rather than a failure. Savings Plans rows are
-// skipped too: their count is the placeholder 1 and capacity_percent scales
-// the hourly commitment server-side (priceFromStored, #1959).
-// capacityPercent is the already-defaulted/bounded value (1..100) from
-// validateExecutePurchaseRequest.
-func validateCapacityConsistency(recs []config.RecommendationRecord, capacityPercent int) error {
-	for i := range recs {
-		rec := recs[i]
-		if rec.RecommendedCount <= 0 || isSavingsPlanSlug(rec.Service) {
-			continue
-		}
-		expected := rec.RecommendedCount * capacityPercent / 100
-		if expected != rec.Count {
-			return NewClientError(400, fmt.Sprintf(
-				"recommendation %d: count %d is inconsistent with capacity_percent %d%% of recommended_count %d (expected %d)",
-				i, rec.Count, capacityPercent, rec.RecommendedCount, expected))
-		}
-	}
-	return nil
-}
-
-// isSavingsPlanSlug reports whether service is in the Savings Plans slug
-// family (umbrella, hyphenated and dash-free per-type, legacy
-// "savings-plans"), case-insensitive. Broader than common.IsSavingsPlan, which
-// misses the dash-free per-type slugs.
-func isSavingsPlanSlug(service string) bool {
-	svc := strings.ToLower(strings.TrimSpace(service))
-	return strings.HasPrefix(svc, "savings-plans") || strings.HasPrefix(svc, "savingsplans")
 }
 
 // decodeBase64Password decodes a base64-encoded password.
