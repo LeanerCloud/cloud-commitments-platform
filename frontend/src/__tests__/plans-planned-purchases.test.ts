@@ -241,5 +241,106 @@ describe('Plans Module', () => {
         }));
       });
     });
+
+    test('shows empty message when no planned purchases', async () => {
+      (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+
+      await loadPlans();
+
+      const container = document.getElementById('planned-purchases-list');
+      expect(container?.innerHTML).toContain('No planned purchases');
+    });
+
+    test('shows error on planned purchases API failure', async () => {
+      (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+      (api.getPlannedPurchases as jest.Mock).mockRejectedValue(new Error('API Error'));
+      console.error = jest.fn();
+
+      await loadPlans();
+
+      const container = document.getElementById('planned-purchases-list');
+      expect(container?.innerHTML).toContain('Failed to load planned purchases');
+    });
+
+    test('handles missing planned purchases container', async () => {
+      document.getElementById('planned-purchases-list')?.remove();
+      (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+
+      // Should not throw
+      await expect(loadPlans()).resolves.not.toThrow();
+    });
+
+    test('renders notified purchase with run, pause and disable buttons', async () => {
+      (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({
+        purchases: [
+          {
+            id: 'purchase-1',
+            plan_id: 'plan-1',
+            plan_name: 'Test Plan',
+            scheduled_date: '2024-02-20',
+            provider: 'aws',
+            service: 'ec2',
+            resource_type: 't3.medium',
+            region: 'us-east-1',
+            count: 5,
+            term: 1,
+            payment: 'all-upfront',
+            upfront_cost: 1000,
+            estimated_savings: 200,
+            status: 'notified',
+            step_number: 1,
+            total_steps: 4
+          }
+        ]
+      });
+
+      await loadPlans();
+
+      const container = document.getElementById('planned-purchases-list');
+      expect(container?.innerHTML).toContain('data-action="run"');
+      expect(container?.innerHTML).toContain('data-action="pause"');
+      expect(container?.innerHTML).toContain('data-action="disable"');
+      expect(container?.innerHTML).not.toContain('data-action="resume"');
+    });
+
+    test('renders paused purchase with correct buttons', async () => {
+      (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({
+        purchases: [
+          {
+            id: 'purchase-1',
+            plan_id: 'plan-1',
+            plan_name: 'Test Plan',
+            scheduled_date: '2024-02-20',
+            provider: 'aws',
+            service: 'ec2',
+            resource_type: 't3.medium',
+            region: 'us-east-1',
+            count: 5,
+            term: 1,
+            payment: 'all-upfront',
+            upfront_cost: 1000,
+            estimated_savings: 200,
+            status: 'paused',
+            step_number: 1,
+            total_steps: 4
+          }
+        ]
+      });
+
+      await loadPlans();
+
+      const container = document.getElementById('planned-purchases-list');
+      expect(container?.innerHTML).toContain('data-action="resume"');
+      expect(container?.innerHTML).toContain('data-action="run"');
+      // Paused rows stay visible with a Paused badge and are NOT replaced by
+      // the empty-state message.
+      expect(container?.innerHTML).toContain('status-paused');
+      expect(container?.querySelector('.badge.badge-muted')?.textContent).toBe('Paused');
+      expect(container?.innerHTML).not.toContain('No planned purchases');
+    });
   });
 });
