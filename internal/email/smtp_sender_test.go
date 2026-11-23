@@ -1,11 +1,15 @@
 package email
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
+	"net"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -337,5 +341,81 @@ func TestSMTPStartTLS_MinVersionTLS12(t *testing.T) {
 	if cfg.MinVersion != tls.VersionTLS12 {
 		t.Errorf("TLS config MinVersion is %d; want tls.VersionTLS12 (%d) (regression of #410)",
 			cfg.MinVersion, tls.VersionTLS12)
+	}
+}
+
+// sanitizeCCList must strip CR/LF from every surviving CC address, exactly as
+// sanitizeHeader does for the other headers, so a CC cannot inject a header.
+func TestSanitizeCCList_StripsHeaderInjection(t *testing.T) {
+	got := sanitizeCCList("to@example.com", []string{
+		"ok@example.com",
+		"evil@example.com\r\nBcc: victim@example.com",
+		"dup@example.com\nX-Test: 1",
+	})
+	assert.Equal(t, []string{
+		"ok@example.com",
+		"evil@example.comBcc: victim@example.com",
+		"dup@example.comX-Test: 1",
+	}, got)
+	for _, addr := range got {
+		assert.NotContains(t, addr, "\r")
+		assert.NotContains(t, addr, "\n")
+	}
+}
+
+// smtpConverse must offer no TLS version below 1.2 in its ClientHello (#410).
+// An in-process server speaks plaintext SMTP up to STARTTLS, records the
+// versions the client offers, then aborts the handshake.
+func TestSMTPConverse_StartTLSOffersNoVersionBelowTLS12(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer ln.Close()
+
+	offered := make(chan []uint16, 1)
+	go func() {
+		conn, aerr := ln.Accept()
+		if aerr != nil {
+			return
+		}
+		defer conn.Close()
+		_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
+		r := bufio.NewReader(conn)
+		_, _ = fmt.Fprint(conn, "220 test\r\n")
+		for {
+			line, rerr := r.ReadString('\n')
+			if rerr != nil {
+				return
+			}
+			switch {
+			case strings.HasPrefix(line, "EHLO"):
+				_, _ = fmt.Fprint(conn, "250-test\r\n250 STARTTLS\r\n")
+			case strings.HasPrefix(line, "STARTTLS"):
+				_, _ = fmt.Fprint(conn, "220 go ahead\r\n")
+				_ = tls.Server(conn, &tls.Config{
+					GetConfigForClient: func(h *tls.ClientHelloInfo) (*tls.Config, error) {
+						offered <- h.SupportedVersions
+						return nil, errors.New("abort after recording ClientHello")
+					},
+				}).Handshake()
+				return
+			default:
+				_, _ = fmt.Fprint(conn, "250 ok\r\n")
+			}
+		}
+	}()
+
+	conn, err := net.Dial("tcp", ln.Addr().String())
+	require.NoError(t, err)
+	defer conn.Close()
+	require.Error(t, smtpConverse(conn, "localhost", true, nil, "a@example.com", []string{"b@example.com"}, []byte("x")))
+
+	select {
+	case versions := <-offered:
+		require.NotEmpty(t, versions)
+		for _, v := range versions {
+			assert.GreaterOrEqual(t, v, uint16(tls.VersionTLS12), "ClientHello offered %#x", v)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("server never saw a ClientHello")
 	}
 }
