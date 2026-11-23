@@ -1,6 +1,8 @@
 package api
 
 import (
+	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -137,4 +139,129 @@ func parseHistoryPlanID(raw string) (string, error) {
 		return "", NewClientError(400, "invalid plan_id: must be a UUID")
 	}
 	return strings.ToLower(id), nil
+}
+
+// parseHistoryDateRange parses optional YYYY-MM-DD start/end strings. Both
+// empty -> no date filter (hasDate=false, returned times are zero). One or
+// both populated -> hasDate=true; an unset bound defaults to span the
+// maximum allowed window from the supplied side. The window is capped at
+// MaxHistoryDateRangeDays to mirror PR #529 (issue #414) and prevent a full-
+// table-scan DoS via start=1970-01-01&end=2100-12-31.
+//
+// YYYY-MM-DD only (per issue #701 spec): the frontend's <input type="date">
+// fields emit exactly that format, so accepting RFC 3339 here would be a
+// surface area not exercised in production and a divergence from the
+// analytics handler's broader format set.
+func parseHistoryDateRange(startStr, endStr string) (time.Time, time.Time, bool, error) { //nolint:gocritic // unnamedResult: return names would conflict with body locals
+	if startStr == "" && endStr == "" {
+		return time.Time{}, time.Time{}, false, nil
+	}
+	start, end, err := parseHistoryDateBounds(startStr, endStr)
+	if err != nil {
+		return time.Time{}, time.Time{}, false, err
+	}
+	const maxWindow = MaxHistoryDateRangeDays * 24 * time.Hour
+	// Fill in the open side, if any, so the absent bound spans the maximum
+	// allowed window from the supplied side. This keeps a "start only" or
+	// "end only" call meaningful AND still bounded by the same DoS cap.
+	switch {
+	case startStr == "" && endStr != "":
+		start = end.Add(-maxWindow)
+	case startStr != "" && endStr == "":
+		end = start.Add(maxWindow)
+	}
+	if start.After(end) {
+		return time.Time{}, time.Time{}, false, NewClientError(400,
+			"start date must be before or equal to end date")
+	}
+	if end.Sub(start) > maxWindow {
+		return time.Time{}, time.Time{}, false, NewClientError(400,
+			fmt.Sprintf("date range too large: maximum allowed range is %d days", MaxHistoryDateRangeDays))
+	}
+	return start, end, true, nil
+}
+
+// parseHistoryDateBounds parses each YYYY-MM-DD side independently. An empty
+// string returns the zero value for that side; the caller is responsible for
+// substituting a sensible default. The end side is rolled forward to end-of-
+// day so a date input is inclusive of the chosen day.
+func parseHistoryDateBounds(startStr, endStr string) (time.Time, time.Time, error) { //nolint:gocritic // unnamedResult: return names would conflict with body locals
+	const layout = "2006-01-02"
+	var start, end time.Time
+	if startStr != "" {
+		s, err := time.ParseInLocation(layout, startStr, time.UTC)
+		if err != nil {
+			return time.Time{}, time.Time{}, NewClientError(400,
+				"invalid start date format: expected YYYY-MM-DD")
+		}
+		start = s
+	}
+	if endStr != "" {
+		e, err := time.ParseInLocation(layout, endStr, time.UTC)
+		if err != nil {
+			return time.Time{}, time.Time{}, NewClientError(400,
+				"invalid end date format: expected YYYY-MM-DD")
+		}
+		// Make end inclusive of the requested day (frontend semantics: a
+		// user picking 2024-01-31 expects rows from that day to render).
+		end = e.Add(24*time.Hour - time.Second)
+	}
+	return start, end, nil
+}
+
+// matchesExecution reports whether a PurchaseExecution should be retained
+// after applying the request filters in Go (the SQL path is on
+// purchase_history; this in-memory equivalent keeps the two halves of the
+// merged response consistently scoped, issue #701).
+//
+//   - Provider: matches when ANY recommendation in the execution carries
+//     the filter value. A single-rec execution collapses to one provider; a
+//     multi-rec basket that spans providers (e.g. aws+azure) matches any of
+//     them — dropping such an execution because its collapsed display label
+//     is "multiple" would hide real activity the user owns.
+//   - Account: matches when the execution's effective account ID is one of the
+//     filtered IDs. The effective account ID is exec.CloudAccountID when set;
+//     otherwise collapseRecommendationAccount(exec.Recommendations) provides
+//     the fallback, matching the same logic used in executionToHistoryRow.
+//     Web-initiated bulk purchases never set exec.CloudAccountID — only the
+//     per-rec field is populated — so without this fallback an account-filtered
+//     approval queue would silently drop all pending web purchases (issue #704).
+//     An execution whose effective account ID is "" (nil exec field AND recs
+//     disagree or have no account) is excluded once account_ids is non-empty.
+//   - Date: matches when ScheduledDate is within [Start, End]. Inclusive
+//     both sides; End is the end-of-day for YYYY-MM-DD inputs. Actionable
+//     statuses skip this check so a pending approval scheduled after the
+//     range end still reaches the approval queue (#1685).
+func (f historyFilters) matchesExecution(exec config.PurchaseExecution) bool {
+	if !f.matchesExecutionProviderAndAccount(exec) {
+		return false
+	}
+	if f.PlanID != "" && exec.PlanID != f.PlanID {
+		return false
+	}
+	if f.HasDate && !slices.Contains(actionableExecutionStatuses, exec.Status) {
+		if exec.ScheduledDate.Before(f.Start) || exec.ScheduledDate.After(f.End) {
+			return false
+		}
+	}
+	return true
+}
+
+// matchesExecutionProviderAndAccount is matchesExecution without the date
+// check. The History summary aggregate pushes the date bound into SQL
+// (scheduled_date between Start and End, inclusive) and applies this to each
+// execution group, so the row list and the totals share one provider and
+// account predicate.
+func (f historyFilters) matchesExecutionProviderAndAccount(exec config.PurchaseExecution) bool {
+	if f.Provider != "" {
+		if !executionHasProvider(exec, f.Provider) {
+			return false
+		}
+	}
+	if len(f.AccountIDs) > 0 || len(f.ExternalIDsByProvider) > 0 {
+		if !accountMatchesFilters(exec, f.AccountIDs, f.ExternalIDsByProvider) {
+			return false
+		}
+	}
+	return true
 }
