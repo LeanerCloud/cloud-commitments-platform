@@ -12,10 +12,13 @@ import {
 import {
   savePlan,
   closePlanModal,
+  openCreatePlanModal,
+  openNewPlanModal,
   _resetRampHandlersForTest,
 } from '../plans';
 
 import * as api from '../api';
+import * as state from '../state';
 
 describe('Plans Module', () => {
   beforeEach(() => {
@@ -221,6 +224,138 @@ describe('Plans Module', () => {
         custom_step_percent: 25,
         custom_interval_days: 14
       }));
+    });
+
+    // Helper: openCreatePlanModal/openNewPlanModal call form.reset(), which
+    // clears the hidden plan-account-ids field stamped by the beforeEach.
+    // Universal-plans fix requires that field to be non-empty at savePlan
+    // time, so any test that opens the modal must re-stamp it before submit.
+    const stampAccountIds = () => {
+      (document.getElementById('plan-account-ids') as HTMLInputElement).value
+        = '11111111-1111-1111-1111-111111111111';
+    };
+
+    test('includes the snapshot stamped by openCreatePlanModal (#273 CR)', async () => {
+      // #273 CR follow-up: savePlan now reads the snapshot stamped at
+      // Plan-button click time via openCreatePlanModal(snapshot), instead
+      // of re-deriving from getVisibleRecommendations() / getSelectedRec
+      // ommendationIDs() at Save time. State mutations between modal-open
+      // and modal-Save (Refresh, filter changes, deselections) can no
+      // longer change which recs are planned. The Purchase flow already
+      // captures the target at click time; the Plan flow now mirrors it.
+      const snapshot = [
+        { id: 'rec-1', provider: 'aws', service: 'ec2', term: 3, payment: 'all-upfront' },
+        { id: 'rec-2', provider: 'aws', service: 'ec2', term: 3, payment: 'all-upfront' },
+      ] as unknown as readonly api.Recommendation[];
+      openCreatePlanModal(snapshot);
+      stampAccountIds();
+
+      (api.createPlan as jest.Mock).mockResolvedValue({});
+      (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+
+      const event = { preventDefault: jest.fn() } as unknown as Event;
+      await savePlan(event);
+
+      const sent = (api.createPlan as jest.Mock).mock.calls[0][0];
+      expect(sent.groups).toEqual([expect.objectContaining({
+        provider: 'aws', service: 'ec2', term: 3, payment: 'all-upfront', recommendation_ids: ['rec-1', 'rec-2'],
+      })]);
+      for (const field of ['recommendations', 'provider', 'service', 'term', 'payment', 'target_coverage']) {
+        expect(sent).not.toHaveProperty(field);
+      }
+    });
+
+    test('snapshot is immune to state mutations between modal-open and Save (#273 CR)', async () => {
+      // The race the snapshot closes: user clicks "Plan from N selected"
+      // → openCreatePlanModal stamps the snapshot → user toggles a
+      // checkbox / Refresh fires / a column filter is applied while the
+      // modal is open → user clicks Save. The Plan must reflect the
+      // user's intent at click time, NOT the (potentially narrower /
+      // wider / different) state at Save time.
+      const snapshotAtClickTime = [
+        { id: 'rec-1', provider: 'aws', service: 'ec2', term: 3, payment: 'all-upfront' },
+        { id: 'rec-2', provider: 'aws', service: 'ec2', term: 3, payment: 'all-upfront' },
+      ] as unknown as readonly api.Recommendation[];
+      openCreatePlanModal(snapshotAtClickTime);
+      stampAccountIds();
+
+      // Now simulate post-modal-open state mutations: deselection,
+      // refresh-replaced visible set, etc. None of these should affect
+      // the saved plan.
+      (state.getSelectedRecommendationIDs as jest.Mock).mockReturnValue(new Set());
+      (state.getVisibleRecommendations as jest.Mock).mockReturnValue([
+        { id: 'completely-different-rec', service: 'cache' },
+      ]);
+
+      (api.createPlan as jest.Mock).mockResolvedValue({});
+      (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+
+      const event = { preventDefault: jest.fn() } as unknown as Event;
+      await savePlan(event);
+
+      const sentGroups = (api.createPlan as jest.Mock).mock.calls[0][0].groups;
+      // Must be the snapshot, NOT the post-mutation state.
+      expect(sentGroups.flatMap((g: { recommendation_ids: string[] }) => g.recommendation_ids)).toEqual(['rec-1', 'rec-2']);
+    });
+
+    test('does NOT include any recs when no selection (#273 CR follow-up)', async () => {
+      // The Bundle B fallback to "all visible recs" was removed as part of
+      // the #273 CR loop: Refresh / filter changes silently mutate the
+      // visible set between the user clicking the Create-Plan-button and
+      // clicking Save in the modal, so a no-selection path is structurally
+      // unsafe. The bottom action box already disables the button in that
+      // state; this assertion is the defence-in-depth at the savePlan
+      // layer for any path that bypasses the disabled UI (programmatic
+      // calls, future code paths, regressions on the gating).
+      // Clear the snapshot cache that earlier tests in this describe stamped
+      // via openCreatePlanModal(snapshot). openNewPlanModal() resets it
+      // (the New-Plan-from-scratch path explicitly clears the cache so a
+      // subsequent New-Plan submit doesn't inherit a previous flow's recs).
+      openNewPlanModal();
+      stampAccountIds();
+      (api.createPlan as jest.Mock).mockResolvedValue({});
+      (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+
+      const event = { preventDefault: jest.fn() } as unknown as Event;
+      await savePlan(event);
+
+      const sent = (api.createPlan as jest.Mock).mock.calls[0][0];
+      expect(sent.groups).toBeUndefined();
+      expect(sent.provider).toBeDefined();
+    });
+
+    test('empty snapshot from openCreatePlanModal also produces no recs', async () => {
+      // Defence-in-depth: if a future caller passes an empty array as the
+      // snapshot (e.g. the resolvePurchaseTarget result captured at click
+      // time was empty for some reason), savePlan must still submit without
+      // a recommendations field, not blow up.
+      openCreatePlanModal([] as unknown as readonly api.Recommendation[]);
+      stampAccountIds();
+      (api.createPlan as jest.Mock).mockResolvedValue({});
+      (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+
+      const event = { preventDefault: jest.fn() } as unknown as Event;
+      await savePlan(event);
+
+      const sent = (api.createPlan as jest.Mock).mock.calls[0][0];
+      expect(sent.groups).toBeUndefined();
+      expect(sent.provider).toBeDefined();
+    });
+
+    test('editing an unbound plan still sends the service fields', async () => {
+      openNewPlanModal();
+      stampAccountIds();
+      (document.getElementById('plan-id') as HTMLInputElement).value = 'plan-flat';
+      (api.updatePlan as jest.Mock).mockResolvedValue({});
+      (api.setPlanAccounts as jest.Mock).mockResolvedValue(undefined);
+      (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+      await savePlan({ preventDefault: jest.fn() } as unknown as Event);
+      expect((api.updatePlan as jest.Mock).mock.calls[0][1]).toEqual(expect.objectContaining({ provider: expect.any(String), term: expect.any(Number) }));
     });
   });
 });
