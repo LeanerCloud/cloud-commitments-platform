@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"time"
 
 	pkgcommon "github.com/LeanerCloud/cloud-commitments-go/pkg/common"
@@ -103,4 +104,104 @@ func ladderConfigToEngine(dbCfg *config.LadderConfigDB, accountID string) (pkgla
 		BufferUtilizationThresholdPct: dbCfg.BufferUtilizationThreshold,
 		MaxHourlyCommitPerRun:         dbCfg.MaxHourlyCommitPerRun,
 	}, nil
+}
+
+// assembleLadderPlan builds a LadderPlan from the Allocate result and the
+// collected read-side data. Q5: Actions interleaves both purchases
+// (immediate ramp steps only) and Reshapes in one display-only plan JSON. Term and
+// PaymentOption are stamped on every ActionPurchase entry; they are required
+// by PlannedAction.Validate for purchase actions.
+//
+// The monetary snapshot is derived to stay consistent with the authoritative
+// allocation rather than recomputed independently:
+//   - target = baseline low-water * targetCoveragePct/100 (the coverage goal),
+//   - existing = Allocate's NetExistingUSDPerHour, the net (existing minus
+//     expiring) commitment over the configured layers that the gap was sized
+//     against, in the on-demand-equivalent dollars ladderLayerStatesOnDemand
+//     converted the layer states to. Reporting the gross per-layer sum instead
+//     would show a gap that does not reconcile with target - existing,
+//   - gap = sum of the planned allocations' on-demand-equivalent gaps (the unit
+//     of target and existing), NOT target - existing.
+//
+// When the baseline low-water is nil the run is a Hold-only no-op (Allocate
+// returns no allocations), so target and gap stay nil (never 0-coerced);
+// existing is still reported, since Allocate sets it on every result.
+func assembleLadderPlan(
+	scope pkgladder.Scope,
+	now time.Time,
+	allocResult *pkgladder.AllocateResult,
+	immediate map[ladderAmountKey]*big.Rat,
+	baseline pkgladder.UsageBaseline,
+	targetCoveragePct float64,
+	term pkgladder.Term,
+	paymentOpt pkgladder.PaymentOption,
+) *pkgladder.LadderPlan {
+	actions := make([]pkgladder.PlannedAction, 0, len(allocResult.Allocations)+len(allocResult.Reshapes)+len(allocResult.Holds))
+	// Purchase actions come first so approval-email ordering is stable. Each
+	// carries only the immediate ramp step for its layer, not the allocation
+	// gap: the later steps are persisted tranches, and a layer whose ramp has no
+	// immediate step has no purchase action. The plan is display only; the sole
+	// purchase path is tranche -> purchase_executions (not built yet).
+	for _, alloc := range allocResult.Allocations {
+		amount := immediate[ladderAmountKey{layer: alloc.Layer, family: alloc.Family}]
+		if amount == nil {
+			continue
+		}
+		actions = append(actions, pkgladder.PlannedAction{
+			Action:           pkgladder.ActionPurchase,
+			Layer:            alloc.Layer,
+			Family:           alloc.Family,
+			AmountUSDPerHour: amount,
+			Term:             term,
+			PaymentOption:    paymentOpt,
+			Rationale:        alloc.Rationale,
+			DataSources:      alloc.DataSources,
+		})
+	}
+	// Reshapes follow; they carry no amount (AmountUSDPerHour must be nil).
+	actions = append(actions, allocResult.Reshapes...)
+	// Holds are informational; append last.
+	actions = append(actions, allocResult.Holds...)
+
+	// existing is the net figure Allocate sized the gap against (#243), copied
+	// so the plan does not alias the result.
+	var existing *big.Rat
+	if allocResult.NetExistingUSDPerHour != nil {
+		existing = new(big.Rat).Set(allocResult.NetExistingUSDPerHour)
+	}
+
+	// target and gap are only meaningful when the baseline is available; nil
+	// stays nil (a Hold-only no-op has no purchase target/gap to report).
+	target := ladderPlanTarget(baseline, targetCoveragePct)
+	var gap *big.Rat
+	if baseline.LowWaterUSDPerHour != nil {
+		// gap is what is being placed this run in on-demand-equivalent dollars,
+		// so it compares with target and existing; total_hourly_commit is the
+		// same placement in commitment dollars.
+		gap = sumAllocationOnDemandGaps(allocResult.Allocations)
+	}
+
+	return &pkgladder.LadderPlan{
+		Scope:              scope,
+		GeneratedAt:        now,
+		TargetUSDPerHour:   target,
+		ExistingUSDPerHour: existing,
+		GapUSDPerHour:      gap,
+		Actions:            actions,
+		Baseline:           baseline,
+	}
+}
+
+// ladderPlanTarget is the plan's on-demand-equivalent target, baseline
+// low-water * targetCoveragePct/100. nil when the baseline is unavailable.
+func ladderPlanTarget(baseline pkgladder.UsageBaseline, targetCoveragePct float64) *big.Rat {
+	if baseline.LowWaterUSDPerHour == nil {
+		return nil
+	}
+	low := ratFromFloat(*baseline.LowWaterUSDPerHour)
+	pctFrac := ratFromFloat(targetCoveragePct / 100.0)
+	if low == nil || pctFrac == nil {
+		return nil
+	}
+	return new(big.Rat).Mul(low, pctFrac)
 }
