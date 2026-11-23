@@ -6,13 +6,10 @@ import (
 	"fmt"
 	"os"
 	"sort"
-	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/concurrency"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/provider"
@@ -826,108 +823,4 @@ func (s *Scheduler) maybeKickBackgroundRefresh(freshness *config.Recommendations
 			logging.Errorf("background refresh: %v", err)
 		}
 	}()
-}
-
-// isUnpurchasableAWSRI reports an AWS RI whose Cost Explorer fractional
-// quantity rounded to Count 0 (#1949). It has no on-demand baseline and cannot
-// be purchased, and storing it would let it slip past the MinSavingsPct floor,
-// which only drops rows whose percentage is computable.
-func isUnpurchasableAWSRI(rec common.Recommendation, providerName string) bool {
-	return providerName == string(common.ProviderAWS) &&
-		rec.CommitmentType == common.CommitmentReservedInstance && rec.Count <= 0
-}
-
-// convertRecommendations converts common.Recommendation slice to config.RecommendationRecord slice.
-func (s *Scheduler) convertRecommendations(recs []common.Recommendation, providerName string) []config.RecommendationRecord {
-	records := make([]config.RecommendationRecord, 0, len(recs))
-
-	for i := range recs {
-		rec := recs[i]
-		engine := extractEngine(rec.Details)
-		detailsBlob := marshalRecDetails(rec, providerName)
-
-		// Canonicalize PaymentOption at the emission boundary so a downstream
-		// plan-validator round-trip never sees a cross-provider/AWS-style
-		// token on a non-AWS rec (issue #698). The provider service clients
-		// historically aliased "all-upfront"/"no-upfront" to the canonical
-		// "upfront"/"monthly" inside their pricing switches; the validator
-		// no longer accepts those aliases. Normalize once here so persisted
-		// recs always carry the provider-canonical token.
-		if canon, ok := config.NormalizePaymentOption(providerName, string(rec.PaymentOption)); ok {
-			if canon != string(rec.PaymentOption) {
-				logging.Warnf("convertRecommendations: coerced %s payment_option %q to canonical %q (account=%s service=%s sku=%s)",
-					providerName, rec.PaymentOption, canon, rec.Account, rec.Service, rec.ResourceType)
-				rec.PaymentOption = common.PaymentOption(canon)
-			}
-		} else if rec.PaymentOption != "" {
-			// Unknown provider or unmapped token: leave as-is. The next
-			// validator boundary will surface the issue with a clear error.
-			logging.Warnf("convertRecommendations: cannot canonicalize %s payment_option %q (account=%s service=%s sku=%s) — leaving as-is",
-				providerName, rec.PaymentOption, rec.Account, rec.Service, rec.ResourceType)
-		}
-
-		// Parse term to integer (e.g., "3yr" -> 3). An empty or unparseable
-		// term must NOT be coerced to a valid default: rec.Term round-trips
-		// through this int on the purchase path (internal/purchase/execution.go
-		// formats it back as "%dyr"), so silently defaulting here would let a
-		// malformed term launder into a valid, purchasable commitment length
-		// downstream, bypassing the ARCH-04 whitelist checks in the provider
-		// clients entirely, since "3yr" is itself a whitelisted value (issue
-		// #1207 follow-up). Drop the recommendation instead of persisting a
-		// fabricated term.
-		termStr := strings.TrimSuffix(string(rec.Term), "yr")
-		term, err := strconv.Atoi(termStr)
-		if err != nil || term <= 0 {
-			logging.Errorf("convertRecommendations: dropping %s rec (account=%s service=%s sku=%s region=%s): invalid term %q",
-				providerName, rec.Account, rec.Service, rec.ResourceType, rec.Region, rec.Term)
-			continue
-		}
-
-		if isUnpurchasableAWSRI(rec, providerName) {
-			logging.Warnf("convertRecommendations: dropping %s rec (account=%s service=%s sku=%s region=%s): non-positive count %d",
-				providerName, rec.Account, rec.Service, rec.ResourceType, rec.Region, rec.Count)
-			continue
-		}
-
-		var sourceAccountID *string
-		if rec.Account != "" {
-			sourceAccountID = new(rec.Account)
-		}
-		record := config.RecommendationRecord{
-			SourceAccountID:   sourceAccountID,
-			Provider:          providerName,
-			Service:           config.StoredRecommendationService(providerName, rec.Service),
-			Region:            rec.Region,
-			ResourceType:      rec.ResourceType,
-			Engine:            engine,
-			Details:           detailsBlob, // full ServiceDetails payload (issue #453)
-			AvailabilityZone:  zonalAvailabilityZone(rec.Details),
-			Count:             rec.Count,
-			Term:              term,
-			Payment:           string(rec.PaymentOption),
-			UpfrontCost:       rec.CommitmentCost,
-			MonthlyCost:       rec.RecurringMonthlyCost, // nil when provider API didn't return a monthly breakdown
-			Savings:           rec.EstimatedSavings,
-			OnDemandCost:      nonZeroPtr(rec.OnDemandCost),      // nil when provider API didn't return a baseline; frontend falls back to reconstruction (#274)
-			SavingsPercentage: nonZeroPtr(rec.SavingsPercentage), // provider-authoritative %; nil when not reported, frontend falls back to effectiveSavingsPct
-			UsageHistory:      rec.UsageHistory,                  // daily coverage pcts (nil when provider not yet wired; see #239)
-			Selected:          true,                              // Default to selected
-			Purchased:         false,
-		}
-		// Keep the currency the provider parser proved for the commitment
-		// legs; empty stays empty (unknown), never a defaulted "USD". The
-		// purchase spend-cap check refuses a capped purchase of a rec that
-		// is not provably USD (issue #361).
-		record.CommitmentCurrency = rec.CommitmentCurrency
-		id, err := recommendationID(record)
-		if err != nil {
-			logging.Errorf("convertRecommendations: dropping %s rec (account=%s service=%s sku=%s region=%s): %v",
-				providerName, rec.Account, rec.Service, rec.ResourceType, rec.Region, err)
-			continue
-		}
-		record.ID = id
-		records = append(records, record)
-	}
-
-	return records
 }
