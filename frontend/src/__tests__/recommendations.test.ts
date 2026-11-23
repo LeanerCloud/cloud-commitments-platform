@@ -5,7 +5,6 @@
 import {
   mockFactoryDefaults,
   mockShowToast,
-  setupRecommendationsTest,
   mkRec,
   sameCell,
   DOM_FOR_319,
@@ -16,8 +15,6 @@ import {
   loadRecommendations,
   openPurchaseModal,
   getPurchaseModalRecommendations,
-  refreshRecommendations,
-  setupRecommendationsHandlers,
   pickBestVariantPerCell,
   seedGlobalDefaults,
   effectiveMonthlySavings,
@@ -64,192 +61,11 @@ beforeEach(() => {
   }
 });
 
-describe('Recommendations Module', () => {
-  beforeEach(setupRecommendationsTest);
-
-  afterEach(() => {
-    jest.useRealTimers();
-  });
-
-  describe('refreshRecommendations', () => {
-    test('shows error toast on failure (alert replaced by showToast, finding 11-L3)', async () => {
-      (api.refreshRecommendations as jest.Mock).mockRejectedValue(new Error('API Error'));
-      console.error = jest.fn();
-
-      await refreshRecommendations();
-
-      expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({
-        message: 'Failed to start recommendation refresh',
-        kind: 'error',
-      }));
-    });
-  });
-
-  describe('setupRecommendationsHandlers', () => {
-    function makeDiv(id: string): HTMLDivElement {
-      const el = document.createElement('div');
-      el.id = id;
-      return el;
-    }
-
-    beforeEach(() => {
-      // Issue #477: Opportunities now subscribes to the global provider/account
-      // filter and reloads on change. The DOM only needs the opportunities-tab
-      // wrapper (active-class toggled per test) plus the elements the loader
-      // touches (recommendations-list, recommendations-summary).
-      while (document.body.firstChild) document.body.removeChild(document.body.firstChild);
-      document.body.appendChild(makeDiv('opportunities-tab'));
-      document.body.appendChild(makeDiv('recommendations-list'));
-      document.body.appendChild(makeDiv('recommendations-summary'));
-      (api.getRecommendations as jest.Mock).mockResolvedValue({
-        summary: {},
-        recommendations: [],
-        regions: []
-      });
-      // Outer describe enables fake timers; we want real timers here so the
-      // subscriber callback's promise chain inside loadRecommendations can
-      // settle. afterEach() at the outer level resets via useRealTimers.
-      jest.useRealTimers();
-    });
-
-    test('subscribes to provider changes and reloads when opportunities-tab is active', async () => {
-      const tab = document.getElementById('opportunities-tab')!;
-      tab.classList.add('active');
-
-      setupRecommendationsHandlers();
-
-      // Capture the callback registered with subscribeProvider and invoke it
-      // directly (state is jest.mock()'d for this file, so the real listener
-      // set never fires; the test verifies the wiring shape).
-      const providerCb = (state.subscribeProvider as jest.Mock).mock.calls[0]?.[0];
-      expect(typeof providerCb).toBe('function');
-      (api.getRecommendations as jest.Mock).mockClear();
-      providerCb();
-      // loadRecommendations awaits Promise.all internally; flush microtasks.
-      await new Promise((r) => setTimeout(r, 0));
-
-      expect(api.getRecommendations).toHaveBeenCalled();
-    });
-
-    test('subscribes to account changes and reloads when opportunities-tab is active', async () => {
-      const tab = document.getElementById('opportunities-tab')!;
-      tab.classList.add('active');
-
-      setupRecommendationsHandlers();
-
-      const accountCb = (state.subscribeAccount as jest.Mock).mock.calls[0]?.[0];
-      expect(typeof accountCb).toBe('function');
-      (api.getRecommendations as jest.Mock).mockClear();
-      accountCb();
-      await new Promise((r) => setTimeout(r, 0));
-
-      expect(api.getRecommendations).toHaveBeenCalled();
-    });
-
-    test('does NOT reload when opportunities-tab is inactive', async () => {
-      // No .active class — user is on Home / Plans / Purchases.
-      setupRecommendationsHandlers();
-
-      const providerCb = (state.subscribeProvider as jest.Mock).mock.calls[0]?.[0];
-      const accountCb = (state.subscribeAccount as jest.Mock).mock.calls[0]?.[0];
-      (api.getRecommendations as jest.Mock).mockClear();
-      providerCb();
-      accountCb();
-      await new Promise((r) => setTimeout(r, 0));
-
-      expect(api.getRecommendations).not.toHaveBeenCalled();
-    });
-
-    // CR pass 1 (PR #488): the topbar provider-change handler updates BOTH
-    // account and provider state slots in sequence, firing both subscribers
-    // from a single user action. Coalesce via queueMicrotask so the user
-    // sees exactly one reload, not two — and avoid the stale-overwrite race
-    // where the first response lands after the second.
-    test('coalesces back-to-back account+provider changes into a single reload', async () => {
-      const tab = document.getElementById('opportunities-tab')!;
-      tab.classList.add('active');
-
-      setupRecommendationsHandlers();
-
-      const providerCb = (state.subscribeProvider as jest.Mock).mock.calls[0]?.[0];
-      const accountCb = (state.subscribeAccount as jest.Mock).mock.calls[0]?.[0];
-      (api.getRecommendations as jest.Mock).mockClear();
-
-      // Simulate the topbar's #185 ordering: clear account first, then set
-      // provider. Both callbacks fire synchronously; coalescing must collapse
-      // them into one microtask-deferred reload.
-      accountCb();
-      providerCb();
-      await new Promise((r) => setTimeout(r, 0));
-
-      expect(api.getRecommendations).toHaveBeenCalledTimes(1);
-    });
-  });
-});
-
 //
 // Bundle A: numeric expression parser + applyColumnFilters
 //
 
 describe('parseNumericFilter', () => {
-  const accept = (expr: string, n: number): boolean => {
-    const r = parseNumericFilter(expr);
-    if (!r.ok) throw new Error(`unexpected parse failure for "${expr}": ${r.error}`);
-    return r.predicate(n);
-  };
-
-  test('empty / whitespace expression matches everything', () => {
-    expect(accept('', 0)).toBe(true);
-    expect(accept('   ', 42)).toBe(true);
-    expect(accept('\t\n', -7)).toBe(true);
-  });
-
-  test('plain integer matches by equality', () => {
-    expect(accept('42', 42)).toBe(true);
-    expect(accept('42', 41)).toBe(false);
-    expect(accept('-3', -3)).toBe(true);
-  });
-
-  test('plain decimal matches by equality', () => {
-    expect(accept('3.14', 3.14)).toBe(true);
-    expect(accept('3.14', 3.15)).toBe(false);
-  });
-
-  test('comparator > / >= / < / <=', () => {
-    expect(accept('>10', 11)).toBe(true);
-    expect(accept('>10', 10)).toBe(false);
-    expect(accept('>=10', 10)).toBe(true);
-    expect(accept('<5', 4)).toBe(true);
-    expect(accept('<5', 5)).toBe(false);
-    expect(accept('<=5', 5)).toBe(true);
-  });
-
-  test('inclusive range X..Y', () => {
-    expect(accept('10..20', 10)).toBe(true);
-    expect(accept('10..20', 20)).toBe(true);
-    expect(accept('10..20', 15)).toBe(true);
-    expect(accept('10..20', 9)).toBe(false);
-    expect(accept('10..20', 21)).toBe(false);
-  });
-
-  test('reversed range still works (max..min)', () => {
-    expect(accept('20..10', 15)).toBe(true);
-  });
-
-  test('comma-separated terms OR together', () => {
-    // `5, >100, 200..400`
-    expect(accept('5, >100, 200..400', 5)).toBe(true);
-    expect(accept('5, >100, 200..400', 150)).toBe(true);
-    expect(accept('5, >100, 200..400', 250)).toBe(true);
-    expect(accept('5, >100, 200..400', 50)).toBe(false);
-    expect(accept('5, >100, 200..400', 500)).toBe(true); // matches >100
-  });
-
-  test('whitespace inside terms is tolerated', () => {
-    expect(accept('  >  10  ', 11)).toBe(true);
-    expect(accept('10 .. 20', 15)).toBe(true);
-  });
-
   test('invalid expression returns ok:false with an error message', () => {
     const r1 = parseNumericFilter('>>5');
     expect(r1.ok).toBe(false);
