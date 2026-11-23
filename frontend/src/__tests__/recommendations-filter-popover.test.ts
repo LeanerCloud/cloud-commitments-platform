@@ -458,5 +458,20 @@ describe('Issue #484: numeric filter matches the displayed rounded value', () =>
       // → displayPrecision must agree with formatCurrency's digit count.
       expect(displayPrecision('monthly_cost', 'monthly')).toBe(renderedDigits);
     });
+
+    test('on_demand_monthly: displayPrecision at monthly period matches formatCurrency', async () => {
+      const recsMod = await import('../recommendations');
+      // utils is jest.mock()'d at the top of this file (so the
+      // recommendations module sees a stubbed formatCurrency). For this
+      // test we want the REAL formatCurrency to assert the fraction-digit
+      // contract holds against actual production behaviour, so we pull it
+      // via jest.requireActual rather than the mocked import.
+      const utilsActual = jest.requireActual<typeof import('../utils')>('../utils');
+      const displayPrecision = recsMod.displayPrecision;
+      const formatCurrency = utilsActual.formatCurrency;
+      const sample = 123.456789;
+      const renderedDigits = fractionDigitsOf(formatCurrency(sample));
+      expect(displayPrecision('on_demand_monthly', 'monthly')).toBe(renderedDigits);
+    });
   });
 });
