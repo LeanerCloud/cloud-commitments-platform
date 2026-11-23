@@ -3,8 +3,8 @@
 # new shared-state leak fails CI deterministically (#1970).
 set -euo pipefail
 
-FAMILIES=(history inventory plans-prefill plans-service-ids settings-save settings-purchasing-grace)
-SEEDS=(1 7 15)
+FAMILIES=(history inventory plans-prefill plans-service-ids settings-save settings-purchasing-grace groups dashboard users)
+SEEDS=(1 2 3 7 8 15)
 
 cd "$(dirname "$0")/../frontend"
 
