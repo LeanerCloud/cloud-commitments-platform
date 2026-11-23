@@ -3,7 +3,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"sync"
@@ -17,7 +16,6 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/email"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/oidc"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/schedexpr"
-	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
@@ -245,126 +243,6 @@ func NewHandler(cfg HandlerConfig) *Handler {
 	)
 
 	return h
-}
-
-// errorResponseHeaders returns base plus any headers a client error carries
-// (for example Retry-After). base is never mutated.
-func errorResponseHeaders(err error, base map[string]string) map[string]string {
-	ce, ok := IsClientError(err)
-	if !ok || len(ce.headers) == 0 {
-		return base
-	}
-	merged := make(map[string]string, len(base)+len(ce.headers))
-	for k, v := range base {
-		merged[k] = v
-	}
-	for k, v := range ce.headers {
-		merged[k] = v
-	}
-	return merged
-}
-
-// handleRequestError converts an error to status code and response.
-func (h *Handler) handleRequestError(err error) (int, any) { //nolint:gocritic // unnamedResult: stable internal API, adding names would require body renaming in impl
-	if IsNotFoundError(err) {
-		return 404, map[string]string{"error": "Not found"}
-	}
-	if ce, ok := IsClientError(err); ok {
-		// If the error carries structured details (e.g. retry soft-block
-		// surfaces ops_hint / retry_attempt_n / threshold), flatten them
-		// into the JSON body next to "error" so the frontend can branch
-		// on machine-readable hints without substring-matching the
-		// human message.
-		if details := ce.Details(); len(details) > 0 {
-			body := make(map[string]any, len(details)+1)
-			body["error"] = ce.message
-			for k, v := range details {
-				if k == "error" {
-					continue // never let a detail key shadow the message
-				}
-				body[k] = v
-			}
-			return ce.code, body
-		}
-		return ce.code, map[string]string{"error": ce.message}
-	}
-
-	logging.Errorf("API error: %v", err)
-	return 500, map[string]string{"error": "Internal server error"}
-}
-
-// rawResponse allows handlers to return pre-formatted, non-JSON content
-// (e.g. HTML, YAML). buildResponse will use the body and contentType directly
-// instead of JSON-marshaling.
-//
-// csp, when non-empty, overrides the default restrictive Content-Security-
-// Policy header set by setSecurityHeaders. Used by serveDocsUI to relax the
-// CSP for the Swagger UI page (the default `default-src 'none'` blocks the
-// CDN-hosted swagger-ui assets and the inline bootstrap script, leaving the
-// page blank — closes issue #329).
-type rawResponse struct {
-	contentType string
-	body        string
-	csp         string
-}
-
-// buildResponse creates a Lambda Function URL response. It never returns an
-// error: all failure modes (marshal failure, non-nil err arg) are converted
-// into a 500 response body so callers can use the single-return form.
-func (h *Handler) buildResponse(statusCode int, headers map[string]string, body any, err error) *events.LambdaFunctionURLResponse {
-	if err != nil {
-		return &events.LambdaFunctionURLResponse{
-			StatusCode: 500,
-			Headers:    headers,
-			Body:       `{"error": "internal server error"}`,
-		}
-	}
-
-	if cr, ok := body.(*cookieResponse); ok {
-		resp := h.buildResponse(statusCode, headers, cr.body, nil)
-		resp.Cookies = cr.cookies
-		return resp
-	}
-
-	// Handle raw (non-JSON) responses
-	if raw, ok := body.(*rawResponse); ok {
-		headers["Content-Type"] = raw.contentType
-		if raw.csp != "" {
-			headers["Content-Security-Policy"] = raw.csp
-		}
-		return &events.LambdaFunctionURLResponse{
-			StatusCode: statusCode,
-			Headers:    headers,
-			Body:       raw.body,
-		}
-	}
-
-	var bodyBytes []byte
-	if body != nil {
-		var marshalErr error
-		bodyBytes, marshalErr = json.Marshal(body)
-		if marshalErr != nil {
-			logging.Errorf("Failed to marshal response: %v", marshalErr)
-			return &events.LambdaFunctionURLResponse{
-				StatusCode: 500,
-				Headers:    headers,
-				Body:       `{"error": "internal server error"}`,
-			}
-		}
-	} else {
-		// Nil-body success paths (e.g. DELETE /accounts/:id returning
-		// (nil, nil)) previously emitted an empty string, which made the
-		// frontend's `response.json()` throw SyntaxError on an otherwise-
-		// successful request. Emit an explicit empty JSON object instead
-		// so every 2xx response parses cleanly.
-		bodyBytes = []byte("{}")
-	}
-
-	return &events.LambdaFunctionURLResponse{
-		StatusCode: statusCode,
-		Headers:    headers,
-		Body:       string(bodyBytes),
-	}
 }
 
 // loadAPIKey retrieves the API key from Secrets Manager.
