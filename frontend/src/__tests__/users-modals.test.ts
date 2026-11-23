@@ -226,4 +226,162 @@ describe('users/userModals', () => {
       expect(() => userModals.closeUserModal()).not.toThrow();
     });
   });
+
+  describe('saveUser', () => {
+    it('should create new user', async () => {
+      jest.useFakeTimers();
+      userModals.openCreateUserModal();
+
+      (document.getElementById('user-email') as HTMLInputElement).value = 'new@test.com';
+      (document.getElementById('user-password') as HTMLInputElement).value = 'SecurePass123!';
+
+      // PR #912: >= 1 group required. Select the first option populated by openCreateUserModal.
+      const gs7 = document.getElementById('user-groups') as HTMLSelectElement;
+      if (gs7.options.length > 0) gs7.options[0]!.selected = true;
+
+      const event = new Event('submit');
+      event.preventDefault = jest.fn();
+
+      await userModals.saveUser(event);
+
+      expect(api.createUser).toHaveBeenCalledWith(
+        expect.objectContaining({
+          email: 'new@test.com',
+          password: 'SecurePass123!',
+        })
+      );
+      jest.useRealTimers();
+    });
+
+    it('should update existing user', async () => {
+      jest.useFakeTimers();
+      await userModals.openEditUserModal('1');
+
+      (document.getElementById('user-email') as HTMLInputElement).value = 'updated@test.com';
+      const event = new Event('submit');
+      event.preventDefault = jest.fn();
+
+      await userModals.saveUser(event);
+
+      expect(api.updateUser).toHaveBeenCalledWith('1', {
+        email: 'updated@test.com',
+        // role removed: PR #912
+        groups: ['users']
+      });
+      jest.useRealTimers();
+    });
+
+    it('should prevent default form submission', async () => {
+      const event = new Event('submit');
+      event.preventDefault = jest.fn();
+
+      userModals.openCreateUserModal();
+      (document.getElementById('user-email') as HTMLInputElement).value = 'test@test.com';
+      (document.getElementById('user-password') as HTMLInputElement).value = 'SecurePass123!';
+
+      await userModals.saveUser(event);
+
+      expect(event.preventDefault).toHaveBeenCalled();
+    });
+
+    it('should validate password length for new user', async () => {
+      userModals.openCreateUserModal();
+
+      (document.getElementById('user-email') as HTMLInputElement).value = 'new@test.com';
+      (document.getElementById('user-password') as HTMLInputElement).value = 'short';
+
+      const event = new Event('submit');
+      event.preventDefault = jest.fn();
+
+      await userModals.saveUser(event);
+
+      expect(api.createUser).not.toHaveBeenCalled();
+      expect(document.querySelector('.toast-error')).toBeTruthy();
+    });
+
+    it('should allow empty password for new user (invite flow, issue #348)', async () => {
+      // Empty password used to be a validation error; after issue #348
+      // it triggers the invite flow -- createUser is called with an
+      // empty password and the backend emails a set-password link.
+      userModals.openCreateUserModal();
+
+      (document.getElementById('user-email') as HTMLInputElement).value = 'new@test.com';
+      (document.getElementById('user-password') as HTMLInputElement).value = '';
+
+      // PR #912: >= 1 group required. Select first option so validation passes.
+      const gs5 = document.getElementById('user-groups') as HTMLSelectElement;
+      if (gs5.options.length > 0) gs5.options[0]!.selected = true;
+
+      const event = new Event('submit');
+      event.preventDefault = jest.fn();
+
+      await userModals.saveUser(event);
+
+      expect(api.createUser).toHaveBeenCalled();
+      const callArg = (api.createUser as jest.Mock).mock.calls[0][0];
+      expect(callArg.email).toBe('new@test.com');
+      expect(callArg.password).toBe('');
+      // No error toast on the invite-path success.
+      expect(document.querySelector('.toast-error')).toBeNull();
+    });
+
+
+    it('should reject save when zero groups selected (PR #912 required-group validation)', async () => {
+      userModals.openCreateUserModal();
+
+      (document.getElementById('user-email') as HTMLInputElement).value = 'new@test.com';
+      (document.getElementById('user-password') as HTMLInputElement).value = 'SecurePass123!';
+
+      // Ensure no groups are selected
+      const groupsSelect = document.getElementById('user-groups') as HTMLSelectElement;
+      Array.from(groupsSelect.options).forEach(o => { o.selected = false; });
+
+      const event = new Event('submit');
+      event.preventDefault = jest.fn();
+
+      await userModals.saveUser(event);
+
+      // Backend would reject with 400; frontend should show a clear validation message.
+      expect(api.createUser).not.toHaveBeenCalled();
+      expect(document.querySelector('.toast-error')).toBeTruthy();
+    });
+    it('should close modal after save', async () => {
+      jest.useFakeTimers();
+      userModals.openCreateUserModal();
+
+      (document.getElementById('user-email') as HTMLInputElement).value = 'new@test.com';
+      (document.getElementById('user-password') as HTMLInputElement).value = 'SecurePass123!';
+
+      const gs2 = document.getElementById('user-groups') as HTMLSelectElement;
+      if (gs2.options.length > 0) gs2.options[0]!.selected = true;
+
+      const event = new Event('submit');
+      event.preventDefault = jest.fn();
+
+      await userModals.saveUser(event);
+
+      const modal = document.getElementById('user-modal');
+      expect(modal?.classList.contains('hidden')).toBe(true);
+      jest.useRealTimers();
+    });
+
+    it('should reload users after save', async () => {
+      jest.useFakeTimers();
+      userModals.openCreateUserModal();
+
+      (document.getElementById('user-email') as HTMLInputElement).value = 'new@test.com';
+      (document.getElementById('user-password') as HTMLInputElement).value = 'SecurePass123!';
+
+      const gs3 = document.getElementById('user-groups') as HTMLSelectElement;
+      if (gs3.options.length > 0) gs3.options[0]!.selected = true;
+
+      const event = new Event('submit');
+      event.preventDefault = jest.fn();
+
+      await userModals.saveUser(event);
+
+      expect(api.listUsers).toHaveBeenCalled();
+      jest.useRealTimers();
+    });
+  });
 });
