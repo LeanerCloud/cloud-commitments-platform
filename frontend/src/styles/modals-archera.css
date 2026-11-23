@@ -1,0 +1,162 @@
+/* -----------------------------------------------------------------------
+ * Archera Insurance offer modal (#archera-offer-modal-container).
+ * Small centred dialog shown AFTER a successful purchase-approval
+ * submission or plan creation. Two equal-weight choices: "Sign up at
+ * Archera →" (primary) and "No thanks" (secondary). Dimmed backdrop,
+ * outside-click and ESC close. z-index sits above .modal (1000) so the
+ * offer surfaces on top of any modal whose close triggered it.
+ * ----------------------------------------------------------------------- */
+#archera-offer-modal-container {
+    position: fixed;
+    inset: 0;
+    z-index: var(--cudly-z-modal-raised);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.archera-offer-backdrop {
+    position: absolute;
+    inset: 0;
+    background: var(--cudly-scrim);
+}
+
+.archera-offer-panel {
+    position: relative;
+    background: var(--cudly-surface);
+    border-radius: var(--cudly-r-lg);
+    box-shadow: var(--cudly-shadow-dialog);
+    max-width: 440px;
+    width: calc(100% - 2rem);
+    padding: 1.5rem 1.75rem;
+    /* Cap height so an expanded "Learn more" drop-down doesn't push the
+       modal past the viewport — overflow scrolls inside the panel
+       instead. The cap is on the panel (not the body) so the title and
+       actions stay visible while the user scrolls the details body. */
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+.archera-offer-title {
+    margin: 0 0 0.6rem;
+    font-size: var(--cudly-fs-lg);
+    color: var(--cudly-text-strong);
+    line-height: 1.35;
+}
+
+.archera-offer-lead {
+    margin: 0 0 0.75rem;
+    font-size: var(--cudly-fs-sm);
+    line-height: 1.5;
+    color: var(--cudly-text-body);
+}
+
+/* Disclosure line: muted, sits just below the lead so the financial
+   relationship is visible before the user clicks Sign up. */
+.archera-offer-disclosure {
+    margin: 0 0 1rem;
+    font-size: 0.82rem;
+    color: var(--cudly-text-muted); /* #777 was 4.2:1 on the offer card (issue #191) */
+    font-style: italic;
+}
+
+.archera-offer-actions {
+    display: flex;
+    gap: 0.6rem;
+    justify-content: flex-end;
+    align-items: center;
+    /* Actions are the last element in the panel now (sit below the
+       Learn-more drop-down), so no bottom margin. A small top margin
+       gives breathing room between the collapsed/expanded drop-down
+       and the buttons. */
+    margin: 0.25rem 0 0;
+}
+
+.archera-offer-skip {
+    background: var(--cudly-surface);
+    color: var(--cudly-text-body);
+    border: 1px solid var(--cudly-border-soft);
+    border-radius: 4px;
+    padding: 0.55rem 1rem;
+    font-size: var(--cudly-fs-sm);
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.archera-offer-skip:hover {
+    background: var(--cudly-surface-hover);
+    color: var(--cudly-text-strong);
+}
+
+.archera-offer-signup {
+    display: inline-block;
+    background: var(--cudly-link);
+    color: var(--cudly-primary-fg);
+    text-decoration: none;
+    padding: 0.55rem 1.1rem;
+    border-radius: 4px;
+    font-size: var(--cudly-fs-sm);
+    font-weight: var(--cudly-fw-medium);
+    transition: background var(--cudly-dur) var(--cudly-ease);
+}
+
+.archera-offer-signup:hover {
+    background: var(--cudly-link-hover);
+    color: var(--cudly-primary-fg);
+    text-decoration: none;
+}
+
+/* Learn-more drop-down. Sits ABOVE the action buttons in the panel.
+   Native <details>/<summary> handles open/close + keyboard. Summary
+   text is left-aligned with the chevron on the right (flex/space-between
+   on the summary). The body inherits .archera-page-inner typography so
+   it looks like the standalone education page, sized for the modal
+   width and separated from the offer-modal chrome by a top border. */
+.archera-offer-learnmore {
+    margin: 0 0 1rem;
+    font-size: var(--cudly-fs-sm);
+}
+
+.archera-offer-learnmore-summary {
+    cursor: pointer;
+    color: var(--cudly-link);
+    font-size: var(--cudly-fs-sm);
+    padding: 0.25rem 0;
+    list-style: none; /* hide default disclosure marker; we render our own ::after */
+    user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5em;
+}
+
+.archera-offer-learnmore-summary::-webkit-details-marker { display: none; }
+
+.archera-offer-learnmore-summary::after {
+    content: "▸";
+    display: inline-block;
+    color: var(--cudly-text-faint);
+    transition: transform var(--cudly-dur-fast) var(--cudly-ease);
+}
+
+.archera-offer-learnmore[open] > .archera-offer-learnmore-summary::after {
+    transform: rotate(90deg);
+}
+
+.archera-offer-learnmore-summary:hover { color: var(--cudly-link-hover); }
+
+.archera-offer-learnmore-body {
+    border-top: 1px solid var(--cudly-border-light);
+    margin-top: 0.5rem;
+    padding: 0.5rem 0 0;
+    color: var(--cudly-text-body);
+    font-size: var(--cudly-fs-sm);
+}
+
+/* Override .archera-page-inner padding inside the modal — the modal
+   already has its own padding, so the embedded body shouldn't add
+   another 1.5rem horizontal gutter. */
+.archera-offer-learnmore .archera-page-inner {
+    max-width: none;
+    padding: 0.5rem 0 0;
+}

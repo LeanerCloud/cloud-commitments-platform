@@ -97,7 +97,7 @@ describe('text contrast meets WCAG AA (issue #191)', () => {
   const cases: Array<[string, string, string]> = [
     ['modals.css', '.archera-cta', '#ffffff'],
     ['modals.css', '.archera-signup-note', '#f0f7ff'],
-    ['modals.css', '.archera-offer-disclosure', '#f0f7ff'],
+    ['modals-archera.css', '.archera-offer-disclosure', '#f0f7ff'],
     ['base.css', '.error', tokens['--cudly-error-bg']!],
   ];
 
