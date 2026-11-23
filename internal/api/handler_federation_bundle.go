@@ -273,3 +273,37 @@ func buildCFParamsJSON(data federationIaCData, source string) (string, error) {
 	}
 	return string(out) + "\n", nil
 }
+
+// validFederationTargets is the allowlist of valid target cloud providers.
+var validFederationTargets = map[string]bool{"aws": true, "azure": true, "gcp": true}
+
+// singleFileSpec returns the template path, output filename, and content-type for a
+// single-file IaC download. Zip formats are intercepted earlier by formatNeedsZip
+// in getFederationIaC and never reach this function. Only "cli" is a valid single-file
+// format after the tfvars-only path was removed.
+func singleFileSpec(target, source, format, slug string) (tmplPath, filename, contentType string, err error) {
+	if format == "cli" {
+		return cliScriptSpec(target, source, slug)
+	}
+	return "", "", "", NewClientError(400, "unsupported format: "+format)
+}
+
+// cliScriptSpec returns the CLI shell-script template path + filename for the
+// target/source combination. All CLI scripts are rendered with shell-escaped data.
+func cliScriptSpec(target, source, slug string) (tmplPath, filename, contentType string, err error) {
+	const ct = "text/x-shellscript"
+	switch {
+	case target == "aws" && source == "aws":
+		return "templates/aws-cross-account-cli.sh.tmpl", slug + "-aws-cross-account-cli.sh", ct, nil
+	case target == "aws":
+		return "templates/aws-wif-cli.sh.tmpl", slug + "-aws-wif-cli.sh", ct, nil
+	case target == "azure":
+		return "templates/azure-wif-cli.sh.tmpl", slug + "-azure-wif-cli.sh", ct, nil
+	case target == "gcp" && source == "gcp":
+		return "templates/gcp-sa-impersonation-cli.sh.tmpl", slug + "-gcp-sa-impersonation-cli.sh", ct, nil
+	case target == "gcp":
+		return "templates/gcp-wif-cli.sh.tmpl", slug + "-gcp-wif-cli.sh", ct, nil
+	default:
+		return "", "", "", NewClientError(400, fmt.Sprintf("unsupported target/source combination: %s/%s", target, source))
+	}
+}
