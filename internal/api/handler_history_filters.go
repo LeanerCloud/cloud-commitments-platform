@@ -265,3 +265,84 @@ func (f historyFilters) matchesExecutionProviderAndAccount(exec config.PurchaseE
 	}
 	return true
 }
+
+// accountMatchesFilters pulls the dual-id account-match logic out of
+// matchesExecution to keep it under the cyclomatic limit.
+//
+// AccountIDs are cloud_accounts UUIDs; externalIDsByProvider are the
+// cloud-provider external account numbers resolved from them, grouped by
+// provider. An execution's effective account ID may be EITHER representation:
+// exec.CloudAccountID and the per-rec CloudAccountID hold the UUID for
+// UUID-attributed executions, while a legacy/ambient execution may only carry
+// the external number. Match against both so an external-id-only pending row is
+// not dropped (the mirror of the SQL dual-column predicate, issue #701/#498).
+//
+// The external-id match is provider-scoped: an external number matches only when
+// it is listed under the execution's own provider, or under the "" key (unknown
+// provider, legacy behavior). This mirrors the SQL (provider = $p AND
+// account_id = ANY(...)) and keeps a reused external number across providers
+// (aws/123 vs azure/123) from matching the wrong execution.
+//
+// Uses the same two-level account resolution as executionToHistoryRow:
+// exec.CloudAccountID first, then the rec-level fallback, so web bulk-purchase
+// executions (exec.CloudAccountID == nil) are not silently dropped.
+func accountMatchesFilters(exec config.PurchaseExecution, accountIDs []string, externalIDsByProvider map[string][]string) bool {
+	var accountID string
+	if exec.CloudAccountID != nil {
+		accountID = *exec.CloudAccountID
+	} else {
+		accountID = collapseRecommendationAccount(exec.Recommendations)
+	}
+	if accountID == "" {
+		return false
+	}
+	if stringInSlice(accountID, accountIDs) {
+		return true
+	}
+	// External-id half: only the execution's own provider group (plus the ""
+	// unknown-provider group) may match, so a reused external number across
+	// providers can't leak.
+	provider := executionProvider(exec)
+	if provider != "" && stringInSlice(accountID, externalIDsByProvider[provider]) {
+		return true
+	}
+	return stringInSlice(accountID, externalIDsByProvider[""])
+}
+
+// executionProvider returns the execution's provider, taken from its first
+// recommendation (all recs in an execution share a provider in practice).
+// Returns "" when no recommendation carries one.
+func executionProvider(exec config.PurchaseExecution) string {
+	for i := range exec.Recommendations {
+		r := exec.Recommendations[i]
+		if r.Provider != "" {
+			return r.Provider
+		}
+	}
+	return ""
+}
+
+// executionHasProvider reports whether any of the execution's
+// recommendations carries the given provider value.
+func executionHasProvider(exec config.PurchaseExecution, provider string) bool {
+	for i := range exec.Recommendations {
+		r := exec.Recommendations[i]
+		if r.Provider == provider {
+			return true
+		}
+	}
+	return false
+}
+
+// stringInSlice is a tiny linear-search helper for the per-execution
+// account filter. The slice is bounded by MaxAccountIDsPerRequest (200) so
+// a linear scan is comfortably cheaper than the map allocation a set would
+// require, and the call is hot only for executions (DB rows go through SQL).
+func stringInSlice(needle string, haystack []string) bool {
+	for _, h := range haystack {
+		if h == needle {
+			return true
+		}
+	}
+	return false
+}
