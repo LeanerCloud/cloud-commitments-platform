@@ -6,8 +6,6 @@ import (
 	"strings"
 )
 
-// federationIaCData holds the template variables used when rendering IaC templates.
-
 // shellEscape escapes a string for safe use inside a double-quoted bash argument.
 // It escapes characters that have special meaning in double-quoted strings: \, $, `, ".
 func shellEscape(s string) string {
