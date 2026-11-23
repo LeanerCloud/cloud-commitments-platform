@@ -377,4 +377,73 @@ describe('Issue #111 (iii): per-row Payment seed in openPurchaseModal', () => {
     const note = document.querySelector('.purchase-row-payment-source');
     expect(note).toBeNull();
   });
+
+  test('(c) override has unsupported payment for the (provider,service,term) cell → falls back to rec.payment', async () => {
+    // AWS RDS 3yr does NOT support no-upfront (per
+    // isPaymentSupported / cmd/validators.go:warnRDS3YearNoUpfront).
+    // The override pins no-upfront → must be ignored; rec.payment wins.
+    (api.listAccountServiceOverrides as jest.Mock).mockImplementation(async (id: string) => {
+      if (id === 'test-account-a') {
+        return [{ id: 'ovr-1', account_id: 'test-account-a', provider: 'aws', service: 'rds', payment: 'no-upfront' }];
+      }
+      return [];
+    });
+
+    const rec = {
+      id: 'rec-3', provider: 'aws' as const, cloud_account_id: 'test-account-a',
+      service: 'rds', resource_type: 'db.r5.large', region: 'us-east-1',
+      count: 1, term: 3, payment: 'all-upfront', savings: 200, upfront_cost: 1000,
+    };
+
+    await openPurchaseModal([rec]);
+
+    const live = getPurchaseModalRecommendations();
+    expect(live[0]!.payment).toBe('all-upfront');
+
+    const note = document.querySelector('.purchase-row-payment-source');
+    expect(note).toBeNull();
+  });
+
+  test('(d) user changes Term 1→3 → row Payment options rebuilt; live state still consistent', async () => {
+    const rec = {
+      id: 'rec-4', provider: 'aws' as const, cloud_account_id: 'test-account-a',
+      service: 'ec2', resource_type: 't3.medium', region: 'us-east-1',
+      count: 5, term: 1, payment: 'all-upfront', savings: 100, upfront_cost: 500,
+    };
+    // Issue #1903: the 3yr row Term now offers must be loaded (and thus
+    // priced) — mock the two 3yr variants this cell would have fanned out.
+    (state.getRecommendations as jest.Mock).mockReturnValue([
+      rec,
+      { ...rec, id: 'rec-4-3-all', term: 3, upfront_cost: 1400 },
+      { ...rec, id: 'rec-4-3-partial', term: 3, payment: 'partial-upfront', upfront_cost: 700, monthly_cost: 30 },
+    ]);
+
+    await openPurchaseModal([rec]);
+
+    const termSelect = document.querySelector<HTMLSelectElement>('.purchase-row-term');
+    const paymentSelect = document.querySelector<HTMLSelectElement>('.purchase-row-payment');
+    expect(termSelect).not.toBeNull();
+    expect(paymentSelect).not.toBeNull();
+
+    // Switch term to 3yr.
+    termSelect!.value = '3';
+    termSelect!.dispatchEvent(new Event('change'));
+
+    const live = getPurchaseModalRecommendations();
+    expect(live[0]!.term).toBe(3);
+    // Payment is set to a value supported for AWS EC2 3yr — the
+    // exact value depends on whether 'all-upfront' (the prior value)
+    // remained valid for the new term; we only require that:
+    //   (i) live.payment is non-empty
+    //   (ii) live.payment matches the dropdown's current value
+    //   (iii) the dropdown's options are now the 3yr-supported set.
+    expect(live[0]!.payment).toBeTruthy();
+    expect(paymentSelect!.value).toBe(live[0]!.payment);
+    const options = Array.from(paymentSelect!.options).map((o) => o.value);
+    expect(options.length).toBeGreaterThan(0);
+    // Issue #1903: options are restricted to the priced (loaded) set, and
+    // the swapped-in row carries the priced variant's own price/id.
+    expect(options).toEqual(['all-upfront', 'partial-upfront']);
+    expect(live[0]!.upfront_cost).toBe(1400);
+  });
 });
