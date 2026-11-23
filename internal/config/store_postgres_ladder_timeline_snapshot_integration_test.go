@@ -255,18 +255,22 @@ func TestLadderTimelineLoadToleratesMidLoadChanges(t *testing.T) {
 // TestLadderTimelineLoadIsSnapshotConsistentUnderConcurrentWrites runs client
 // loads while another connection keeps amending the timeline and adding
 // tranches and runs. Every load must be internally consistent, and the loads
-// must have observed the writes (the totals move between loads).
+// must have observed the writes (the totals move between loads). The writer
+// does one amend/tranche/run round per finished load, so the work is the same
+// on a slow runner: free-running it grew the scope 450 -> 3500 rows in 21 s,
+// and a starved runner fell further behind with every round (#1977).
 func TestLadderTimelineLoadIsSnapshotConsistentUnderConcurrentWrites(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	f := seedLadderTimelineFixture(ctx, t, 450)
 	stop := make(chan struct{})
+	round := make(chan struct{}, 1)
 	writes := make(chan error, 1)
 	var writer sync.WaitGroup
 	writer.Add(1)
 	go func() {
 		defer writer.Done()
-		writes <- f.writeUntil(ctx, stop)
+		writes <- f.writeUntil(ctx, stop, round)
 	}()
 	totals := map[string]bool{}
 	var loadErr error
@@ -278,6 +282,10 @@ func TestLadderTimelineLoadIsSnapshotConsistentUnderConcurrentWrites(t *testing.
 				break
 			}
 			totals[fmt.Sprintf("%t/%d/%s", runs, len(load.ids), load.total)] = true
+			select {
+			case round <- struct{}{}:
+			default:
+			}
 		}
 	}
 	close(stop)
@@ -287,14 +295,16 @@ func TestLadderTimelineLoadIsSnapshotConsistentUnderConcurrentWrites(t *testing.
 	require.Greater(t, len(totals), 4, "the writer must have changed the timeline between loads")
 }
 
-// writeUntil keeps lowering the editable tranche by one micro-dollar and
-// adding a tranche and a run until stop closes.
-func (f *ladderTimelineFixture) writeUntil(ctx context.Context, stop <-chan struct{}) error {
+// writeUntil lowers the editable tranche by one micro-dollar and adds a
+// tranche and a run once per round signal, until stop closes.
+func (f *ladderTimelineFixture) writeUntil(ctx context.Context, stop <-chan struct{}, round <-chan struct{}) error {
 	for revision := int64(0); ; revision++ {
 		select {
 		case <-stop:
 			return nil
-		default:
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-round:
 		}
 		if err := f.amend(ctx, revision, fmt.Sprintf("0.%06d", 124999-revision)); err != nil {
 			return fmt.Errorf("amend %d: %w", revision, err)
