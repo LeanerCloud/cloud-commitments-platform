@@ -685,3 +685,44 @@ func TestSender_SendPurchaseFailedNotification_RecipientUsesSES(t *testing.T) {
 	assert.Equal(t, []string{"ops@example.com"}, to)
 	mockSNS.AssertNotCalled(t, "Publish", mock.Anything, mock.Anything)
 }
+
+// subjectCapturingSender returns a SES-backed Sender whose SendEmail mock
+// records the subject that reached SES.
+func subjectCapturingSender(t *testing.T) (*Sender, *string) {
+	t.Helper()
+	mockSES := new(MockSESClient)
+	mockSES.On("GetAccount", mock.Anything, mock.AnythingOfType("*sesv2.GetAccountInput")).
+		Return(&sesv2.GetAccountOutput{ProductionAccessEnabled: true}, nil)
+	subject := new(string)
+	mockSES.On("SendEmail", mock.Anything, mock.AnythingOfType("*sesv2.SendEmailInput")).
+		Run(func(args mock.Arguments) {
+			*subject = aws.ToString(args.Get(1).(*sesv2.SendEmailInput).Content.Simple.Subject.Data)
+		}).
+		Return(&sesv2.SendEmailOutput{MessageId: aws.String("msg-subject")}, nil)
+	t.Cleanup(func() { mockSES.AssertExpectations(t) })
+	return NewSenderWithClients(nil, mockSES, SenderConfig{FromEmail: "noreply@example.com"}), subject
+}
+
+func TestSender_SendRegistrationDecisionNotification_Subject(t *testing.T) {
+	sender, subject := subjectCapturingSender(t)
+
+	err := sender.SendRegistrationDecisionNotification(context.Background(), "registrant@example.com",
+		RegistrationDecisionData{AccountName: "ACME", Decision: "approved"})
+	require.NoError(t, err)
+	assert.Equal(t, "CUDly - Account Registration approved", *subject)
+}
+
+func TestSender_SendRIExchangePendingApproval_Subject(t *testing.T) {
+	sender, subject := subjectCapturingSender(t)
+
+	err := sender.SendRIExchangePendingApproval(context.Background(), RIExchangeNotificationData{
+		DashboardURL:   "https://app.example.com",
+		RecipientEmail: "notify@example.com",
+		Exchanges: []RIExchangeItem{
+			{RecordID: "rec-1", ApprovalToken: "tok-1"},
+			{RecordID: "rec-2", ApprovalToken: "tok-2"},
+		},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "CUDly - RI Exchange Approval Required (2 exchanges)", *subject)
+}

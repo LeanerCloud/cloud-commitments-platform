@@ -148,6 +148,13 @@ func TestRenderPurchaseExecutedNotificationEmail_ExpiryNoteWhenPopulated(t *test
 	assert.Contains(t, htmlBody, "2026-06-08 10:05 UTC")
 }
 
+func TestRenderPurchaseExecutedNotificationEmail_TitleLine(t *testing.T) {
+	body, err := RenderPurchaseExecutedNotificationEmail(executedNotificationData())
+	require.NoError(t, err)
+	firstLine, _, _ := strings.Cut(body, "\n")
+	assert.Equal(t, "[CUDly] Purchase executed (1 commitment(s))", firstLine)
+}
+
 func TestBuildExecutedNotificationSubject_SingleAndMulti(t *testing.T) {
 	single := executedNotificationData()
 	subject := buildExecutedNotificationSubject(single)

@@ -142,6 +142,7 @@ func TestRenderRIExchangeCompletedEmail_AutoMode(t *testing.T) {
 
 	result, err := RenderRIExchangeCompletedEmail(data)
 	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(result, "CUDly - RI Exchanges Completed\n"), "title line: %q", result)
 	assert.Contains(t, result, "automatically")
 	assert.Contains(t, result, "ri-aaaa")
 	assert.Contains(t, result, "exc-001")
@@ -223,6 +224,7 @@ func TestRenderPurchaseApprovalRequestEmail(t *testing.T) {
 	result, err := RenderPurchaseApprovalRequestEmail(data)
 	require.NoError(t, err)
 	assert.Contains(t, result, "Approval Required")
+	assert.Contains(t, result, "- 2x db.r5.large (postgres) in us-east-1")
 	assert.Contains(t, result, "4000.00")
 	assert.Contains(t, result, "800.00")
 	assert.Contains(t, result, "db.r5.large")
