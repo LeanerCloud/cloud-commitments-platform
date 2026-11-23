@@ -23,6 +23,5 @@ internal/scheduler/scheduler.go	2152	2026-11-23	split pending #341 (hot: 10 comm
 internal/server/app.go	1558	2026-11-23	split pending #341 (hot: 8 commits in 14 days)
 internal/server/handler.go	511	2026-11-23	split pending #341
 internal/server/handler_ladder.go	1013	2026-11-23	split pending #341 (hot: 8 commits in 14 days)
-internal/server/handler_ri_exchange.go	559	2026-11-23	split pending #341
 internal/server/http.go	549	2026-11-23	split pending #341
 internal/server/scheduledauth/validator.go	558	2026-11-23	split pending #341
