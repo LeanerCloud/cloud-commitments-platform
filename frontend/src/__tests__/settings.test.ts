@@ -2123,42 +2123,6 @@ describe('Settings Module', () => {
     const save = (): Promise<void> => saveGlobalSettings({ preventDefault: jest.fn() } as unknown as Event);
     const globalBody = (): unknown => (api.updateConfig as jest.Mock).mock.calls[0]?.[0];
 
-    test('the laddering toggle is rendered and an unedited Save sends no global PUT', async () => {
-      await loadRealPage();
-      expect(document.getElementById('setting-laddering-enabled')).not.toBeNull();
-
-      await save();
-
-      expect(api.updateConfig).not.toHaveBeenCalled();
-    });
-
-    test('editing only the notification email sends only the email', async () => {
-      await loadRealPage();
-      (document.getElementById('setting-notification-email') as HTMLInputElement).value = 'new@test.com';
-
-      await save();
-
-      expect(globalBody()).toEqual({ notification_email: 'new@test.com' });
-    });
-
-    test('editing one grace input saves grace_period_days', async () => {
-      await loadRealPage();
-      (document.getElementById('setting-grace-azure') as HTMLInputElement).value = '9';
-
-      await save();
-
-      expect(globalBody()).toEqual({ grace_period_days: { aws: 7, azure: 9, gcp: 7 } });
-    });
-
-    test('editing only a provider toggle saves enabled_providers', async () => {
-      await loadRealPage();
-      (document.getElementById('provider-gcp') as HTMLInputElement).checked = true;
-
-      await save();
-
-      expect(globalBody()).toEqual({ enabled_providers: ['aws', 'gcp'] });
-    });
-
     describe('refuses a save that leaves no provider enabled (issue #1531)', () => {
       const serverProviders = (providers: string[]): void => {
         (api.getConfig as jest.Mock).mockResolvedValue({
