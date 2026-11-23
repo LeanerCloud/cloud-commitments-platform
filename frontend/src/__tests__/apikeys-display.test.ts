@@ -6,7 +6,9 @@
 
 // The harness registers the module mocks, so it must be imported first.
 import { mockConfirmDialog } from './apikeys-harness';
-import { loadApiKeys } from '../apikeys';
+import {
+  loadApiKeys
+} from '../apikeys';
 
 import * as api from '../api';
 
@@ -226,6 +228,93 @@ describe('API Keys Module', () => {
       expect(list?.querySelector('.error')?.textContent).toBe('Failed to load API keys');
       // The skeleton-active marker is gone (success/error both clear it).
       expect(list?.dataset['skeletonActive']).toBeUndefined();
+    });
+  });
+
+  describe('Date formatting', () => {
+    test('formats dates correctly in the list', async () => {
+      const mockKeys = [
+        {
+          id: 'key-1',
+          name: 'Test Key',
+          key_prefix: 'abc123',
+          is_active: true,
+          created_at: '2024-01-15T10:00:00Z',
+          last_used_at: '2024-01-16T15:30:00Z',
+          expires_at: '2025-01-15T10:00:00Z'
+        }
+      ];
+
+      (api.getApiKeys as jest.Mock).mockResolvedValue({ api_keys: mockKeys });
+
+      await loadApiKeys();
+
+      const container = document.getElementById('apikeys-list');
+      // The exact format depends on locale, but it should contain date parts
+      expect(container?.innerHTML).toContain('2024');
+    });
+
+    // #492: last_used_at null renders "Never", not "0 min ago" or empty
+    test('renders Never for null last_used_at (issue #492)', async () => {
+      const mockKeys = [
+        {
+          id: 'key-1',
+          name: 'Unused Key',
+          key_prefix: 'abc123',
+          is_active: true,
+          created_at: '2024-01-15T10:00:00Z'
+          // last_used_at intentionally absent
+        }
+      ];
+
+      (api.getApiKeys as jest.Mock).mockResolvedValue({ api_keys: mockKeys });
+      await loadApiKeys();
+
+      const container = document.getElementById('apikeys-list');
+      expect(container?.innerHTML).toContain('Never');
+    });
+
+    test('one malformed last_used_at degrades to one cell instead of blanking the table (#136)', async () => {
+      const mockKeys = [
+        { id: 'key-bad', name: 'Bad Timestamp', key_prefix: 'bad111', is_active: true,
+          created_at: '2024-01-15T10:00:00Z', last_used_at: 'not-a-date' },
+        { id: 'key-ok', name: 'Leaked Key', key_prefix: 'ok2222', is_active: true,
+          created_at: '2024-01-15T10:00:00Z', last_used_at: '2024-01-16T15:30:00Z' },
+      ];
+
+      (api.getApiKeys as jest.Mock).mockResolvedValue({ api_keys: mockKeys });
+      await loadApiKeys();
+
+      const container = document.getElementById('apikeys-list');
+      const rows = container?.querySelectorAll('tbody tr');
+      expect(rows).toHaveLength(2);
+      expect(rows?.[0]?.textContent).toContain('--');
+      expect(container?.querySelectorAll('.revoke-key-btn')).toHaveLength(2);
+    });
+
+    // #492: populated last_used_at renders relative time with ISO title for hover
+    test('renders relative time with ISO title for populated last_used_at (issue #492)', async () => {
+      const recentTs = new Date(Date.now() - 2 * 3600 * 1000).toISOString(); // 2 hours ago
+      const mockKeys = [
+        {
+          id: 'key-1',
+          name: 'Used Key',
+          key_prefix: 'abc123',
+          is_active: true,
+          created_at: '2024-01-15T10:00:00Z',
+          last_used_at: recentTs
+        }
+      ];
+
+      (api.getApiKeys as jest.Mock).mockResolvedValue({ api_keys: mockKeys });
+      await loadApiKeys();
+
+      const container = document.getElementById('apikeys-list');
+      // Relative label: ends with "h ago" for a 2-hour-old timestamp
+      expect(container?.innerHTML).toMatch(/\d+h ago/);
+      // Absolute ISO on the title attribute for hover
+      const span = container?.querySelector<HTMLElement>('[title]');
+      expect(span?.getAttribute('title')).toBe(new Date(recentTs).toISOString());
     });
   });
 });
