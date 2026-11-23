@@ -1,11 +1,9 @@
 package api
 
 import (
-	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"regexp"
@@ -13,8 +11,6 @@ import (
 	"text/template"
 	"unicode"
 	"unicode/utf8"
-
-	"github.com/google/uuid"
 
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/iacfiles"
 	"github.com/aws/aws-lambda-go/events"
@@ -437,37 +433,6 @@ func federationIaCParams(q map[string]string) (target, source, format string, er
 	return target, source, format, nil
 }
 
-// shellEscape escapes a string for safe use inside a double-quoted bash argument.
-// It escapes characters that have special meaning in double-quoted strings: \, $, `, ".
-func shellEscape(s string) string {
-	r := strings.NewReplacer(`\`, `\\`, `"`, `\"`, "`", "\\`", `$`, `\$`)
-	return r.Replace(s)
-}
-
-// hclEscape escapes a string for use inside a double-quoted HCL string. HCL
-// also starts an interpolation at "${" and a template directive at "%{", so
-// both are doubled into their literal "$${" and "%%{" forms (#952). Line
-// breaks are not escaped: renderTemplate refuses any value holding one
-// (checkRenderDataSingleLine, #970).
-func hclEscape(s string) string {
-	return strings.NewReplacer(`\`, `\\`, `"`, `\"`, "${", "$${", "%{", "%%{").Replace(s)
-}
-
-// hclEscapeData returns a copy of data with every string field HCL-escaped,
-// for rendering the bundle's tfvars. Most fields are server-derived, but
-// ContactEmail is the session user's email, which only has to pass
-// mail.ParseAddress and so can carry quotes and "${" in a quoted local part
-// (#952). It walks the struct by reflection so a new field cannot be missed.
-func hclEscapeData(data federationIaCData) federationIaCData {
-	v := reflect.ValueOf(&data).Elem()
-	for i := 0; i < v.NumField(); i++ {
-		if f := v.Field(i); f.Kind() == reflect.String {
-			f.SetString(hclEscape(f.String()))
-		}
-	}
-	return data
-}
-
 // validFederationTargets is the allowlist of valid target cloud providers.
 var validFederationTargets = map[string]bool{"aws": true, "azure": true, "gcp": true}
 
@@ -500,76 +465,4 @@ func cliScriptSpec(target, source, slug string) (tmplPath, filename, contentType
 	default:
 		return "", "", "", NewClientError(400, fmt.Sprintf("unsupported target/source combination: %s/%s", target, source))
 	}
-}
-
-// ---------------------------------------------------------------------------
-// CF params JSON helper — uses encoding/json for correct escaping
-// ---------------------------------------------------------------------------
-
-type cfParam struct {
-	ParameterKey   string `json:"ParameterKey"`
-	ParameterValue string `json:"ParameterValue"`
-}
-
-// buildCFParamsJSON produces the CloudFormation parameter overrides JSON using
-// encoding/json, which correctly escapes special characters in values.
-//
-// Dispatches on source: "aws" → cross-account params (SourceAccountID, ExternalID);
-// anything else → AWS WIF params (OIDC values).
-func buildCFParamsJSON(data federationIaCData, source string) (string, error) {
-	var params []cfParam
-	if source == "aws" {
-		params = []cfParam{
-			{ParameterKey: "SourceAccountID", ParameterValue: data.SourceAccountID},
-			{ParameterKey: "ExternalID", ParameterValue: uuid.New().String()},
-			{ParameterKey: "RoleName", ParameterValue: "CUDly-" + data.AccountSlug},
-			{ParameterKey: "CUDlyAPIURL", ParameterValue: data.CUDlyAPIURL},
-			{ParameterKey: "ContactEmail", ParameterValue: ""},
-		}
-	} else {
-		params = []cfParam{
-			{ParameterKey: "OIDCIssuerURL", ParameterValue: data.OIDCIssuerURL},
-			{ParameterKey: "OIDCAudience", ParameterValue: data.OIDCAudience},
-			{ParameterKey: "OIDCSubjectClaim", ParameterValue: data.OIDCSubjectClaim},
-			{ParameterKey: "RoleName", ParameterValue: "CUDly-" + data.AccountSlug},
-		}
-	}
-	out, err := json.MarshalIndent(params, "", "  ")
-	if err != nil {
-		return "", fmt.Errorf("marshal cf params: %w", err)
-	}
-	return string(out) + "\n", nil
-}
-
-// ---------------------------------------------------------------------------
-// Zip helpers
-// ---------------------------------------------------------------------------
-
-func addBytesToZip(zw *zip.Writer, name string, content []byte) error {
-	f, err := zw.Create(name)
-	if err != nil {
-		return err
-	}
-	_, err = f.Write(content)
-	return err
-}
-
-// addExecBytesToZip writes content to the zip with Unix mode 0755 so that
-// customers can run the resulting shell script without an explicit chmod.
-func addExecBytesToZip(zw *zip.Writer, name string, content []byte) error {
-	hdr := &zip.FileHeader{
-		Name:   name,
-		Method: zip.Deflate,
-	}
-	hdr.SetMode(0755)
-	f, err := zw.CreateHeader(hdr)
-	if err != nil {
-		return err
-	}
-	_, err = f.Write(content)
-	return err
-}
-
-func addStringToZip(zw *zip.Writer, name, content string) error {
-	return addBytesToZip(zw, name, []byte(content))
 }

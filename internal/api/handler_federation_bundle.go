@@ -3,11 +3,13 @@ package api
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	cudlyiac "github.com/LeanerCloud/cloud-commitments-platform/iac"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/iacbundle"
+	"github.com/google/uuid"
 )
 
 // addBundleTerraform adds the Terraform module files and generated .tfvars to the zip.
@@ -231,4 +233,43 @@ func buildCFNZip(data federationIaCData, target, source, slug string) (zipData [
 		zipName = slug + "-aws-cross-account-cfn.zip"
 	}
 	return buf.Bytes(), zipName, nil
+}
+
+// ---------------------------------------------------------------------------
+// CF params JSON helper — uses encoding/json for correct escaping
+// ---------------------------------------------------------------------------
+
+type cfParam struct {
+	ParameterKey   string `json:"ParameterKey"`
+	ParameterValue string `json:"ParameterValue"`
+}
+
+// buildCFParamsJSON produces the CloudFormation parameter overrides JSON using
+// encoding/json, which correctly escapes special characters in values.
+//
+// Dispatches on source: "aws" → cross-account params (SourceAccountID, ExternalID);
+// anything else → AWS WIF params (OIDC values).
+func buildCFParamsJSON(data federationIaCData, source string) (string, error) {
+	var params []cfParam
+	if source == "aws" {
+		params = []cfParam{
+			{ParameterKey: "SourceAccountID", ParameterValue: data.SourceAccountID},
+			{ParameterKey: "ExternalID", ParameterValue: uuid.New().String()},
+			{ParameterKey: "RoleName", ParameterValue: "CUDly-" + data.AccountSlug},
+			{ParameterKey: "CUDlyAPIURL", ParameterValue: data.CUDlyAPIURL},
+			{ParameterKey: "ContactEmail", ParameterValue: ""},
+		}
+	} else {
+		params = []cfParam{
+			{ParameterKey: "OIDCIssuerURL", ParameterValue: data.OIDCIssuerURL},
+			{ParameterKey: "OIDCAudience", ParameterValue: data.OIDCAudience},
+			{ParameterKey: "OIDCSubjectClaim", ParameterValue: data.OIDCSubjectClaim},
+			{ParameterKey: "RoleName", ParameterValue: "CUDly-" + data.AccountSlug},
+		}
+	}
+	out, err := json.MarshalIndent(params, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("marshal cf params: %w", err)
+	}
+	return string(out) + "\n", nil
 }
