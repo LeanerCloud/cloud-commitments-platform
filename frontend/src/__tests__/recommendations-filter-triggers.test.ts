@@ -312,5 +312,161 @@ describe('Bundle B: column header filter triggers', () => {
       expect(groupBox?.checked).toBe(false);
       expect(groupBox?.indeterminate).toBe(true);
     });
+
+    test('individual SP checkbox change commits the partial-SP filter', async () => {
+      // Issue #482: start from a single-SP filter so the popover opens
+      // with only `savings-plans-compute` checked; ticking another SP
+      // box exercises the partial-set commit path.
+      (state.getRecommendationsColumnFilters as jest.Mock).mockReturnValue({
+        service: { kind: 'set', values: ['savings-plans-compute'] },
+      });
+      await loadRecommendations();
+      const serviceBtn = document.querySelector<HTMLButtonElement>('th .column-filter-btn[data-column="service"]');
+      serviceBtn?.click();
+      const cbEc2sp = document.querySelector<HTMLInputElement>('.column-filter-popover input[data-value="savings-plans-ec2instance"]');
+      expect(cbEc2sp?.checked).toBe(false);
+      cbEc2sp!.checked = true;
+      cbEc2sp!.dispatchEvent(new Event('change'));
+      // 2 of 4 service distinct values selected → filter committed with
+      // both SP slugs.
+      const calls = (state.setRecommendationsColumnFilter as jest.Mock).mock.calls;
+      const lastCall = calls[calls.length - 1];
+      expect(lastCall[0]).toBe('service');
+      expect(lastCall[1]?.kind).toBe('set');
+      expect((lastCall[1]?.values as string[]).sort()).toEqual(['savings-plans-compute', 'savings-plans-ec2instance']);
+    });
+  });
+
+  // Issue #658: Azure SP rows use service = "savingsplans" (no hyphen). Verify
+  // they appear in the rendered table and are recognized by the SP group toggle.
+  describe('Issue #658: Azure Savings Plans row rendering and SP group toggle', () => {
+    const azureSpRecs = [
+      { id: 'rec-aws-ec2',  provider: 'aws',   cloud_account_id: 'a1', service: 'ec2',           resource_type: 't3.medium', region: 'us-east-1', count: 1, term: 1, savings: 100, upfront_cost: 500 },
+      { id: 'rec-az-sp-1',  provider: 'azure',  cloud_account_id: 'sub1', service: 'savingsplans', resource_type: 'Compute',   region: 'eastus',    count: 2, term: 1, savings: 300, upfront_cost: 1200 },
+      { id: 'rec-sp-c',     provider: 'aws',   cloud_account_id: 'a1', service: 'savings-plans-compute', resource_type: 'sp', region: 'us-east-1', count: 1, term: 1, savings: 200, upfront_cost: 800 },
+    ];
+
+    beforeEach(() => {
+      (api.getRecommendations as jest.Mock).mockResolvedValue({
+        summary: {},
+        recommendations: azureSpRecs,
+        regions: [],
+      });
+      (state.getRecommendations as jest.Mock).mockReturnValue(azureSpRecs);
+      (state.getVisibleRecommendations as jest.Mock).mockReturnValue(azureSpRecs);
+      (state.getRecommendationsColumnFilters as jest.Mock).mockReturnValue({});
+    });
+
+    test('Azure SP rows (service="savingsplans") appear in the rendered table', async () => {
+      await loadRecommendations();
+      // The row's service badge shows the display name (#1683), not the slug.
+      const serviceBadges = Array.from(
+        document.querySelectorAll<HTMLElement>('td .service-badge'),
+      ).map((el) => el.textContent ?? '');
+      expect(serviceBadges).toContain('Savings Plans');
+      expect(serviceBadges).not.toContain('savingsplans');
+    });
+
+    test('service popover renders All Savings Plans toggle when Azure SP + AWS SP slugs are present', async () => {
+      // "savingsplans" + "savings-plans-compute" = 2 distinct SP slugs -> toggle should appear.
+      await loadRecommendations();
+      const serviceBtn = document.querySelector<HTMLButtonElement>(
+        'th .column-filter-btn[data-column="service"]',
+      );
+      serviceBtn?.click();
+      const groupBox = document.querySelector<HTMLInputElement>(
+        '.column-filter-popover input[data-role="sp-group"]',
+      );
+      expect(groupBox).not.toBeNull();
+      const groupLabel = groupBox?.closest('label');
+      expect(groupLabel?.textContent).toContain('All Savings Plans');
+    });
+
+    test('clicking All Savings Plans toggle selects both Azure SP and AWS SP slugs', async () => {
+      // Use 4 distinct service values (ec2, rds, savingsplans, savings-plans-compute)
+      // so that selecting ec2+rds (2 of 4) gives an active filter, and then toggling
+      // the SP group on (adding savingsplans + savings-plans-compute) yields 4 of 4 = all,
+      // which we avoid by keeping ec2 only (1 of 4 + 2 SPs = 3 of 4, stays partial).
+      const widerRecs = [
+        { id: 'rec-ec2',    provider: 'aws',   cloud_account_id: 'a1',   service: 'ec2',                  resource_type: 't3.medium', region: 'us-east-1', count: 1, term: 1, savings: 100, upfront_cost: 500 },
+        { id: 'rec-rds',    provider: 'aws',   cloud_account_id: 'a1',   service: 'rds',                  resource_type: 'db.t3',     region: 'us-east-1', count: 1, term: 1, savings: 120, upfront_cost: 600 },
+        { id: 'rec-az-sp',  provider: 'azure', cloud_account_id: 'sub1', service: 'savingsplans',         resource_type: 'Compute',   region: 'eastus',    count: 2, term: 1, savings: 300, upfront_cost: 1200 },
+        { id: 'rec-aws-sp', provider: 'aws',   cloud_account_id: 'a1',   service: 'savings-plans-compute', resource_type: 'sp',       region: 'us-east-1', count: 1, term: 1, savings: 200, upfront_cost: 800 },
+      ];
+      (api.getRecommendations as jest.Mock).mockResolvedValue({ summary: {}, recommendations: widerRecs, regions: [] });
+      (state.getRecommendations as jest.Mock).mockReturnValue(widerRecs);
+      (state.getVisibleRecommendations as jest.Mock).mockReturnValue(widerRecs);
+      // Start with ec2 selected only; SP slugs are not in the active filter.
+      (state.getRecommendationsColumnFilters as jest.Mock).mockReturnValue({
+        service: { kind: 'set', values: ['ec2'] },
+      });
+      await loadRecommendations();
+      const serviceBtn = document.querySelector<HTMLButtonElement>(
+        'th .column-filter-btn[data-column="service"]',
+      );
+      serviceBtn?.click();
+
+      // SP group toggle should be unchecked (no SP slugs are in the active filter).
+      const groupBox = document.querySelector<HTMLInputElement>(
+        '.column-filter-popover input[data-role="sp-group"]',
+      );
+      expect(groupBox).not.toBeNull();
+      expect(groupBox?.checked).toBe(false);
+
+      // Tick the SP group toggle (browser flips -> checked on click).
+      groupBox!.checked = true;
+      groupBox!.dispatchEvent(new Event('change'));
+
+      // Commit includes ec2 (already checked) + savingsplans + savings-plans-compute
+      // = 3 of 4 distinct values -> persisted as a set (not collapsed to null).
+      const calls = (state.setRecommendationsColumnFilter as jest.Mock).mock.calls;
+      const lastCall = calls[calls.length - 1];
+      expect(lastCall[0]).toBe('service');
+      expect(lastCall[1]?.kind).toBe('set');
+      const values = (lastCall[1]?.values as string[]).sort();
+      // Both the Azure SP umbrella slug and the AWS SP plan-type slug should be selected.
+      expect(values).toContain('savingsplans');
+      expect(values).toContain('savings-plans-compute');
+      // ec2 remains in the selection.
+      expect(values).toContain('ec2');
+    });
+  });
+
+  // Issue #1684: Opportunities group rows, payback card and action-bar wording.
+  describe('Issue #1684: Opportunities group rows, payback and wording', () => {
+    const base = { provider: 'aws', cloud_account_id: 'a1684', service: 'rds', resource_type: 'db.t4g.micro', engine: 'postgresql', region: 'eu-west-1', count: 1 };
+    const variants = [
+      { ...base, id: 'v1684-nu', term: 1, payment: 'no-upfront', savings: 10, upfront_cost: 0 },
+      { ...base, id: 'v1684-au', term: 1, payment: 'all-upfront', savings: 20, upfront_cost: 120 },
+    ];
+
+    async function load(recs: Array<Record<string, unknown>>, selected: string[] = []): Promise<void> {
+      (api.getRecommendations as jest.Mock).mockResolvedValue({ summary: {}, recommendations: recs, regions: [] });
+      (state.getRecommendations as jest.Mock).mockReturnValue(recs);
+      (state.getVisibleRecommendations as jest.Mock).mockReturnValue(recs);
+      (state.getRecommendationsColumnFilters as jest.Mock).mockReturnValue({});
+      (state.getSelectedRecommendationIDs as jest.Mock).mockReturnValue(new Set(selected));
+      await loadRecommendations();
+    }
+
+    test('expanded variant rows leave the group identity cells blank', async () => {
+      await load(variants);
+      const chevron = document.querySelector<HTMLButtonElement>('tr.rec-cell-summary-row .rec-cell-chevron');
+      if (chevron?.getAttribute('aria-expanded') !== 'true') chevron!.click();
+      const row = document.querySelector<HTMLTableRowElement>('tr.rec-variant-row[data-rec-id="v1684-au"]')!;
+      const cells = Array.from(row.cells).slice(1, 5).map((td) => td.textContent?.trim());
+      expect(cells).toEqual(['', '', '', '']);
+      expect(row.textContent).not.toContain('eu-west-1');
+      // The row is still named in full for assistive tech.
+      expect(row.querySelector('input[type="checkbox"]')?.getAttribute('aria-label')).toContain('db.t4g.micro (postgresql)');
+      expect(row.textContent).toContain('All Upfront');
+    });
+
+    test('collapsed group summary puts no space inside the period unit', async () => {
+      await load(variants);
+      const range = document.querySelector('tr.rec-cell-summary-row .rec-cell-range')?.textContent ?? '';
+      expect(range).toMatch(/\$20\/mo/);
+      expect(range).not.toContain('/ mo');
+    });
   });
 });
