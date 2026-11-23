@@ -31,7 +31,7 @@
 ## Project Architecture
 
 - Follow Domain-Driven Design with bounded contexts
-- Keep files under 500 lines (for non-test Go, `internal/filesizeguard` enforces it; existing offenders are capped in its `allowlist.txt`)
+- Keep files under 500 lines, source, test and CSS files included (for non-test Go, `internal/filesizeguard` enforces it; existing offenders are capped in its `allowlist.txt`). The one frontend exception is `frontend/src/index.html`, a logic-free markup template that HtmlWebpackPlugin and many jest suites consume as a single file; do not add other exceptions without a decision.
 - Use typed interfaces for all public APIs
 - Prefer TDD London School (mock-first) for new code
 - Use event sourcing for state changes
