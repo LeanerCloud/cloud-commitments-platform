@@ -30,7 +30,9 @@ describe('#1691 item 6: account form autofill hints', () => {
 });
 
 describe('#1691 item 7: group card header', () => {
-  const css = read('styles/settings.css');
+  const css = ['settings', 'settings-federation', 'settings-groups']
+    .map((name) => read(`styles/${name}.css`))
+    .join('\n');
 
   it('lets the text block shrink so the actions stay on the top row', () => {
     expect(css).toMatch(/\.group-card-header\s*>\s*div:first-child\s*\{[^}]*min-width:\s*0/);
