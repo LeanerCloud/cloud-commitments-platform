@@ -12,7 +12,7 @@ describe('CSS File Organization', () => {
   }
 
   test('base.css contains reset and typography', () => {
-    const base = readCssFile('base.css');
+    const base = readCssFile('base.css') + readCssFile('base-utilities.css');
     expect(base).toMatch(/\*\s*\{[^}]*box-sizing:\s*border-box/);
     expect(base).toMatch(/body\s*\{/);
     expect(base).toMatch(/\.hidden\s*\{/);
