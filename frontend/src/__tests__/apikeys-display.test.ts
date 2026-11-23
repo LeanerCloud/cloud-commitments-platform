@@ -7,7 +7,9 @@
 // The harness registers the module mocks, so it must be imported first.
 import { mockConfirmDialog } from './apikeys-harness';
 import {
-  loadApiKeys
+  loadApiKeys,
+  handleCreateApiKey,
+  showKeyCreatedModal
 } from '../apikeys';
 
 import * as api from '../api';
@@ -315,6 +317,90 @@ describe('API Keys Module', () => {
       // Absolute ISO on the title attribute for hover
       const span = container?.querySelector<HTMLElement>('[title]');
       expect(span?.getAttribute('title')).toBe(new Date(recentTs).toISOString());
+    });
+  });
+
+  describe('secret handling (issue #732)', () => {
+    test('a second submit while the first is in flight mints only one key and disables submit', async () => {
+      document.getElementById('create-apikey-modal')?.classList.remove('hidden');
+      (document.getElementById('apikey-name') as HTMLInputElement).value = 'Test Key';
+      (document.getElementById('apikey-password') as HTMLInputElement).value = 'pw';
+      (document.getElementById('apikey-expires-at') as HTMLInputElement).value = '2999-01-01';
+      let resolve!: (v: unknown) => void;
+      (api.createApiKey as jest.Mock).mockReturnValue(new Promise((r) => { resolve = r; }));
+      (api.getApiKeys as jest.Mock).mockResolvedValue({ api_keys: [] });
+      const event = { preventDefault: jest.fn() } as unknown as Event;
+
+      const first = handleCreateApiKey(event);
+      await handleCreateApiKey(event);
+      expect((document.getElementById('create-apikey-submit-btn') as HTMLButtonElement).disabled).toBe(true);
+      resolve({ api_key: 'k', key_id: 'key-1', key: { id: 'key-1', name: 'Test Key', key_prefix: 'abc' } });
+      await first;
+
+      expect(api.createApiKey).toHaveBeenCalledTimes(1);
+    });
+
+    test('Escape does not dismiss the created-key modal; the button does', () => {
+      showKeyCreatedModal('secret-key');
+      const modal = document.getElementById('apikey-created-modal')!;
+      modal.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      expect(document.getElementById('apikey-created-modal')).not.toBeNull();
+      expect(modal.classList.contains('hidden')).toBe(false);
+
+      document.getElementById('close-apikey-created-btn')!.click();
+      expect(document.getElementById('apikey-created-modal')).toBeNull();
+    });
+  });
+
+  describe('Error display', () => {
+    test('shows error in error element when available', async () => {
+      document.getElementById('create-apikey-modal')?.classList.remove('hidden');
+      const event = { preventDefault: jest.fn() } as unknown as Event;
+      await handleCreateApiKey(event);
+
+      const errorEl = document.getElementById('create-apikey-error');
+      expect(errorEl?.classList.contains('hidden')).toBe(false);
+      expect(errorEl?.textContent).not.toBe('');
+    });
+
+    test('falls back to toast when error element not available', async () => {
+      // Remove the inline error element so showError falls back to the
+      // shared toast system (Q4).
+      document.getElementById('create-apikey-error')?.remove();
+
+      const event = { preventDefault: jest.fn() } as unknown as Event;
+      await handleCreateApiKey(event);
+
+      expect(document.querySelector('.toast-error')?.querySelector('.toast-message')?.textContent).toBe('API key name is required');
+    });
+  });
+
+  describe('HTML escaping', () => {
+    test('escapes HTML in key names to prevent XSS', async () => {
+      const mockKeys = [
+        {
+          id: 'key-1',
+          name: '<script>alert("xss")</script>',
+          key_prefix: 'abc123',
+          is_active: true,
+          created_at: '2024-01-15T10:00:00Z'
+        }
+      ];
+
+      (api.getApiKeys as jest.Mock).mockResolvedValue({ api_keys: mockKeys });
+
+      await loadApiKeys();
+
+      const container = document.getElementById('apikeys-list');
+      expect(container?.innerHTML).not.toContain('<script>');
+      expect(container?.innerHTML).toContain('&lt;script&gt;');
+    });
+
+    test('escapes HTML in API key display', () => {
+      showKeyCreatedModal('<script>alert("xss")</script>');
+
+      const modal = document.getElementById('apikey-created-modal');
+      expect(modal?.innerHTML).not.toContain('<script>alert');
     });
   });
 });
