@@ -8,7 +8,6 @@ internal/api/validation.go	878	2026-11-23	split pending #341 (hot: concurrent br
 internal/config/interfaces.go	1060	2026-11-23	split pending #341 (hot: 10 commits in 14 days)
 internal/config/types.go	1939	2026-11-23	split pending #341 (hot: 21 commits in 14 days)
 internal/config/validation.go	1065	2026-11-23	split pending #341 (hot: concurrent branches touch it)
-internal/mocks/stores.go	3262	2026-11-23	split pending #341 (hot: 11 commits in 14 days)
 internal/planstep/resolve.go	713	2026-11-23	split pending #341 (hot: concurrent branches touch it)
 internal/scheduler/scheduler.go	2152	2026-11-23	split pending #341 (hot: 10 commits in 14 days)
 internal/server/app.go	1558	2026-11-23	split pending #341 (hot: 8 commits in 14 days)
