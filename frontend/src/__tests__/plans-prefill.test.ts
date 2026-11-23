@@ -100,6 +100,9 @@ describe('Plans Module', () => {
     `;
 
     jest.clearAllMocks();
+    // clearAllMocks keeps unconsumed mock*Once values; drop them and restore
+    // the harness default so no test inherits another's queued result (#1974).
+    (api.listAccountsMinimal as jest.Mock).mockReset().mockResolvedValue([]);
     window.alert = jest.fn();
     window.confirm = jest.fn().mockReturnValue(true);
     // Default confirmDialog to confirmed so tests that don't override it

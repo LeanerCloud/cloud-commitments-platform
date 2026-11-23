@@ -6,7 +6,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { loadPlans, openCreatePlanModal, setupPlanHandlers, savePlan, _resetRampHandlersForTest } from '../plans';
+import { loadPlans, openCreatePlanModal, closePlanModal, setupPlanHandlers, savePlan, _resetRampHandlersForTest } from '../plans';
 
 jest.mock('../api', () => ({
   getPlans: jest.fn(),
@@ -58,6 +58,9 @@ function azureOptgroup(): HTMLOptGroupElement {
 describe('plan modal service ids (#608)', () => {
   beforeEach(() => {
     document.body.innerHTML = loadRealIndexBody();
+    // Drop the selection snapshot a prefill test left in module state, or a
+    // later savePlan skips the flat-field service check (#1974).
+    closePlanModal();
     jest.clearAllMocks();
     _resetRampHandlersForTest();
   });
