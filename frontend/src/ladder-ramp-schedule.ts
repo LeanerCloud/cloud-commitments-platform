@@ -6,7 +6,7 @@
  * the server would accept and never lets through one it would refuse:
  *
  *  - Decoding follows Go's encoding/json into cloud-commitments-go
- *    pkg/ladder.RampSchedule (internal/config/validation.go
+ *    pkg/ladder.RampSchedule (internal/config/validation_ladder.go
  *    validateLadderRampSchedule): keys match case-insensitively, a missing or
  *    null `steps` is an empty list, a null step is the zero step, a missing or
  *    null `after_days` / `fraction` is 0, `after_days` must be an integer and

@@ -121,7 +121,7 @@ linters:
         path: _test\.go
       # misspell: "cancelled" is the canonical DB column name (migration 000035,
       # UK spelling throughout; migration #1277 tracks the rename). "initialised"
-      # appears in established comments in internal/config/types.go matching the
+      # appears in established comments in the internal/config types files matching the
       # existing UK convention. Allow both spellings in the files listed below.
       - linters:
           - misspell

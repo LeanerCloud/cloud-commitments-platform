@@ -53,7 +53,7 @@ func (s *PostgresStore) CancelExecutionAtomicTokenPinned(ctx context.Context, tx
 // cancelExecutionAtomic is the shared body of CancelExecutionAtomic and
 // CancelExecutionAtomicTokenPinned; a nil tokenHash skips the token pin.
 func (s *PostgresStore) cancelExecutionAtomic(ctx context.Context, tx pgx.Tx, executionID string, cancelledBy, tokenHash *string) (canceled bool, currentStatus string, err error) {
-	// StatusCanceled is the canonical US-spelling value; see types.go.
+	// StatusCanceled is the canonical US-spelling value; see types_executions.go.
 	q := `
 		UPDATE purchase_executions
 		   SET status       = $3,
@@ -126,7 +126,7 @@ func (s *PostgresStore) cancelRejection(ctx context.Context, executionID string,
 // real DB error. Must be called inside a WithTx block so the suppression
 // cleanup commits atomically with the status flip.
 func (s *PostgresStore) CancelScheduledExecutionAtomic(ctx context.Context, tx pgx.Tx, executionID string, cancelledBy *string) (canceled bool, currentStatus string, err error) {
-	// StatusCanceled is the canonical US-spelling value; see types.go.
+	// StatusCanceled is the canonical US-spelling value; see types_executions.go.
 	q := `
 		UPDATE purchase_executions
 		   SET status       = $3,

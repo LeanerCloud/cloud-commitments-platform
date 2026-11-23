@@ -342,7 +342,7 @@ function overlayAzureSavingsPlans(azure: ServerCommitmentOptions['azure']): void
  * Map legacy AWS payment values onto the provider-canonical token.
  *
  * MUST stay in lockstep with the Go-side mapping in
- * internal/config/validation.go:crossProviderPaymentAlias — this function
+ * internal/config/validation_payment.go:crossProviderPaymentAlias — this function
  * decides which option the plan/purchase dropdowns pre-select, so a
  * disagreement means the UI shows one billing schedule while the backend
  * canonicalizes to another. See #1503.
