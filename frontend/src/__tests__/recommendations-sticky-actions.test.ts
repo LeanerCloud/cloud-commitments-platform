@@ -6,6 +6,7 @@
 // The harness registers the module mocks, so it must be imported first.
 import { mockFactoryDefaults } from './recommendations-harness';
 import { loadRecommendations } from '../recommendations';
+import { localStorageMock } from './setup';
 import * as api from '../api';
 import * as state from '../state';
 
@@ -376,5 +377,63 @@ describe('Bundle B: sticky bottom action box', () => {
     expect(planBtn.disabled).toBe(false);
     expect(planBtn.textContent).toBe('Plan from 2 selected');
     expect(hint.hidden).toBe(true);
+  });
+
+  const selectOversize = () => {
+    const many = Array.from({ length: 1001 }, (_, i) => ({ id: `many-${i}`, provider: 'aws', service: 'ec2', resource_type: 't3.medium', region: 'us-east-1', count: 1, term: 1, payment: 'all-upfront', savings: 100, upfront_cost: 500 }));
+    (state.getVisibleRecommendations as jest.Mock).mockReturnValue(many);
+    (state.getSelectedRecommendationIDs as jest.Mock).mockReturnValue(new Set(many.map((r) => r.id)));
+  };
+
+  test('plan button disabled with a hint when the selection exceeds the plan size limit (#1746)', async () => {
+    selectOversize();
+    await loadRecommendations();
+    const purchaseBtn = document.getElementById('bulk-purchase-btn') as HTMLButtonElement;
+    const planBtn = document.getElementById('create-plan-btn') as HTMLButtonElement;
+    const hint = document.getElementById('recommendations-action-disabled-hint') as HTMLSpanElement;
+    expect(planBtn.disabled).toBe(true);
+    expect(hint.hidden).toBe(false);
+    expect(hint.textContent).toContain('at most 1000');
+    expect(purchaseBtn.disabled).toBe(false);
+    expect(purchaseBtn.textContent).toBe('Purchase 1001 selected');
+  });
+
+  test('no size-limit hint when the user cannot create plans (#1746)', async () => {
+    const admin = (state.getCurrentUser as jest.Mock)();
+    (state.getCurrentUser as jest.Mock).mockReturnValue({ id: 'u-ro', email: 'ro@example.com', groups: [] });
+    try {
+      selectOversize();
+      await loadRecommendations();
+      expect((document.getElementById('create-plan-btn') as HTMLButtonElement).hidden).toBe(true);
+      expect((document.getElementById('recommendations-action-disabled-hint') as HTMLSpanElement).hidden).toBe(true);
+    } finally {
+      (state.getCurrentUser as jest.Mock).mockReturnValue(admin);
+    }
+  });
+
+  test.each([
+    [33.33, '100'],
+    [50, '50'],
+    [150, '100'],
+    [0, '100'],
+    ['abc', '100'],
+  ])('stored bulk-purchase capacity %p seeds the Capacity input as %s (#136)', async (stored, expected) => {
+    localStorageMock.getItem.mockImplementation((key: string) =>
+      key === 'cudly.recommendations.bulkPurchase.v1' ? JSON.stringify({ capacity: stored }) : null);
+    await loadRecommendations();
+    expect((document.getElementById('bulk-purchase-capacity') as HTMLInputElement).value).toBe(expected);
+  });
+
+  test('Capacity input value persists across re-render (mount-once-then-update)', async () => {
+    await loadRecommendations();
+    const cap = document.getElementById('bulk-purchase-capacity') as HTMLInputElement;
+    cap.value = '50';
+    // Trigger an unrelated re-render via sort
+    const header = document.querySelector<HTMLTableCellElement>('th[data-sort="service"]');
+    header?.click();
+    const cap2 = document.getElementById('bulk-purchase-capacity') as HTMLInputElement;
+    // Same DOM node (mount-once); value preserved (no rebuild).
+    expect(cap2).toBe(cap);
+    expect(cap2.value).toBe('50');
   });
 });
