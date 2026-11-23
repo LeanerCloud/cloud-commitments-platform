@@ -24,21 +24,11 @@ type LadderRIDescriberFactory func(ctx context.Context, cloudAccountID, region s
 
 // LadderRIDescriber is the production RI factory, built like LadderSPDescriber.
 func (m *Manager) LadderRIDescriber(ctx context.Context, cloudAccountID, region string) (RIDescriber, error) {
-	account, err := m.config.GetCloudAccount(ctx, cloudAccountID)
-	if err != nil {
-		return nil, fmt.Errorf("load cloud account %s: %w", cloudAccountID, err)
-	}
-	if account == nil {
-		return nil, fmt.Errorf("cloud account %s not found", cloudAccountID)
-	}
-	provCfg, err := m.resolveAccountProvider(ctx, *account)
+	creds, err := m.ladderAWSCredentials(ctx, cloudAccountID)
 	if err != nil {
 		return nil, err
 	}
-	if provCfg.AWSCredentialsProvider == nil {
-		return nil, fmt.Errorf("cloud account %s resolved without AWS credentials", cloudAccountID)
-	}
-	return ec2.NewFromConfig(aws.Config{Region: region, Credentials: provCfg.AWSCredentialsProvider}), nil
+	return ec2.NewFromConfig(aws.Config{Region: region, Credentials: creds}), nil
 }
 
 // riCountsAsExisting mirrors the ladder's RI layer input (the pinned go

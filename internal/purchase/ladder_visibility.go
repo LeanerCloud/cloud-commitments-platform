@@ -44,21 +44,11 @@ type LadderSPDescriberFactory func(ctx context.Context, cloudAccountID, region s
 // LadderSPDescriber is the production factory: the same per-account credential
 // resolution the purchase itself used.
 func (m *Manager) LadderSPDescriber(ctx context.Context, cloudAccountID, region string) (SPDescriber, error) {
-	account, err := m.config.GetCloudAccount(ctx, cloudAccountID)
-	if err != nil {
-		return nil, fmt.Errorf("load cloud account %s: %w", cloudAccountID, err)
-	}
-	if account == nil {
-		return nil, fmt.Errorf("cloud account %s not found", cloudAccountID)
-	}
-	provCfg, err := m.resolveAccountProvider(ctx, *account)
+	creds, err := m.ladderAWSCredentials(ctx, cloudAccountID)
 	if err != nil {
 		return nil, err
 	}
-	if provCfg.AWSCredentialsProvider == nil {
-		return nil, fmt.Errorf("cloud account %s resolved without AWS credentials", cloudAccountID)
-	}
-	return sdksp.NewFromConfig(aws.Config{Region: region, Credentials: provCfg.AWSCredentialsProvider}), nil
+	return sdksp.NewFromConfig(aws.Config{Region: region, Credentials: creds}), nil
 }
 
 type ladderVisibility struct {
