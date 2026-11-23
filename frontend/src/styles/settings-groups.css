@@ -1,3 +1,140 @@
+/* Expandable user rows */
+.user-expand-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--cudly-text-muted);
+    font-size: var(--cudly-fs-sm);
+    padding: 0.2rem 0.4rem;
+}
+.user-expand-btn:hover { color: var(--cudly-primary); }
+.user-expand-row.hidden { display: none; }
+.user-expand-panel {
+    background: var(--cudly-surface-muted);
+    padding: 1rem 1.25rem;
+    border-top: 1px solid var(--cudly-border);
+    border-bottom: 1px solid var(--cudly-border);
+}
+.expand-panel-body {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+}
+.expand-panel-groups h5,
+.expand-panel-perms h5 {
+    margin: 0 0 0.5rem;
+    font-size: var(--cudly-fs-sm);
+    font-weight: var(--cudly-fw-semibold);
+    color: var(--cudly-text);
+}
+.group-checkbox-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+.group-checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: var(--cudly-fs-sm);
+    cursor: pointer;
+    padding: 0.15rem 0;
+}
+.group-checkbox-label:hover { color: var(--cudly-primary); }
+.perm-badge-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+}
+@media (max-width: 800px) {
+    .expand-panel-body { grid-template-columns: 1fr; }
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+    color: var(--cudly-text-muted);
+    padding: 0 0.25rem;
+}
+.modal-close:hover {
+    color: var(--cudly-primary);
+}
+.perm-preview {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    padding: 0.5rem;
+    background: var(--cudly-surface-muted);
+    border: 1px solid var(--cudly-border);
+    border-radius: 4px;
+    min-height: 2rem;
+}
+.dup-accounts-list {
+    max-height: 200px;
+    overflow-y: auto;
+    padding: 0.5rem;
+    background: var(--cudly-surface);
+    border: 1px solid var(--cudly-border);
+    border-radius: 4px;
+    margin-top: 0.5rem;
+}
+.dup-accounts-list label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0;
+    font-size: var(--cudly-fs-sm);
+    cursor: pointer;
+    margin: 0;
+}
+.dup-account-hidden { display: none; }
+.dup-empty {
+    font-size: var(--cudly-fs-sm);
+    color: var(--cudly-text-muted);
+    font-style: italic;
+    padding: 0.5rem;
+    margin: 0;
+}
+
+/* Issue #110: inline-editable override cells on the per-account
+   overrides panel. */
+.override-coverage-input {
+    width: 5em;
+}
+tr.override-disabled {
+    opacity: 0.55;
+}
+/* Issue #613: note on an override stored under an old Azure/GCP service id. */
+.override-legacy-hint {
+    max-width: 14rem;
+    font-size: var(--cudly-fs-xs);
+    color: var(--cudly-warn-fg);
+}
+
+/* Issue #8: "Updated <when>" line under the override's service name. One
+   line where there is room; below the drawer breakpoint it may wrap so the
+   Service column does not squeeze the inline Term/Payment selects further. */
+.last-updated-stamp {
+    display: block;
+    margin-top: 0.125rem;
+    color: var(--cudly-text-muted);
+    font-size: var(--cudly-fs-xs);
+    white-space: nowrap;
+}
+@media (max-width: 768px) {
+    .last-updated-stamp {
+        white-space: normal;
+    }
+}
+
+/* The matrix scrolls sideways; its absolutely positioned .sr-only cell labels
+ * need this scroller as their containing block or they extend the page. */
+#permission-matrix {
+    position: relative;
+}
 /* Admin -> Purchasing policies section links (issue #190). Sticky under
  * the topbar inside the panel (no negative-margin gutter rail: that one
  * collided with the sidebar, see settings-subnav.ts). */
