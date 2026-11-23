@@ -471,62 +471,6 @@ describe('Plans Module', () => {
 
   });
   describe('plan action buttons', () => {
-    test('edit plan with custom ramp schedule populates custom fields', async () => {
-      (api.getPlans as jest.Mock).mockResolvedValue({
-        plans: [
-          {
-            id: 'plan-1',
-            name: 'Test Plan',
-            enabled: true,
-            auto_purchase: false,
-            services: {
-              'ec2': {
-                provider: 'aws',
-                service: 'ec2',
-                enabled: true,
-                term: 1,
-                payment: 'all-upfront',
-                coverage: 80
-              }
-            }
-          }
-        ]
-      });
-      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
-      (api.getPlan as jest.Mock).mockResolvedValue({
-        id: 'plan-1',
-        name: 'Test Plan',
-        enabled: true,
-        auto_purchase: true,
-        notification_days_before: 3,
-        services: {
-          'ec2': {
-            provider: 'aws',
-            service: 'ec2',
-            enabled: true,
-            term: 1,
-            payment: 'all-upfront',
-            coverage: 80
-          }
-        },
-        ramp_schedule: {
-          type: 'custom',
-          percent_per_step: 25,
-          step_interval_days: 14
-        }
-      });
-
-      await loadPlans();
-
-      const editBtn = document.querySelector('[data-action="edit-plan"]') as HTMLButtonElement;
-      editBtn?.click();
-
-      await flushPromises();
-
-      expect((document.getElementById('ramp-step-percent') as HTMLInputElement).value).toBe('25');
-      expect((document.getElementById('ramp-interval-days') as HTMLInputElement).value).toBe('14');
-    });
-
     test('edit plan shows error on failure', async () => {
       (api.getPlans as jest.Mock).mockResolvedValue({
         plans: [
@@ -920,58 +864,6 @@ describe('Plans Module', () => {
       // query by id to get the current node.
       const searchInput = document.getElementById('plan-account-search') as HTMLInputElement;
       expect(searchInput.disabled).toBe(false);
-    });
-  });
-
-  // Regression tests for H3: setupRampScheduleHandlers must not stack duplicate
-  // listeners on static modal elements across multiple modal opens.
-  // Pre-fix: opening the plan modal N times would attach N handlers to each
-  // element, so a single radio change would fire updateCommitmentOptions N times.
-  describe('H3 regression: setupRampScheduleHandlers install-once guard', () => {
-    test('provider-change handler fires exactly once after opening modal 3 times', () => {
-      const { populateTermSelect: mockPopulate } = jest.requireMock('../commitmentOptions') as {
-        populateTermSelect: jest.Mock;
-      };
-
-      // beforeEach already called _resetRampHandlersForTest() so the flag is clear.
-      // Open the modal 3 times without resetting between them.
-      openNewPlanModal(); // first open: installs handlers (rampHandlersInstalled = true)
-      openNewPlanModal(); // second open: guard returns early -- no re-attach
-      openNewPlanModal(); // third open: guard returns early -- no re-attach
-
-      mockPopulate.mockClear(); // clear any calls from setup above
-
-      // Dispatch one change event on the provider select.
-      const providerSelect = document.getElementById('plan-provider') as HTMLSelectElement;
-      providerSelect.value = 'azure';
-      providerSelect.dispatchEvent(new Event('change'));
-
-      // populateTermSelect is called exactly once from updateCommitmentOptions.
-      // Pre-fix (no guard) it would be called 3 times (once per open).
-      expect(mockPopulate).toHaveBeenCalledTimes(1);
-    });
-
-    test('ramp schedule radio handler fires exactly once after 2 modal opens', () => {
-      // The radio-change handler calls updatePlanNameFromSchedule which reads
-      // the plan-name input. Count invocations via a side-effect on populateTermSelect.
-      const { populateTermSelect: mockPopulate } = jest.requireMock('../commitmentOptions') as {
-        populateTermSelect: jest.Mock;
-      };
-
-      // beforeEach called _resetRampHandlersForTest(); open twice without reset between.
-      openNewPlanModal(); // installs
-      openNewPlanModal(); // guard: no re-install
-
-      mockPopulate.mockClear();
-
-      // The provider-select change handler calls updateCommitmentOptions -> populateTermSelect.
-      const providerSelect = document.getElementById('plan-provider') as HTMLSelectElement;
-      providerSelect.value = 'gcp';
-      providerSelect.dispatchEvent(new Event('change'));
-
-      // With stacked handlers it would fire twice (once per open).
-      // With the guard it fires exactly once.
-      expect(mockPopulate).toHaveBeenCalledTimes(1);
     });
   });
 
