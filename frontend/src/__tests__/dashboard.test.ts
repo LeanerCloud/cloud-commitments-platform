@@ -167,9 +167,8 @@ describe('Dashboard Module', () => {
     // Import the public helpers from dashboard. The module is already
     // loaded above via the jest.mock chain, so we can import directly.
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { renderSavingsByService, computeServiceStats, computeServiceStatsFromRecs, savingsLayerColors } = require('../dashboard') as {
+    const { renderSavingsByService, computeServiceStatsFromRecs, savingsLayerColors } = require('../dashboard') as {
       renderSavingsByService: (recs: unknown[], byService?: Record<string, { potential_savings: number; current_savings: number }>, filterDesc?: string) => void;
-      computeServiceStats: (dataPoints: unknown[]) => Map<string, { min: number; max: number; sum: number; count: number; samples: number[] }>;
       computeServiceStatsFromRecs: (recs: unknown[]) => Map<string, { min: number; max: number; sum: number; count: number; samples: number[]; minLabel?: string; maxLabel?: string; unknownCells?: number }>;
       savingsLayerColors: () => { current: string; lowestOption: string; upside: string };
     };
@@ -220,72 +219,6 @@ describe('Dashboard Module', () => {
       });
       mockFormatSavingsRange.mockImplementation((min: number, max: number) => min === max ? `$${min}` : `$${min} – $${max}`);
       (api.getRecommendations as jest.Mock).mockResolvedValue([]);
-    });
-
-    // computeServiceStats unit tests (retained: function still exported for legacy compatibility).
-    describe('computeServiceStats (legacy data-points path)', () => {
-      test('returns empty map for empty data points', () => {
-        const result = computeServiceStats([]);
-        expect(result.size).toBe(0);
-      });
-
-      test('returns empty map when all data points have no by_service', () => {
-        const result = computeServiceStats([
-          { timestamp: 't1', total_savings: 100, total_upfront: 0, purchase_count: 1, cumulative_savings: 100 },
-        ]);
-        expect(result.size).toBe(0);
-      });
-
-      test('accumulates min/max/sum/count correctly for a single service', () => {
-        const points = [
-          { timestamp: 't1', total_savings: 0, total_upfront: 0, purchase_count: 0, cumulative_savings: 0, by_service: { ec2: 50 } },
-          { timestamp: 't2', total_savings: 0, total_upfront: 0, purchase_count: 0, cumulative_savings: 0, by_service: { ec2: 200 } },
-          { timestamp: 't3', total_savings: 0, total_upfront: 0, purchase_count: 0, cumulative_savings: 0, by_service: { ec2: 100 } },
-        ];
-        const result = computeServiceStats(points);
-        expect(result.size).toBe(1);
-        const ec2 = result.get('ec2');
-        expect(ec2?.min).toBe(50);
-        expect(ec2?.max).toBe(200);
-        expect(ec2?.sum).toBe(350);
-        expect(ec2?.count).toBe(3);
-      });
-
-      test('accumulates stats for multiple services independently', () => {
-        const points = [
-          { timestamp: 't1', total_savings: 0, total_upfront: 0, purchase_count: 0, cumulative_savings: 0, by_service: { ec2: 100, rds: 50 } },
-          { timestamp: 't2', total_savings: 0, total_upfront: 0, purchase_count: 0, cumulative_savings: 0, by_service: { ec2: 300, rds: 80 } },
-        ];
-        const result = computeServiceStats(points);
-        expect(result.size).toBe(2);
-        expect(result.get('ec2')?.min).toBe(100);
-        expect(result.get('ec2')?.max).toBe(300);
-        expect(result.get('rds')?.min).toBe(50);
-        expect(result.get('rds')?.max).toBe(80);
-      });
-
-      test('skips data points with missing by_service (omitempty)', () => {
-        const points = [
-          { timestamp: 't1', total_savings: 0, total_upfront: 0, purchase_count: 0, cumulative_savings: 0 },
-          { timestamp: 't2', total_savings: 0, total_upfront: 0, purchase_count: 0, cumulative_savings: 0, by_service: { ec2: 200 } },
-        ];
-        const result = computeServiceStats(points);
-        expect(result.get('ec2')?.count).toBe(1);
-      });
-
-      test('stores raw sample values for median computation', () => {
-        const points = [
-          { timestamp: 't1', total_savings: 0, total_upfront: 0, purchase_count: 0, cumulative_savings: 0, by_service: { ec2: 50 } },
-          { timestamp: 't2', total_savings: 0, total_upfront: 0, purchase_count: 0, cumulative_savings: 0, by_service: { ec2: 200 } },
-          { timestamp: 't3', total_savings: 0, total_upfront: 0, purchase_count: 0, cumulative_savings: 0, by_service: { ec2: 100 } },
-        ];
-        const result = computeServiceStats(points);
-        const ec2 = result.get('ec2');
-        expect(ec2?.samples).toHaveLength(3);
-        expect(ec2?.samples).toContain(50);
-        expect(ec2?.samples).toContain(100);
-        expect(ec2?.samples).toContain(200);
-      });
     });
 
     // computeServiceStatsFromRecs unit tests.
