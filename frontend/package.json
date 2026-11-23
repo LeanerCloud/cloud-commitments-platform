@@ -9,6 +9,7 @@
     "watch": "webpack --mode development --watch",
     "test": "jest --coverage",
     "test:watch": "jest --watch",
+    "test:random": "bash ../scripts/frontend-test-random.sh",
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install --with-deps chromium",
     "lint": "eslint 'src/**/*.ts' 'tests-e2e/**/*.ts' playwright.config.ts",

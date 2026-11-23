@@ -386,6 +386,8 @@ npx jest
 npx jest --coverage
 ```
 
+`npm run test:random` runs the order-independent test families under fixed `--randomize` seeds (CI runs it); add a family to `FAMILIES` in `scripts/frontend-test-random.sh` once its tests are order-independent.
+
 The frontend builds to `frontend/dist/` and is deployed to CDN (CloudFront/Azure CDN/Cloud CDN) as static files.
 
 ---

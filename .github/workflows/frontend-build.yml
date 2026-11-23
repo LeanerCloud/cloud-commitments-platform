@@ -105,3 +105,7 @@ jobs:
       - name: Run frontend tests
         if: steps.changes.outputs.frontend == 'true'
         run: npx jest --no-coverage --silent
+
+      - name: Run frontend tests under fixed random seeds
+        if: steps.changes.outputs.frontend == 'true'
+        run: npm run test:random
