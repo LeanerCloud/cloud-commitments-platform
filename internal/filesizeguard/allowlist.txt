@@ -14,4 +14,3 @@ internal/planstep/resolve.go	713	2026-11-23	split pending #341 (hot: concurrent 
 internal/scheduler/scheduler.go	2152	2026-11-23	split pending #341 (hot: 10 commits in 14 days)
 internal/server/app.go	1558	2026-11-23	split pending #341 (hot: 8 commits in 14 days)
 internal/server/handler_ladder.go	1013	2026-11-23	split pending #341 (hot: 8 commits in 14 days)
-internal/server/scheduledauth/validator.go	558	2026-11-23	split pending #341
