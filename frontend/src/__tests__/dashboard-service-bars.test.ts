@@ -6,6 +6,7 @@
 
 // The harness registers the module mocks, so it must be imported first.
 import { mockShowToast, mockConfirmDialog, mockGroupRecsByCell, mockPageLevelRange, mockFormatSavingsRange } from './dashboard-harness';
+import { loadDashboard } from '../dashboard';
 import { Chart } from 'chart.js';
 import * as api from '../api';
 
@@ -243,6 +244,127 @@ describe('Dashboard Module', () => {
         expect(labels[0]).toBe('rds');
         expect(labels[1]).toBe('ec2');
         expect(labels[2]).toBe('lambda');
+      });
+
+      test('destroys existing chart instance before re-rendering', () => {
+        buildDOM();
+        const mockDestroyA = jest.fn();
+        (Chart as unknown as jest.Mock).mockImplementationOnce(() => ({ destroy: mockDestroyA }));
+
+        const recs = [rec('ec2', 100)];
+        renderSavingsByService(recs);
+        // Second call must destroy the first chart.
+        renderSavingsByService(recs);
+        expect(mockDestroyA).toHaveBeenCalled();
+      });
+
+      test('no-ops gracefully when canvas is missing from DOM', () => {
+        // No buildDOM() call — canvas absent.
+        expect(() => renderSavingsByService([rec('ec2', 100)])).not.toThrow();
+      });
+
+      // Issue #867: filter-aware empty state.
+      test('empty state shows generic text when no filter is active', () => {
+        buildDOM();
+        renderSavingsByService([], {}, '');
+        const empty = document.getElementById('savings-by-service-empty');
+        expect(empty?.classList.contains('hidden')).toBe(false);
+        expect(empty?.textContent).toBe('No positive potential savings found for current recommendations.');
+      });
+
+      test('empty state mentions filter when provider chip is active and result is empty', () => {
+        buildDOM();
+        renderSavingsByService([], {}, 'AWS');
+        const empty = document.getElementById('savings-by-service-empty');
+        expect(empty?.classList.contains('hidden')).toBe(false);
+        expect(empty?.textContent).toContain('AWS');
+        expect(empty?.textContent).toContain('selected filter');
+      });
+
+      test('empty state mentions filter when account chip is active and result is empty', () => {
+        buildDOM();
+        renderSavingsByService([], {}, 'uuid-acct-1');
+        const empty = document.getElementById('savings-by-service-empty');
+        expect(empty?.classList.contains('hidden')).toBe(false);
+        expect(empty?.textContent).toContain('uuid-acct-1');
+      });
+
+      test('empty state text updates when filter changes between renders', () => {
+        buildDOM();
+        // First render with data -- chart shown, empty hidden.
+        renderSavingsByService([rec('ec2', 100)]);
+        // Second render with filter-narrowed empty result.
+        renderSavingsByService([], {}, 'AWS, uuid-acct-2');
+        const empty = document.getElementById('savings-by-service-empty');
+        expect(empty?.classList.contains('hidden')).toBe(false);
+        expect(empty?.textContent).toContain('AWS, uuid-acct-2');
+      });
+
+      test('loadDashboard wires range bars to recommendations, not trend data', async () => {
+        // The range bar chart must receive the recs from getRecommendations,
+        // not from getSavingsAnalytics. Verify by providing recs but no analytics.
+        buildDOM();
+        const summaryEl = document.createElement('section');
+        summaryEl.id = 'summary';
+        const upcomingEl = document.createElement('div');
+        upcomingEl.id = 'upcoming-list';
+        document.body.appendChild(summaryEl);
+        document.body.appendChild(upcomingEl);
+
+        (api.getDashboardSummary as jest.Mock).mockResolvedValue({
+          potential_monthly_savings: 0,
+          total_recommendations: 1, active_commitments: 0, committed_monthly: 0,
+          target_coverage: 80, ytd_savings: 0,
+          by_service: {},
+        });
+        (api.getUpcomingPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+        // Provide a rec so the bar chart should render (not show empty state).
+        (api.getRecommendations as jest.Mock).mockResolvedValue([rec('ec2', 150)]);
+        // Analytics deliberately absent/empty -- bar chart should still render from recs.
+        (api.getSavingsAnalytics as jest.Mock).mockResolvedValue({ data_points: [] });
+
+        await loadDashboard();
+
+        expect(document.getElementById('savings-by-service-chart')?.classList.contains('hidden')).toBe(false);
+        expect(document.getElementById('savings-by-service-empty')?.classList.contains('hidden')).toBe(true);
+      });
+
+      // Issue #908: the merged chart must keep honoring the topbar chips.
+      // loadDashboard re-runs on every chip change (via the state subscribers
+      // wired in setupDashboardHandlers), so a second load with new filter
+      // results must re-render the chart with the new data.
+      test('re-renders the merged chart when the filter changes between loads', async () => {
+        buildDOM();
+        const summaryEl = document.createElement('section');
+        summaryEl.id = 'summary';
+        const upcomingEl = document.createElement('div');
+        upcomingEl.id = 'upcoming-list';
+        document.body.appendChild(summaryEl);
+        document.body.appendChild(upcomingEl);
+
+        (api.getDashboardSummary as jest.Mock).mockResolvedValue({
+          potential_monthly_savings: 0, total_recommendations: 1,
+          active_commitments: 0, committed_monthly: 0, target_coverage: 80,
+          ytd_savings: 0, by_service: { ec2: { potential_savings: 150, current_savings: 90 } },
+        });
+        (api.getUpcomingPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+        (api.getSavingsAnalytics as jest.Mock).mockResolvedValue({ data_points: [] });
+
+        // First load: AWS/ec2 result.
+        (api.getRecommendations as jest.Mock).mockResolvedValue([rec('ec2', 150)]);
+        await loadDashboard();
+        const chartCtor = Chart as unknown as jest.Mock;
+        const lastChartData = (): { labels: string[] } =>
+          (chartCtor.mock.calls[chartCtor.mock.calls.length - 1]?.[1] as { data: { labels: string[] } }).data;
+        expect(lastChartData().labels).toEqual(['ec2']);
+
+        // Filter changes -> new recs -> second load must re-render. rds appears
+        // from the new recs (total=220); ec2 still appears from byService
+        // current_savings=90 even without a rec in this load. rds sorts first.
+        (api.getRecommendations as jest.Mock).mockResolvedValue([rec('rds', 220)]);
+        await loadDashboard();
+        expect(lastChartData().labels).toContain('rds');
+        expect(lastChartData().labels[0]).toBe('rds');
       });
     });
   });
