@@ -187,3 +187,165 @@ describe('handleExecutePurchase — single-record path', () => {
     expect(lastToastKind()).toBe('error');
   });
 });
+
+
+describe('handleExecutePurchase — single-record path', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    // Default: fan-out never opened (null; [] means fan-out is open with every bucket skipped), one single-record rec
+    (recs.getFanOutBuckets as jest.Mock).mockReturnValue(null);
+    (recs.getPurchaseModalRecommendations as jest.Mock).mockReturnValue([buildMinimalRec()]);
+    (plans.closePurchaseModal as jest.Mock).mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    document.body.textContent = '';
+  });
+
+  test('failure without an execution_id keeps the modal open for retry', async () => {
+    (api.executePurchase as jest.Mock).mockRejectedValue(new Error('network down'));
+
+    const btn = setup();
+    btn.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(plans.closePurchaseModal).not.toHaveBeenCalled();
+  });
+
+  test('does NOT open Archera offer modal when the approval submission throws', async () => {
+    (api.executePurchase as jest.Mock).mockRejectedValue(new Error('boom'));
+
+    const btn = setup();
+    btn.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(lastToastKind()).toBe('error');
+    expect(archera.openArcheraOfferModal).not.toHaveBeenCalled();
+  });
+
+  // Issue #331: fan-out open with every bucket skipped must not fall through
+  // to (possibly stale) single-row state.
+  test('fan-out with every bucket skipped refuses instead of submitting single-row state', async () => {
+    (recs.getFanOutBuckets as jest.Mock).mockReturnValue([]);
+
+    const btn = setup();
+    btn.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(api.executePurchase).not.toHaveBeenCalled();
+    expect(lastToastMessage()).toBe('No recommendations selected for purchase.');
+    expect(lastToastKind()).toBe('warning');
+  });
+
+  // Issue #597: details must be preserved in the POST body on the single-rec path.
+  test('#597 single-rec — details blob preserved for EC2 Windows rec', async () => {
+    const windowsDetails = { platform: 'Windows', tenancy: 'dedicated', scope: 'Region' };
+    (recs.getPurchaseModalRecommendations as jest.Mock).mockReturnValue([
+      {
+        id: 'rec-win-single',
+        provider: 'aws' as const,
+        service: 'ec2',
+        region: 'us-east-1',
+        resource_type: 'm5.xlarge',
+        engine: undefined,
+        details: windowsDetails,
+        count: 1,
+        term: 1,
+        payment: 'all-upfront',
+        upfront_cost: 400,
+        monthly_cost: 40,
+        savings: 80,
+      },
+    ]);
+
+    (api.executePurchase as jest.Mock).mockResolvedValue({
+      execution_id: 'exec-win-single',
+      status: 'queued',
+      email_sent: true,
+      approval_recipient: 'approver@example.com',
+    });
+
+    const btn = setup();
+    btn.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(api.executePurchase).toHaveBeenCalledTimes(1);
+    const [submittedRecs] = (api.executePurchase as jest.Mock).mock.calls[0] as [
+      Array<{ details?: unknown }>,
+      number,
+    ];
+    expect(submittedRecs[0]?.details).toEqual(windowsDetails);
+  });
+
+  // Issue #597: details must be preserved in the POST body on the single-rec path.
+  test('#597 single-rec — details blob preserved for RDS Postgres rec', async () => {
+    const rdsDetails = { engine: 'postgres', multi_az: false };
+    (recs.getPurchaseModalRecommendations as jest.Mock).mockReturnValue([
+      {
+        id: 'rec-rds-single',
+        provider: 'aws' as const,
+        service: 'rds',
+        region: 'ap-southeast-1',
+        resource_type: 'db.r5.large',
+        engine: 'postgres',
+        details: rdsDetails,
+        count: 1,
+        term: 3,
+        payment: 'no-upfront',
+        upfront_cost: 0,
+        monthly_cost: 120,
+        savings: 90,
+      },
+    ]);
+
+    (api.executePurchase as jest.Mock).mockResolvedValue({
+      execution_id: 'exec-rds-single',
+      status: 'queued',
+      email_sent: true,
+      approval_recipient: 'approver@example.com',
+    });
+
+    const btn = setup();
+    btn.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(api.executePurchase).toHaveBeenCalledTimes(1);
+    const [submittedRecs] = (api.executePurchase as jest.Mock).mock.calls[0] as [
+      Array<{ details?: unknown; engine?: string }>,
+      number,
+    ];
+    expect(submittedRecs[0]?.details).toEqual(rdsDetails);
+    expect(submittedRecs[0]?.engine).toBe('postgres');
+  });
+
+  // Issue #647: a scaled rec carries recommended_count (the pre-scaling count)
+  // so the backend can verify capacity_percent against the scaled count. The
+  // single-rec submit path must forward it unchanged in the POST body.
+  test('#647 single-rec — recommended_count preserved in POST body', async () => {
+    (recs.getPurchaseModalRecommendations as jest.Mock).mockReturnValue([
+      {
+        ...buildMinimalRec(),
+        count: 5,
+        recommended_count: 10,
+      },
+    ]);
+    (api.executePurchase as jest.Mock).mockResolvedValue({
+      execution_id: 'exec-647',
+      status: 'queued',
+      email_sent: true,
+      approval_recipient: 'approver@example.com',
+    });
+
+    const btn = setup();
+    btn.click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(api.executePurchase).toHaveBeenCalledTimes(1);
+    const [submittedRecs] = (api.executePurchase as jest.Mock).mock.calls[0] as [
+      Array<{ count?: number; recommended_count?: number }>,
+      number,
+    ];
+    expect(submittedRecs[0]?.count).toBe(5);
+    expect(submittedRecs[0]?.recommended_count).toBe(10);
+  });
+});
