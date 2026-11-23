@@ -9,6 +9,9 @@ import {
   loadColumnVisibility,
   saveColumnVisibility,
   resetColumnVisibilityState,
+  TOGGLEABLE_COLUMNS,
+  COLUMN_DEFS,
+  formatCapacity,
 } from '../recommendations';
 import { localStorageMock } from './setup';
 
@@ -197,5 +200,93 @@ describe('Column visibility (issue #318)', () => {
       const parsed = JSON.parse(callArg);
       expect(parsed.hidden).toEqual([]);
     });
+  });
+
+  // --- TOGGLEABLE_COLUMNS and COLUMN_DEFS ---
+
+  describe('COLUMN_DEFS and TOGGLEABLE_COLUMNS', () => {
+    test('COLUMN_DEFS contains all 15 column ids (13 data + capacity + usage_history sparkline)', () => {
+      const keys = COLUMN_DEFS.map((c) => c.key);
+      expect(keys).toContain('provider');
+      expect(keys).toContain('account');
+      expect(keys).toContain('service');
+      expect(keys).toContain('resource_type');
+      expect(keys).toContain('capacity');
+      expect(keys).toContain('region');
+      expect(keys).toContain('count');
+      expect(keys).toContain('term');
+      expect(keys).toContain('payment');
+      expect(keys).toContain('savings');
+      expect(keys).toContain('upfront_cost');
+      expect(keys).toContain('monthly_cost');
+      expect(keys).toContain('on_demand_monthly');
+      expect(keys).toContain('effective_savings_pct');
+      // issue #239: usage_history sparkline column added
+      expect(keys).toContain('usage_history');
+      expect(COLUMN_DEFS.length).toBe(15);
+    });
+
+    test('capacity column appears immediately after resource_type', () => {
+      const keys = COLUMN_DEFS.map((c) => c.key);
+      expect(keys.indexOf('capacity')).toBe(keys.indexOf('resource_type') + 1);
+    });
+
+    test('TOGGLEABLE_COLUMNS excludes fixed identity columns', () => {
+      const keys = TOGGLEABLE_COLUMNS.map((c) => c.key);
+      expect(keys).not.toContain('provider');
+      expect(keys).not.toContain('account');
+      expect(keys).not.toContain('service');
+      expect(keys).not.toContain('resource_type');
+      // All other 11 columns (9 original + capacity + usage_history) should be toggleable.
+      expect(keys).toContain('capacity');
+      expect(keys).toContain('region');
+      expect(keys).toContain('count');
+      expect(keys).toContain('term');
+      expect(keys).toContain('payment');
+      expect(keys).toContain('savings');
+      expect(keys).toContain('upfront_cost');
+      expect(keys).toContain('monthly_cost');
+      expect(keys).toContain('on_demand_monthly');
+      expect(keys).toContain('effective_savings_pct');
+      expect(keys).toContain('usage_history');
+      expect(keys.length).toBe(11);
+    });
+  });
+});
+
+//
+// formatCapacity (closes #219)
+//
+describe('formatCapacity', () => {
+  test('returns formatted string when both vcpu and memory_gb are populated', () => {
+    expect(formatCapacity(8, 32)).toBe('8 vCPU / 32 GB');
+  });
+
+  test('handles fractional memory without trailing zeros', () => {
+    expect(formatCapacity(2, 0.5)).toBe('2 vCPU / 0.5 GB');
+  });
+
+  test('returns null when vcpu is null', () => {
+    expect(formatCapacity(null, 32)).toBeNull();
+  });
+
+  test('returns null when memory_gb is null', () => {
+    expect(formatCapacity(8, null)).toBeNull();
+  });
+
+  test('returns null when vcpu is undefined', () => {
+    expect(formatCapacity(undefined, 32)).toBeNull();
+  });
+
+  test('returns null when memory_gb is undefined', () => {
+    expect(formatCapacity(8, undefined)).toBeNull();
+  });
+
+  test('returns null when vcpu is 0 (unknown)', () => {
+    expect(formatCapacity(0, 32)).toBeNull();
+  });
+
+  test('returns null when memory_gb is 0 (unknown)', () => {
+    expect(formatCapacity(8, 0)).toBeNull();
   });
 });
