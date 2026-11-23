@@ -9,12 +9,14 @@ import {
   mockOpenArcheraOfferModal,
 } from './plans-harness';
 import {
+  loadPlans,
   openCreatePlanModal,
   openNewPlanModal,
   _resetRampHandlersForTest,
 } from '../plans';
 
 import * as api from '../api';
+import { flushPromises } from './flush-promises';
 
 describe('Plans Module', () => {
   beforeEach(() => {
@@ -251,6 +253,152 @@ describe('Plans Module', () => {
 
       expect(selectedContainer.textContent).toBe('');
       expect((document.getElementById('plan-account-ids') as HTMLInputElement).value).toBe('');
+    });
+
+    test('switching provider clears and hides open account suggestion dropdown', async () => {
+      openNewPlanModal();
+      await Promise.resolve();
+
+      // Simulate an open suggestion dropdown with stale results from a previous search.
+      const suggestions = document.getElementById('plan-account-suggestions') as HTMLElement;
+      suggestions.textContent = 'stale-item';
+      suggestions.classList.remove('hidden');
+
+      // Also put text in the search input to verify it is cleared.
+      const searchInput = document.getElementById('plan-account-search') as HTMLInputElement;
+      searchInput.value = 'old query';
+
+      // Switch provider — the handler must clear + hide the dropdown and clear the input.
+      const providerSelect = document.getElementById('plan-provider') as HTMLSelectElement;
+      providerSelect.value = 'gcp';
+      providerSelect.dispatchEvent(new Event('change'));
+
+      expect(suggestions.textContent).toBe('');
+      expect(suggestions.classList.contains('hidden')).toBe(true);
+      expect(searchInput.value).toBe('');
+    });
+
+    test('account search input is disabled when provider is cleared after modal open', async () => {
+      // Open the modal with default provider (aws from form reset).
+      openNewPlanModal();
+      await Promise.resolve();
+
+      // Simulate user clearing the provider via the change listener, which should disable search.
+      const providerSelect = document.getElementById('plan-provider') as HTMLSelectElement;
+      providerSelect.value = '';
+      providerSelect.dispatchEvent(new Event('change'));
+
+      const searchInput = document.getElementById('plan-account-search') as HTMLInputElement;
+      expect(searchInput.disabled).toBe(true);
+    });
+
+    test('account search input is enabled when plan-provider has a value', async () => {
+      // Default after form.reset() is 'aws' (first option), so disabled should be false.
+      openNewPlanModal();
+      await Promise.resolve();
+
+      // The cloned input replaces the original in setupPlanAccountsSection;
+      // query by id to get the current node.
+      const searchInput = document.getElementById('plan-account-search') as HTMLInputElement;
+      expect(searchInput.disabled).toBe(false);
+    });
+  });
+
+  // H-4 regression: extractPlanInfo must not fabricate provider/term/coverage.
+  // Pre-fix: absent fields defaulted to 'aws'/3/80 so the card and edit modal
+  // showed hardcoded values. These tests must FAIL on pre-fix code.
+  describe('H-4: extractPlanInfo does not fabricate provider, term, or coverage', () => {
+    const planBase = {
+      id: 'plan-1',
+      name: 'Test Plan',
+      enabled: true,
+      auto_purchase: false,
+      ramp_schedule: { type: 'immediate', percent_per_step: 100, step_interval_days: 0, current_step: 0, total_steps: 1 },
+    };
+
+    test('absent provider in services renders an em dash, not aws in plan card', async () => {
+      const mockBadge = (jest.requireMock('../utils') as { providerBadgeHtml: jest.Mock }).providerBadgeHtml;
+      mockBadge.mockClear();
+
+      (api.getPlans as jest.Mock).mockResolvedValue({
+        plans: [{ ...planBase, services: { ec2: { service: 'ec2', term: 1, coverage: 80 } } }]
+      });
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+
+      await loadPlans();
+
+      // providerBadgeHtml is called with null when provider is absent.
+      // Pre-fix it was called with 'aws' (the hardcoded default).
+      expect(mockBadge).not.toHaveBeenCalledWith('aws');
+      expect(mockBadge).toHaveBeenCalledWith(null);
+    });
+
+    test('absent term in services renders an em dash, not 3yr in plan card', async () => {
+      (api.getPlans as jest.Mock).mockResolvedValue({
+        plans: [{ ...planBase, services: { ec2: { provider: 'aws', service: 'ec2', coverage: 80 } } }]
+      });
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+
+      await loadPlans();
+
+      const list = document.getElementById('plans-list');
+      // Pre-fix rendered '3 Years' for a missing term; post-fix renders '—'
+      expect(list?.textContent).not.toContain('3 Years');
+      expect(list?.textContent).toContain('—');
+    });
+
+    test('absent coverage in services renders an em dash, not 80% in plan card', async () => {
+      (api.getPlans as jest.Mock).mockResolvedValue({
+        plans: [{ ...planBase, services: { ec2: { provider: 'aws', service: 'ec2', term: 1 } } }]
+      });
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+
+      await loadPlans();
+
+      const list = document.getElementById('plans-list');
+      // Pre-fix rendered '80%' for a missing coverage; post-fix renders '—'
+      expect(list?.textContent).not.toContain('80%');
+      expect(list?.textContent).toContain('—');
+    });
+
+    test('empty services object renders all em-dash fields in plan card', async () => {
+      (api.getPlans as jest.Mock).mockResolvedValue({
+        plans: [{ ...planBase, services: {} }]
+      });
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+
+      await loadPlans();
+
+      const list = document.getElementById('plans-list');
+      // Pre-fix: all-zero fallback { provider:'aws', term:3, coverage:80 }
+      // Post-fix: all '—' for missing data
+      expect(list?.textContent).not.toContain('80%');
+      expect(list?.textContent).not.toContain('3 Years');
+    });
+
+    test('edit modal: absent term leaves select unset (not 3yr default)', async () => {
+      (api.getPlans as jest.Mock).mockResolvedValue({
+        plans: [{ ...planBase, id: 'plan-1', services: { ec2: { provider: 'aws', service: 'ec2', coverage: 80 } } }]
+      });
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+      (api.getPlan as jest.Mock).mockResolvedValue({
+        ...planBase,
+        id: 'plan-1',
+        notification_days_before: 3,
+        services: { ec2: { provider: 'aws', service: 'ec2', coverage: 80 } },
+        ramp_schedule: { type: 'immediate', percent_per_step: 100, step_interval_days: 0 }
+      });
+
+      await loadPlans();
+      const editBtn = document.querySelector('[data-action="edit-plan"]') as HTMLButtonElement;
+      editBtn?.click();
+      await flushPromises();
+
+      const termSelect = document.getElementById('plan-term') as HTMLSelectElement;
+      // Pre-fix: termSelect.value === '3' (hardcoded fallback)
+      // Post-fix: termSelect.value === '' (unset, user must choose)
+      expect(termSelect.value).not.toBe('3');
+      expect(termSelect.value).toBe('');
     });
   });
 });
