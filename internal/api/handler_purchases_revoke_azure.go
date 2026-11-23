@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -184,4 +185,58 @@ func (h *Handler) revokeAzurePurchase(ctx context.Context, record *config.Purcha
 	}
 
 	return h.callAzureReturn(ctx, calcClient, returnClient, record, orderID, reservationID, confirmed)
+}
+
+// checkConfirmedRefund is the TOCTOU-divergence check: the refund the user
+// confirmed must match Azure's current CalculateRefund quote in currency and,
+// within revokeQuoteEpsilon, in amount. A mismatch means the quote changed
+// between confirmation and the call (e.g. a fee tier boundary was crossed).
+// It fails closed when Azure returns no comparable quote, and never converts
+// currencies (there is no trusted FX source).
+func checkConfirmedRefund(confirmed revokeConfirmBody, calcRefundAmount *float64, calcRefundCurrency string) error {
+	if calcRefundAmount == nil || strings.TrimSpace(calcRefundCurrency) == "" {
+		return NewClientError(422, "Azure returned no refund quote to verify against the amount you confirmed; refusing to return the reservation")
+	}
+	expectedCurrency := strings.TrimSpace(confirmed.ExpectedRefundCurrency)
+	if !strings.EqualFold(expectedCurrency, strings.TrimSpace(calcRefundCurrency)) {
+		return NewClientError(422, fmt.Sprintf(
+			"refund currency diverged: you confirmed %.2f %s but Azure now quotes %.2f %s; re-confirm to proceed",
+			*confirmed.ExpectedRefundAmount, expectedCurrency, *calcRefundAmount, calcRefundCurrency,
+		))
+	}
+	if math.Abs(*confirmed.ExpectedRefundAmount-*calcRefundAmount) > revokeQuoteEpsilon {
+		return NewClientError(422, fmt.Sprintf(
+			"refund amount diverged: you confirmed %.2f but Azure now quotes %.2f %s; re-confirm to proceed",
+			*confirmed.ExpectedRefundAmount, *calcRefundAmount, calcRefundCurrency,
+		))
+	}
+	return nil
+}
+
+// azureCalculateRefund runs the CalculateRefund step and parses out the session
+// ID (required by Return) and the quoted refund amount/currency (for the TOCTOU
+// check). Errors are classified into 400 (client) vs 500 (transient).
+func (h *Handler) azureCalculateRefund(ctx context.Context, calcClient azureCalculateRefundClient, purchaseID, orderID, reservationID string, quantity int32) (string, *float64, string, error) { //nolint:gocritic // unnamedResult: return names would conflict with body locals
+	calcResp, err := calcClient.Post(ctx, orderID, armreservations.CalculateRefundRequest{
+		Properties: &armreservations.CalculateRefundRequestProperties{
+			ReservationToReturn: &armreservations.ReservationToReturn{
+				ReservationID: &reservationID,
+				Quantity:      &quantity,
+			},
+			Scope: toPtr("Reservation"),
+		},
+	}, nil)
+	if err != nil {
+		if isAzureClientError(err) {
+			return "", nil, "", azureRefundRejected("Azure refund calculation rejected", purchaseID, err)
+		}
+		return "", nil, "", fmt.Errorf("revoke azure: CalculateRefund failed: %w", err)
+	}
+
+	var sessionID string
+	if calcResp.Properties != nil && calcResp.Properties.SessionID != nil {
+		sessionID = *calcResp.Properties.SessionID
+	}
+	calcRefundAmount, calcRefundCurrency := extractAzureRefundQuote(calcResp)
+	return sessionID, calcRefundAmount, calcRefundCurrency, nil
 }
