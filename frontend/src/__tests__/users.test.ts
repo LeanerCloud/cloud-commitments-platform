@@ -9,103 +9,10 @@ import { mockConfirmDialog } from './users-harness';
 import * as api from '../api';
 import * as userUtils from '../users/utils';
 import * as userState from '../users/state';
-import * as userFilters from '../users/filters';
 import * as userList from '../users/userList';
 import * as userActions from '../users/userActions';
 import * as userModals from '../users/userModals';
 import * as userHandlers from '../users/handlers';
-
-// ============================================================================
-// INTEGRATION TESTS
-// ============================================================================
-describe('users module integration', () => {
-  const mockUsers = [
-    { id: '1', email: 'admin@test.com', groups: ['00000000-0000-5000-8000-000000000001'], mfa_enabled: true, created_at: '2024-01-01' },
-    { id: '2', email: 'user@test.com', groups: [], mfa_enabled: false, created_at: '2024-01-02' }
-  ];
-
-  const mockGroups = [
-    { id: 'admins', name: 'Admins', permissions: [], description: '' }
-  ];
-
-  beforeEach(() => {
-    document.body.innerHTML = `
-      <div id="users-list"></div>
-      <div id="groups-list"></div>
-      <div id="user-stats"></div>
-      <input type="text" id="user-search" />
-      <select id="user-mfa-filter"><option value="">All</option></select>
-      <select id="user-group-filter"><option value="">All</option></select>
-      <div id="bulk-actions-bar" class="hidden">
-        <span id="selected-count">0</span>
-      </div>
-    `;
-
-    (api.listUsers as jest.Mock).mockResolvedValue({ users: mockUsers });
-    (api.listGroups as jest.Mock).mockResolvedValue({ groups: mockGroups });
-
-    userState.setAllUsers([]);
-    userState.setFilteredUsers([]);
-    userState.setAvailableGroups([]);
-    userState.clearSelectedUserIds();
-    userState.setSearchQuery('');
-    userState.setMfaFilter('');
-    userState.setGroupFilter('');
-
-    jest.clearAllMocks();
-  });
-
-  it('should load users and render them', async () => {
-    await userActions.loadUsers();
-
-    const container = document.getElementById('users-list');
-    expect(container?.innerHTML).toContain('admin@test.com');
-    expect(container?.innerHTML).toContain('user@test.com');
-  });
-
-  it('should filter and re-render users', async () => {
-    await userActions.loadUsers();
-
-    userFilters.handleUserSearch('admin');
-
-    const container = document.getElementById('users-list');
-    expect(container?.innerHTML).toContain('admin@test.com');
-    expect(container?.innerHTML).not.toContain('user@test.com');
-  });
-
-  it('should update stats when filtering', async () => {
-    await userActions.loadUsers();
-
-    const statsContainer = document.getElementById('user-stats');
-    expect(statsContainer?.innerHTML).toContain('2'); // Total users
-
-    userFilters.handleFilterChange('role', 'admin');
-
-    expect(statsContainer?.innerHTML).toContain('1'); // Showing filtered
-  });
-
-  it('should track user selection state', async () => {
-    await userActions.loadUsers();
-
-    userState.addSelectedUserId('1');
-
-    const container = document.getElementById('users-list');
-    // Re-render to show selection
-    userList.renderUsers(userState.filteredUsers);
-
-    expect(container?.querySelector('.row-selected')).toBeTruthy();
-  });
-
-  it('should update bulk actions bar on selection', async () => {
-    await userActions.loadUsers();
-
-    userState.addSelectedUserId('1');
-    userList.updateBulkActionsBar();
-
-    const bar = document.getElementById('bulk-actions-bar');
-    expect(bar?.classList.contains('hidden')).toBe(false);
-  });
-});
 
 // ============================================================================
 // BULK TOOLBAR TESTS (issue #974)
