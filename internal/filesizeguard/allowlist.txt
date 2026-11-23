@@ -3,7 +3,6 @@ internal/api/handler_dashboard.go	882	2026-11-23	split pending #341 (hot: concur
 internal/api/handler_history.go	1425	2026-11-23	split pending #341 (hot: 9 commits in 14 days)
 internal/api/handler_plans.go	1166	2026-11-23	split pending #341 (hot: 10 commits in 14 days)
 internal/api/handler_registrations.go	727	2026-11-23	split pending #341 (hot: concurrent branches touch it)
-internal/api/middleware.go	568	2026-11-23	split pending #341
 internal/api/scoping.go	546	2026-11-23	split pending #341
 internal/api/types.go	1199	2026-11-23	split pending #341 (hot: 15 commits in 14 days)
 internal/api/validation.go	878	2026-11-23	split pending #341 (hot: concurrent branches touch it)
