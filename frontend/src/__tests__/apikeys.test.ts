@@ -1,6 +1,9 @@
 /**
  * API Keys module tests
  */
+
+// The harness registers the module mocks, so it must be imported first.
+import { mockConfirmDialog } from './apikeys-harness';
 import {
   loadApiKeys,
   renderApiKeysList,
@@ -13,28 +16,6 @@ import {
   deleteApiKey,
   initApiKeys
 } from '../apikeys';
-
-// Mock the api module
-jest.mock('../api', () => ({
-  getApiKeys: jest.fn(),
-  getApiKeysUsageStats: jest.fn(),
-  createApiKey: jest.fn(),
-  revokeApiKey: jest.fn(),
-  deleteApiKey: jest.fn(),
-  getUserPermissions: jest.fn(),
-  // Real implementation (not mocked): createApiKey encodes the password
-  // field with this before building the request, so tests need the real
-  // encoding to assert on the resulting request shape.
-  base64Encode: (str: string) => Buffer.from(str, 'binary').toString('base64')
-}));
-
-// confirmDialog (introduced in P2) is used for revoke/delete in place of
-// native window.confirm. Mock it so tests can flip approve/cancel via
-// mockResolvedValueOnce without having to drive the actual modal UI.
-const mockConfirmDialog = jest.fn<Promise<boolean>, [unknown]>(() => Promise.resolve(true));
-jest.mock('../confirmDialog', () => ({
-  confirmDialog: (opts: unknown) => mockConfirmDialog(opts),
-}));
 
 import * as api from '../api';
 
