@@ -31,6 +31,10 @@ type ladderRIPricerSource interface {
 	LadderRIPricer(ctx context.Context, cloudAccountID, region string) (purchase.RIOfferingPricer, error)
 }
 
+// A signature drift on Manager.LadderRIPricer would make the type assertion in
+// ladderRIPricerFactory fail silently and leave every RI tranche unresolved.
+var _ ladderRIPricerSource = (*purchase.Manager)(nil)
+
 // ladderRIPricerFactory is the purchase manager's RI pricer, or nil when the
 // manager has none, which leaves RI tranches unresolved.
 func (app *Application) ladderRIPricerFactory() purchase.LadderRIPricerFactory {
