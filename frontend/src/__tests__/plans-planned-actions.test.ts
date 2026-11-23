@@ -12,6 +12,9 @@ import {
 import {
   loadPlans,
   savePlan,
+  closePlanModal,
+  openCreatePlanModal,
+  openNewPlanModal,
   _resetRampHandlersForTest,
 } from '../plans';
 
@@ -342,6 +345,115 @@ describe('Plans Module', () => {
       for (const field of ['provider', 'service', 'term', 'payment', 'target_coverage', 'groups']) {
         expect(sent).not.toHaveProperty(field);
       }
+    });
+
+    describe('plan field locks (#1746)', () => {
+      const locked = () => ['plan-provider', 'plan-service', 'plan-term', 'plan-payment']
+        .map((id) => (document.getElementById(id) as HTMLSelectElement).disabled);
+      const boundPlan = {
+        id: 'plan-bound', name: 'Bound', enabled: true, auto_purchase: false, notification_days_before: 3,
+        services: {
+          'aws/ec2#g1': { provider: 'aws', service: 'ec2', enabled: true, term: 3, payment: 'all-upfront', coverage: 70, bound_count: 5 },
+          'aws/rds#g2': { provider: 'aws', service: 'rds', enabled: true, term: 3, payment: 'all-upfront', coverage: 70, bound_count: 1 },
+        },
+        ramp_schedule: { type: 'immediate', percent_per_step: 100, step_interval_days: 0, current_step: 0, total_steps: 1, allocation_mode: 'bound_groups' },
+      };
+      const openBoundEdit = async () => {
+        (api.getPlan as jest.Mock).mockResolvedValue(boundPlan);
+        (document.querySelector('[data-action="edit"]') as HTMLButtonElement)?.click();
+        await flushPromises();
+      };
+      const snapshot = [{ id: 'rec-1', provider: 'aws', service: 'ec2', term: 3, payment: 'all-upfront' }] as unknown as readonly api.Recommendation[];
+
+      test('a multi-service bound plan saves with blank locked selects and no unsupported-service toast', async () => {
+        (api.updatePlan as jest.Mock).mockResolvedValue({});
+        (api.setPlanAccounts as jest.Mock).mockResolvedValue(undefined);
+        (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+        (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+        await openBoundEdit();
+        (document.getElementById('plan-account-ids') as HTMLInputElement).value = '11111111-1111-1111-1111-111111111111';
+        (document.getElementById('plan-term') as HTMLSelectElement).value = '';
+        (document.getElementById('plan-coverage') as HTMLInputElement).value = '';
+        expect(mockShowToast).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'error' }));
+        expect((document.getElementById('plan-coverage') as HTMLInputElement).readOnly).toBe(true);
+        expect((document.getElementById('plan-service') as HTMLSelectElement).title).toBe('Set by the selected recommendations');
+        await savePlan({ preventDefault: jest.fn() } as unknown as Event);
+        expect(api.updatePlan).toHaveBeenCalledTimes(1);
+      });
+
+      test('a bound plan keeps its accounts of every provider (#1746)', async () => {
+        (api.listPlanAccounts as jest.Mock).mockResolvedValueOnce([
+          { id: 'acct-aws', name: 'AWS', external_id: '1', provider: 'aws' },
+          { id: 'acct-azure', name: 'Azure', external_id: '2', provider: 'azure' },
+        ]);
+        await openBoundEdit();
+        await flushPromises();
+        expect((document.getElementById('plan-account-ids') as HTMLInputElement).value.split(',').sort()).toEqual(['acct-aws', 'acct-azure']);
+      });
+
+      test('editing a bound plan lists its groups in place of the service fields', async () => {
+        await openBoundEdit();
+        const items = Array.from(document.getElementById('plan-selection-groups')?.children ?? []).map((li) => li.textContent);
+        expect(items).toHaveLength(2);
+        expect(items.map((t) => t?.replace(/^.*: /, ''))).toEqual(['5 recommendations', '1 recommendation']);
+        expect(items[0]).toContain('EC2');
+        expect((document.getElementById('plan-service-fields') as HTMLElement).hidden).toBe(true);
+        closePlanModal();
+        expect((document.getElementById('plan-service-fields') as HTMLElement).hidden).toBe(false);
+      });
+
+      test('locks never leak into the next modal', async () => {
+        await openBoundEdit();
+        expect(locked()).toEqual([true, true, true, true]);
+        closePlanModal();
+        expect(locked()).toEqual([false, false, false, false]);
+        expect((document.getElementById('plan-coverage') as HTMLInputElement).readOnly).toBe(false);
+        expect((document.getElementById('plan-service') as HTMLSelectElement).title).toBe('');
+
+        await openBoundEdit();
+        openNewPlanModal();
+        expect(locked()).toEqual([false, false, false, false]);
+        expect((document.getElementById('plan-coverage') as HTMLInputElement).readOnly).toBe(false);
+
+        await openBoundEdit();
+        openCreatePlanModal(snapshot);
+        expect(locked()).toEqual([true, true, true, true]);
+        expect((document.getElementById('plan-coverage') as HTMLInputElement).readOnly).toBe(false);
+        closePlanModal();
+        expect(locked()).toEqual([false, false, false, false]);
+      });
+
+      test('a selection save does not depend on the locked selects', async () => {
+        openCreatePlanModal(snapshot);
+        (document.getElementById('plan-account-ids') as HTMLInputElement).value = '11111111-1111-1111-1111-111111111111';
+        (document.getElementById('plan-service') as HTMLSelectElement).value = '';
+        (document.getElementById('plan-term') as HTMLSelectElement).value = '';
+        (api.createPlan as jest.Mock).mockResolvedValue({});
+        (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+        (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+        await savePlan({ preventDefault: jest.fn() } as unknown as Event);
+        expect((api.createPlan as jest.Mock).mock.calls[0][0].groups).toEqual([expect.objectContaining({ service: 'ec2', term: 3 })]);
+      });
+
+      test('editing an unbound plan drops a selection left open by the create flow', async () => {
+        openCreatePlanModal(snapshot);
+        (api.getPlan as jest.Mock).mockResolvedValue({
+          ...boundPlan, services: { ec2: { provider: 'aws', service: 'ec2', enabled: true, term: 3, payment: 'all-upfront', coverage: 70 } },
+          ramp_schedule: { ...boundPlan.ramp_schedule, allocation_mode: undefined },
+        });
+        (document.querySelector('[data-action="edit"]') as HTMLButtonElement)?.click();
+        await flushPromises();
+        (api.updatePlan as jest.Mock).mockResolvedValue({});
+        (api.setPlanAccounts as jest.Mock).mockResolvedValue(undefined);
+        (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+        (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+        (document.getElementById('plan-account-ids') as HTMLInputElement).value = '11111111-1111-1111-1111-111111111111';
+        expect((document.getElementById('plan-selection-groups') as HTMLElement).hidden).toBe(true);
+        await savePlan({ preventDefault: jest.fn() } as unknown as Event);
+        const sent = (api.updatePlan as jest.Mock).mock.calls[0][1];
+        expect(sent).not.toHaveProperty('groups');
+        expect(sent).toHaveProperty('provider');
+      });
     });
   });
 });
