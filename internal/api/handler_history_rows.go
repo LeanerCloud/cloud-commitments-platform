@@ -304,3 +304,68 @@ func collapseRecommendationProvider(recs []config.RecommendationRecord) string {
 	}
 	return p
 }
+
+// collapseRecommendationPayment returns the payment option shared by every
+// recommendation in an execution, or "" when they disagree (or the slice is
+// empty). Empty renders as the dash fallback in the Approval queue rather
+// than a misleading single payment string for a basket that mixes options.
+func collapseRecommendationPayment(recs []config.RecommendationRecord) string {
+	if len(recs) == 0 {
+		return ""
+	}
+	p := recs[0].Payment
+	for i := range recs[1:] {
+		r := recs[1:][i]
+		if r.Payment != p {
+			return ""
+		}
+	}
+	return p
+}
+
+// collapseRecommendationAccount returns the cloud-account ID shared by every
+// recommendation in an execution, or "" when they disagree (or none have one
+// set). Used as the Account fallback when exec.CloudAccountID is nil —
+// notably for web-initiated bulk purchases, which only populate the per-rec
+// CloudAccountID and leave the execution-level field blank.
+func collapseRecommendationAccount(recs []config.RecommendationRecord) string {
+	if len(recs) == 0 {
+		return ""
+	}
+	var first string
+	if recs[0].CloudAccountID != nil {
+		first = *recs[0].CloudAccountID
+	}
+	for i := range recs[1:] {
+		r := recs[1:][i]
+		var cur string
+		if r.CloudAccountID != nil {
+			cur = *r.CloudAccountID
+		}
+		if cur != first {
+			return ""
+		}
+	}
+	return first
+}
+
+// sumRecommendationMonthlyCostPtr sums the per-rec MonthlyCost values for a
+// multi-rec execution row in the Approval queue. Nil entries (provider API
+// did not return a monthly breakdown) are skipped. Returns nil when every rec
+// has a nil MonthlyCost so the row renders as "—" rather than "$0.00".
+// Returns a pointer to the accumulated total otherwise.
+func sumRecommendationMonthlyCostPtr(recs []config.RecommendationRecord) *float64 {
+	var total float64
+	anyNonNil := false
+	for i := range recs {
+		r := recs[i]
+		if r.MonthlyCost != nil {
+			total += *r.MonthlyCost
+			anyNonNil = true
+		}
+	}
+	if !anyNonNil {
+		return nil
+	}
+	return &total
+}
