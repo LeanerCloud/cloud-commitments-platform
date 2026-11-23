@@ -192,4 +192,97 @@ describe('group assignment UX (issue #998)', () => {
       expect(cb!.checked).toBe(false);
     });
   });
+
+  describe('expand button listener bound once', () => {
+    it('expand button opens the panel on the first click after renderUsers', () => {
+      userList.renderUsers(mockUsers as any);
+
+      const expandBtn = document.querySelector<HTMLButtonElement>(
+        '.user-expand-btn[data-user-id="1"]',
+      );
+      expect(expandBtn).toBeTruthy();
+
+      // First click must open the panel.
+      expandBtn!.click();
+
+      const expandRow = document.querySelector<HTMLElement>(
+        'tr.user-expand-row[data-user-id="1"]',
+      );
+      expect(expandRow?.classList.contains('hidden')).toBe(false);
+      expect(expandBtn!.getAttribute('aria-expanded')).toBe('true');
+    });
+
+    it('expand button toggles correctly after multiple renderUsers calls', () => {
+      // Each renderUsers replaces the table innerHTML, so each new expand
+      // button element gets exactly one click listener.
+      userList.renderUsers(mockUsers as any);
+      userList.renderUsers(mockUsers as any);
+      userList.renderUsers(mockUsers as any);
+
+      const expandBtn = document.querySelector<HTMLButtonElement>(
+        '.user-expand-btn[data-user-id="2"]',
+      );
+      expandBtn!.click();
+
+      const expandRow = document.querySelector<HTMLElement>(
+        'tr.user-expand-row[data-user-id="2"]',
+      );
+      expect(expandRow?.classList.contains('hidden')).toBe(false);
+
+      // Second click must collapse.
+      expandBtn!.click();
+      expect(expandRow?.classList.contains('hidden')).toBe(true);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // 4. In-memory state is patched after toggle (no full round-trip)
+  // -----------------------------------------------------------------------
+  describe('in-memory state updated after toggle', () => {
+    it('patches allUsers so the toggled group appears in user.groups', async () => {
+      jest.useFakeTimers();
+      userList.renderUsers(mockUsers as any);
+
+      const expandBtn = document.querySelector<HTMLButtonElement>(
+        '.user-expand-btn[data-user-id="2"]',
+      );
+      expandBtn!.click();
+
+      // Bob starts with no groups; add g1.
+      const cb = document.querySelector<HTMLInputElement>(
+        '.group-assign-checkbox[data-user-id="2"][data-group-id="g1"]',
+      );
+      cb!.checked = true;
+      cb!.dispatchEvent(new Event('change', { bubbles: true }));
+
+      await Promise.resolve();
+      await Promise.resolve();
+
+      const updated = userState.allUsers.find(u => u.id === '2');
+      expect(updated?.groups).toContain('g1');
+    });
+
+    it('patches allUsers so the removed group disappears from user.groups', async () => {
+      jest.useFakeTimers();
+      userList.renderUsers(mockUsers as any);
+
+      const expandBtn = document.querySelector<HTMLButtonElement>(
+        '.user-expand-btn[data-user-id="1"]',
+      );
+      expandBtn!.click();
+
+      // Alice starts with ['g1']; remove g1.
+      const cb = document.querySelector<HTMLInputElement>(
+        '.group-assign-checkbox[data-user-id="1"][data-group-id="g1"]',
+      );
+      cb!.checked = false;
+      cb!.dispatchEvent(new Event('change', { bubbles: true }));
+
+      await Promise.resolve();
+      await Promise.resolve();
+
+      const updated = userState.allUsers.find(u => u.id === '1');
+      expect(updated?.groups).not.toContain('g1');
+    });
+  });
 });
