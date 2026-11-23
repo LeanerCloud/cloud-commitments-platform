@@ -415,5 +415,60 @@ describe('Recommendations Module', () => {
       const list = document.getElementById('recommendations-list');
       expect(list?.innerHTML).toContain('selected');
     });
+
+    test('applies high-savings class for large savings', async () => {
+      (api.getRecommendations as jest.Mock).mockResolvedValue({
+        summary: {},
+        recommendations: [
+          { id: 'rec-5', provider: 'aws', service: 'ec2', savings: 2000 }
+        ],
+        regions: []
+      });
+
+      await loadRecommendations();
+
+      const list = document.getElementById('recommendations-list');
+      expect(list?.innerHTML).toContain('high-savings');
+    });
+
+    test('select-all checkbox selects all recommendations when checked', async () => {
+      const mockRecs = [
+        { id: 'rec-6', provider: 'aws', service: 'ec2', resource_type: 't3.medium', region: 'us-east-1', count: 1, term: 1, savings: 100, upfront_cost: 500 },
+        { id: 'rec-7', provider: 'aws', service: 'rds', resource_type: 'db.t3.medium', region: 'us-east-1', count: 2, term: 1, savings: 200, upfront_cost: 1000 }
+      ];
+      (api.getRecommendations as jest.Mock).mockResolvedValue({
+        summary: {},
+        recommendations: mockRecs,
+        regions: []
+      });
+
+      await loadRecommendations();
+
+      const selectAll = document.getElementById('select-all-recs') as HTMLInputElement;
+      selectAll.checked = true;
+      selectAll.dispatchEvent(new Event('change'));
+
+      expect(state.addSelectedRecommendation).toHaveBeenCalledWith(expect.stringMatching(/^rec-/));
+      expect((state.addSelectedRecommendation as jest.Mock).mock.calls.length).toBeGreaterThanOrEqual(2);
+    });
+
+    test('select-all checkbox clears all recommendations when unchecked', async () => {
+      const mockRecs = [
+        { id: 'rec-8', provider: 'aws', service: 'ec2', resource_type: 't3.medium', region: 'us-east-1', count: 1, term: 1, savings: 100, upfront_cost: 500 }
+      ];
+      (api.getRecommendations as jest.Mock).mockResolvedValue({
+        summary: {},
+        recommendations: mockRecs,
+        regions: []
+      });
+
+      await loadRecommendations();
+
+      const selectAll = document.getElementById('select-all-recs') as HTMLInputElement;
+      selectAll.checked = false;
+      selectAll.dispatchEvent(new Event('change'));
+
+      expect(state.clearSelectedRecommendations).toHaveBeenCalled();
+    });
   });
 });
