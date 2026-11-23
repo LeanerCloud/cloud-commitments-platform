@@ -36,7 +36,7 @@ export function el<K extends keyof HTMLElementTagNameMap>(
 }
 
 export function money(v: unknown): string {
-  return typeof v === 'string' ? v : UNKNOWN;
+  return typeof v === 'string' && v !== '' ? v : UNKNOWN;
 }
 
 export function text(v: unknown): string {

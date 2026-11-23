@@ -99,7 +99,13 @@ function clearActive(): void {
   active.panel.remove();
   active.button.disabled = false;
   active.button.removeAttribute('aria-busy');
+  active.button.setAttribute('aria-expanded', 'false');
   active = null;
+}
+
+function closePanel(button: HTMLButtonElement): void {
+  clearActive();
+  button.focus();
 }
 
 function openPanel(button: HTMLButtonElement, row: HTMLTableRowElement, id: string): void {
@@ -107,9 +113,11 @@ function openPanel(button: HTMLButtonElement, row: HTMLTableRowElement, id: stri
   const token = ++seq;
   const ctrl = new AbortController();
   const panelRow = el('tr', undefined, 'rec-archera-row');
+  panelRow.addEventListener('keydown', e => { if (e.key === 'Escape') closePanel(button); });
   const cellEl = el('td');
   cellEl.colSpan = row.children.length;
   const panel = el('section', undefined, 'rec-archera-panel');
+  panel.id = `rec-archera-panel-${id}`;
   panel.setAttribute('aria-label', 'Archera quote');
   const live = el('div', MSG_LOADING);
   live.setAttribute('role', 'status');
@@ -122,6 +130,7 @@ function openPanel(button: HTMLButtonElement, row: HTMLTableRowElement, id: stri
   active = { token, ctrl, button, panel: panelRow };
   button.disabled = true;
   button.setAttribute('aria-busy', 'true');
+  button.setAttribute('aria-expanded', 'true');
   const stale = (): boolean => token !== seq;
 
   void getInsuranceRecommendation(id, ctrl.signal)
@@ -165,11 +174,15 @@ export async function attachArcheraQuoteControls(container: HTMLElement): Promis
     btn.type = 'button';
     btn.dataset['action'] = 'archera-quote';
     btn.setAttribute('aria-label', BUTTON_LABEL);
+    btn.setAttribute('aria-expanded', 'false');
+    btn.setAttribute('aria-controls', `rec-archera-panel-${id}`);
+    btn.addEventListener('keydown', e => { if (e.key === 'Escape' && active?.button === btn) closePanel(btn); });
     btn.title = 'Archera insured-commitment quote for this recommendation';
     btn.innerHTML = iconSvg('info'); // static icon markup, no server data
     btn.addEventListener('click', e => {
       e.stopPropagation();
-      openPanel(btn, row, id);
+      if (active?.button === btn) closePanel(btn);
+      else openPanel(btn, row, id);
     });
     host.appendChild(btn);
   });

@@ -18,6 +18,7 @@ import { renderRecommendationsSummary } from './summary';
 import { mountBottomActionBox, updateBottomActionBox, openCreatePlanFromBottomBox } from './bottomBox';
 import { writeSortToUrl, loadRecommendations } from './load';
 import { startRecommendationsRefresh } from './refresh';
+import { attachArcheraQuoteControls } from '../archera-recommendation';
 
 export function renderRecommendationsList(loadedRecs: LocalRecommendation[]): void {
   const container = document.getElementById('recommendations-list');
@@ -335,6 +336,9 @@ export function renderRecommendationsList(loadedRecs: LocalRecommendation[]): vo
       void openCreatePlanFromBottomBox([rec]);
     });
   });
+
+  // Issue #799: per-row Archera quote button, only when insurance is configured.
+  void attachArcheraQuoteControls(container);
 
   // issue #135: SP group chevron click toggles expand/collapse for the plan-type group.
   container.querySelectorAll<HTMLButtonElement>('.rec-sp-group-chevron').forEach((btn) => {
