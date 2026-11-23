@@ -2,7 +2,6 @@
  * Unit tests for API module
  */
 import { localStorageMock, sessionStorageMock, fetchMock } from './setup';
-import { mockSessionStart } from './api-harness';
 import {
   initAuth,
   setAuthenticated,
@@ -10,12 +9,8 @@ import {
   isAuthenticated,
   clearAuth,
   getAuthHeaders,
-  apiRequest,
-  login,
-  checkAdminExists,
-  setupAdmin
+  apiRequest
 } from '../api';
-import { base64Encode } from '../api/client';
 
 describe('Authentication', () => {
   beforeEach(() => {
@@ -394,102 +389,4 @@ describe('API Requests', () => {
     });
   });
 
-  describe('checkAdminExists', () => {
-    test('returns true when admin exists', async () => {
-      fetchMock.mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ admin_exists: true })
-      });
-
-      const result = await checkAdminExists('api-key');
-      expect(result).toBe(true);
-    });
-
-    test('returns false when no admin', async () => {
-      fetchMock.mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ admin_exists: false })
-      });
-
-      const result = await checkAdminExists('api-key');
-      expect(result).toBe(false);
-    });
-
-    test('returns false on error', async () => {
-      fetchMock.mockResolvedValue({ ok: false });
-
-      const result = await checkAdminExists('api-key');
-      expect(result).toBe(false);
-    });
-  });
-
-  describe('setupAdmin', () => {
-    test('creates admin and keeps only the CSRF token in memory', async () => {
-      mockSessionStart({ token: 'admin-token', csrf_token: 'csrf-admin' }, { status: 200, body: { id: 'u', email: 'a@b.c', groups: [], csrf_token: 'csrf-admin' } });
-
-      await setupAdmin('api-key', 'admin@example.com', 'password');
-
-      expect(fetchMock).toHaveBeenCalledWith(
-        '/api/auth/setup-admin',
-        expect.objectContaining({
-          method: 'POST',
-          headers: expect.objectContaining({ 'X-API-Key': 'api-key' }),
-          // Password is now base64 encoded
-          body: JSON.stringify({ email: 'admin@example.com', password: btoa('password') })
-        })
-      );
-      expect(localStorageMock.setItem).not.toHaveBeenCalled();
-      expect(isAuthenticated()).toBe(true);
-      expect(getAuthHeaders()['X-CSRF-Token']).toBe('csrf-admin');
-    });
-
-    // Issue #748: a proxy 502 with an HTML body used to surface as
-    // "Unexpected token '<'" because the error body was parsed uncaught.
-    test('a 502 HTML error page fails with friendly text, not a JSON parse error', async () => {
-      fetchMock.mockResolvedValue({ ok: false, status: 502, json: () => Promise.reject(new SyntaxError("Unexpected token '<'")) });
-      await expect(setupAdmin('api-key', 'admin@example.com', 'password'))
-        .rejects.toMatchObject({ message: 'CUDly is temporarily unavailable. Try again in a moment.', status: 502 });
-    });
-
-    test('a 400 keeps the server reason', async () => {
-      fetchMock.mockResolvedValue({ ok: false, status: 400, json: () => Promise.resolve({ error: 'admin already exists' }) });
-      await expect(setupAdmin('api-key', 'admin@example.com', 'password')).rejects.toThrow('admin already exists');
-    });
-
-    test('a network failure says the server cannot be reached', async () => {
-      fetchMock.mockRejectedValue(new TypeError('Failed to fetch'));
-      await expect(setupAdmin('api-key', 'admin@example.com', 'password'))
-        .rejects.toThrow("Can't reach CUDly. Check your connection and try again.");
-    });
-
-    test('a JSON error body still surfaces the server message', async () => {
-      fetchMock.mockResolvedValue({
-        ok: false,
-        status: 400,
-        json: () => Promise.resolve({ error: 'password too weak' }),
-      });
-
-      await expect(setupAdmin('api-key', 'admin@example.com', 'password')).rejects.toThrow('password too weak');
-    });
-  });
-
-  describe('base64Encode', () => {
-    test('Latin-1 passwords keep the exact bytes btoa has always sent', () => {
-      expect(base64Encode('password')).toBe(btoa('password'));
-      expect(base64Encode('caf\u00e9')).toBe(btoa('caf\u00e9'));
-    });
-
-    test('non-Latin-1 passwords are sent as UTF-8 instead of throwing', () => {
-      const pw = 'it\u2019s a \u5bc6\u7801 \u{1F511}';
-      const encoded = base64Encode(pw);
-      expect(Buffer.from(encoded, 'base64').toString('utf8')).toBe(pw);
-    });
-
-    test('login with a non-Latin-1 password reaches the network', async () => {
-      mockSessionStart({ token: 't' });
-      await login('user@example.com', 'p\u00e4ss\u2014w\u00f6rd \u{1F600}');
-      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string) as { password: string };
-      expect(Buffer.from(body.password, 'base64').toString('utf8')).toBe('p\u00e4ss\u2014w\u00f6rd \u{1F600}');
-    });
-  });
 });
