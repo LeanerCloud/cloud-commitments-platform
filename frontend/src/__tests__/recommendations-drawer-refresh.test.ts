@@ -9,7 +9,11 @@ import {
   mockShowToast,
   setupRecommendationsTest,
 } from './recommendations-harness';
-import { loadRecommendations, resetAutoRefreshInFlight } from '../recommendations';
+import {
+  loadRecommendations,
+  startRecommendationsRefresh,
+  resetAutoRefreshInFlight,
+} from '../recommendations';
 import * as api from '../api';
 import * as state from '../state';
 import * as recsApi from '../api/recommendations';
@@ -259,6 +263,177 @@ describe('Recommendations Module', () => {
           kind: 'error',
         }),
       );
+    });
+
+    // Issue #619: a scoped user's POST /recommendations/refresh is a 403 by
+    // design, so the automatic refresh must not report it as a failure.
+    test('auto-refresh 403 (scoped user) — in-flight toast dismissed, no error toast (#619)', async () => {
+      mockGetRecs();
+      (recsApi.getRecommendationsFreshness as jest.Mock).mockResolvedValue({
+        last_collected_at: null,
+        last_collection_error: null,
+      });
+      (recsApi.refreshRecommendations as jest.Mock).mockRejectedValue(
+        Object.assign(new Error('permission denied'), { status: 403 }),
+      );
+      const dismiss = jest.fn();
+      mockShowToast.mockReturnValueOnce({ dismiss });
+      const infoSpy = jest.spyOn(console, 'info').mockImplementation(() => undefined);
+
+      await loadRecommendations();
+      for (let i = 0; i < 6; i++) await Promise.resolve();
+
+      expect(recsApi.refreshRecommendations).toHaveBeenCalledTimes(1);
+      expect(dismiss).toHaveBeenCalledTimes(1);
+      expect(infoSpy).toHaveBeenCalledTimes(1);
+      infoSpy.mockRestore();
+      for (const [arg] of mockShowToast.mock.calls) {
+        expect((arg as { kind: string }).kind).not.toBe('error');
+      }
+    });
+
+    test('explicit refresh 403 still shows the error toast (#619)', async () => {
+      (recsApi.refreshRecommendations as jest.Mock).mockRejectedValue(
+        Object.assign(new Error('permission denied'), { status: 403 }),
+      );
+      await startRecommendationsRefresh(async () => undefined);
+      expect(mockShowToast).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Recommendations refresh failed: permission denied', kind: 'error' }),
+      );
+    });
+
+    // Issue #106 fix-review finding 1: a 409 from POST /recommendations/refresh
+    // means a collection someone else started (the backend's cold-start
+    // marker, or another caller) is already running, not a failure. Poll
+    // freshness until last_collection_started_at clears, then reload as if
+    // this call had started the collection.
+    test('409 already-in-progress — polls freshness then reloads on success', async () => {
+      mockGetRecs();
+      (recsApi.getRecommendationsFreshness as jest.Mock).mockResolvedValueOnce({
+        last_collected_at: null,
+        last_collection_error: null,
+      });
+      (recsApi.refreshRecommendations as jest.Mock).mockRejectedValue(
+        Object.assign(new Error('HTTP 409'), { status: 409 }),
+      );
+      // First two freshness polls report the marker still held; the third
+      // reports it cleared.
+      (recsApi.getRecommendationsFreshness as jest.Mock)
+        .mockResolvedValueOnce({
+          last_collected_at: null,
+          last_collection_error: null,
+          last_collection_started_at: new Date().toISOString(),
+        })
+        .mockResolvedValueOnce({
+          last_collected_at: null,
+          last_collection_error: null,
+          last_collection_started_at: new Date().toISOString(),
+        })
+        .mockResolvedValue({
+          last_collected_at: new Date().toISOString(),
+          last_collection_error: null,
+          last_collection_started_at: null,
+        });
+
+      await loadRecommendations();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      // Drive the poll loop: 3 iterations of delay(5s) -> freshness check.
+      await jest.advanceTimersByTimeAsync(5_000);
+      await jest.advanceTimersByTimeAsync(5_000);
+      await jest.advanceTimersByTimeAsync(5_000);
+
+      expect(mockShowToast).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Recommendations refreshed', kind: 'success' }),
+      );
+      expect(mockShowToast).not.toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'error' }),
+      );
+      // loadRecommendations (the default onReload) calls getRecommendations
+      // again on success -- confirms the reload actually ran.
+      expect(api.getRecommendations).toHaveBeenCalledTimes(2);
+    });
+
+    // Issue #106 fix-review finding 1 (timeout branch): if the marker never
+    // clears within the bounded poll budget, surface an explicit failure
+    // rather than polling forever or silently doing nothing.
+    test('409 already-in-progress — explicit failure after the poll budget is exhausted', async () => {
+      mockGetRecs();
+      (recsApi.getRecommendationsFreshness as jest.Mock).mockResolvedValueOnce({
+        last_collected_at: null,
+        last_collection_error: null,
+      });
+      (recsApi.refreshRecommendations as jest.Mock).mockRejectedValue(
+        Object.assign(new Error('HTTP 409'), { status: 409 }),
+      );
+      // The marker never clears.
+      (recsApi.getRecommendationsFreshness as jest.Mock).mockResolvedValue({
+        last_collected_at: null,
+        last_collection_error: null,
+        last_collection_started_at: new Date().toISOString(),
+      });
+
+      await loadRecommendations();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      // One attempt short of the budget: no timeout toast yet (the budget
+      // must cover the backend's 5 min collection window).
+      await jest.advanceTimersByTimeAsync(59 * 5_000);
+      expect(mockShowToast).not.toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'error' }),
+      );
+
+      // 60 poll attempts * 5s = the full 5 min budget.
+      await jest.advanceTimersByTimeAsync(5_000);
+
+      expect(mockShowToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'Recommendations refresh is taking longer than expected; try again shortly',
+          kind: 'error',
+        }),
+      );
+      // Only the initial load called getRecommendations — no reload fired.
+      expect(api.getRecommendations).toHaveBeenCalledTimes(1);
+    });
+
+    // When the other collection finishes with an error, the cleared marker
+    // must not be reported as a successful refresh.
+    test('409 already-in-progress — failure toast when the other collect failed', async () => {
+      mockGetRecs();
+      (recsApi.getRecommendationsFreshness as jest.Mock).mockResolvedValueOnce({
+        last_collected_at: null,
+        last_collection_error: null,
+      });
+      (recsApi.refreshRecommendations as jest.Mock).mockRejectedValue(
+        Object.assign(new Error('HTTP 409'), { status: 409 }),
+      );
+      (recsApi.getRecommendationsFreshness as jest.Mock).mockResolvedValue({
+        last_collected_at: null,
+        last_collection_error: 'aws: cost explorer throttled',
+        last_collection_started_at: null,
+      });
+
+      await loadRecommendations();
+      await Promise.resolve();
+      await Promise.resolve();
+      await jest.advanceTimersByTimeAsync(5_000);
+
+      expect(mockShowToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'Recommendations refresh failed: the collection reported errors. The previous recommendations are still shown.',
+          kind: 'error',
+        }),
+      );
+      // Raw provider error text never reaches the refresh outcome toast.
+      expect(mockShowToast).not.toHaveBeenCalledWith(
+        expect.objectContaining({ message: expect.stringMatching(/^Recommendations refresh.*cost explorer throttled/) }),
+      );
+      expect(mockShowToast).not.toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Recommendations refreshed' }),
+      );
+      expect(api.getRecommendations).toHaveBeenCalledTimes(2);
     });
   });
 });
