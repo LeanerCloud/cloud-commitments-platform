@@ -338,3 +338,98 @@ func (s *Scheduler) collectAzureForAccount(ctx context.Context, acct config.Clou
 	}
 	return s.tagAccount(s.convertRecommendations(recs, "azure"), acct.ID), gap, nil
 }
+
+// collectGCPRecommendations fans out across all enabled GCP accounts,
+// resolving per-account federated credentials via the KMS signer.
+// When no accounts are registered but GCP_PROJECT_ID is set (CUDly
+// running natively on GCP with ADC), falls back to ambient credentials
+// and tags recommendations with the registered project's UUID if found
+// in cloud_accounts.
+func (s *Scheduler) collectGCPRecommendations(ctx context.Context, globalCfg *config.GlobalConfig) ([]config.RecommendationRecord, []string, *sweepGap, error) {
+	accounts, err := s.enabledAccounts(ctx, "gcp")
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	planTerm := globalCfg != nil && globalCfg.ExperimentalGCPPlanTerm
+	if len(accounts) == 0 {
+		// Issue #662: mirror the AWS ambient-path tagging fix for GCP.
+		// When the host project matches a registered cloud_accounts row,
+		// tag recs with that account's UUID instead of returning nil.
+		// Best-effort: env lookup or store errors must not fail the collection.
+		projectID := os.Getenv("GCP_PROJECT_ID")
+		if projectID == "" {
+			logging.Info("No enabled GCP accounts — skipping GCP recommendations")
+			return nil, nil, nil, nil
+		}
+		recs, gap, err := s.collectGCPAmbient(ctx, planTerm)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if acctID := s.resolveAmbientAccountID(ctx, "gcp", projectID); acctID != "" {
+			recs = s.tagAccount(recs, acctID)
+			return recs, ambientEvictionRoster(!gap.holdsEviction(), acctID), gap.forAccount().withHeld(acctID), nil
+		}
+		return recs, ambientEvictionRoster(!gap.holdsEviction(), ""), gap.forAccount(), nil
+	}
+
+	recs, outcome := fanOutPerAccount(ctx, "GCP", accounts, func(ctx context.Context, acct config.CloudAccount) ([]config.RecommendationRecord, *sweepGap, error) {
+		return s.collectGCPForAccount(ctx, acct, planTerm)
+	})
+	if outcome.FailedCount == len(accounts) && len(accounts) > 0 {
+		return nil, nil, nil, errAllAccountsFailed("GCP", outcome)
+	}
+	return recs, outcome.SucceededAccountIDs, outcome.Gap, nil
+}
+
+func (s *Scheduler) collectGCPForAccount(ctx context.Context, acct config.CloudAccount, planTerm bool) ([]config.RecommendationRecord, *sweepGap, error) {
+	gcpTS, err := credentials.ResolveGCPTokenSourceWithOpts(ctx, &acct, s.credStore, credentials.GCPResolveOptions{
+		Signer:    s.oidcSigner,
+		IssuerURL: s.oidcIssuerURL,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("resolve credentials: %w", err)
+	}
+
+	var prov provider.Provider
+	if gcpTS != nil {
+		created, createErr := providerfactory.NewGCP(acct.GCPProjectID, gcpTS)
+		if createErr != nil {
+			return nil, nil, fmt.Errorf("create provider: %w", createErr)
+		}
+		prov = created
+	} else {
+		// ADC mode (application_default): use ambient credentials
+		created, createErr := s.providerFactory.CreateAndValidateProvider(ctx, "gcp", nil)
+		if createErr != nil {
+			return nil, nil, fmt.Errorf("create ambient GCP provider: %w", createErr)
+		}
+		prov = created
+	}
+
+	recClient, err := prov.GetRecommendationsClient(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("get recommendations client: %w", err)
+	}
+	recs, err := fetchGCPRecommendations(ctx, recClient, planTerm)
+	gap, err := tolerateIncompleteSweep("gcp", err)
+	if err != nil {
+		return nil, nil, fmt.Errorf("get recommendations: %w", err)
+	}
+	return s.tagAccount(s.convertRecommendations(recs, "gcp"), acct.ID), gap, nil
+}
+
+// enabledAccounts returns all enabled cloud accounts for the given provider.
+// A listing error is returned, never mapped to "no accounts": callers treat an
+// empty list as permission to fall back to ambient credentials, which must
+// not happen because of a transient store failure.
+func (s *Scheduler) enabledAccounts(ctx context.Context, providerName string) ([]config.CloudAccount, error) {
+	enabled := true
+	accounts, err := s.config.ListCloudAccounts(ctx, config.CloudAccountFilter{
+		Provider: &providerName,
+		Enabled:  &enabled,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list enabled %s accounts: %w", providerName, err)
+	}
+	return accounts, nil
+}
