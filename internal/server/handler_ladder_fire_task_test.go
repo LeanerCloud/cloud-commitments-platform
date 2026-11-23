@@ -17,12 +17,12 @@ import (
 // fireTaskStore is the fire fake with switchable gates and an RI tranche, so
 // the dispatched task can be pushed through each refusal and the RI pricing.
 type fireTaskStore struct {
-	fireFakeStore
 	global func(*config.GlobalConfig)
 	cfg    func(*config.LadderConfigDB)
 	ceil   *int64
-	ri     bool
+	fireFakeStore
 	listed int
+	ri     bool
 }
 
 func (f *fireTaskStore) GetGlobalConfig(ctx context.Context) (*config.GlobalConfig, error) {
