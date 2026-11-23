@@ -29,7 +29,7 @@ var handRolledConfigStoreAllowlist = map[string]bool{}
 // overrides on top of an embedded store define a handful.
 func TestNoHandRolledConfigStoreMocks(t *testing.T) {
 	root := repoRoot(t)
-	ifaceMethods := storeInterfaceMethods(t, filepath.Join(root, "internal", "config", "interfaces.go"))
+	ifaceMethods := storeInterfaceMethods(t, filepath.Join(root, "internal", "config"))
 	if len(ifaceMethods) < 50 {
 		t.Fatalf("parsed only %d StoreInterface methods; the interface lookup has broken", len(ifaceMethods))
 	}
@@ -97,28 +97,60 @@ func TestNoHandRolledConfigStoreMocks(t *testing.T) {
 	}
 }
 
-// storeInterfaceMethods returns the method names declared on
-// config.StoreInterface in the given file.
-func storeInterfaceMethods(t *testing.T, path string) map[string]bool {
+// storeInterfaceMethods returns the method names of config.StoreInterface,
+// including the methods of the named interfaces it embeds. dir is the
+// directory of the config package; the interfaces are looked up in its non-test
+// files.
+func storeInterfaceMethods(t *testing.T, dir string) map[string]bool {
 	t.Helper()
-	f, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.SkipObjectResolution)
+	files, err := filepath.Glob(filepath.Join(dir, "*.go"))
 	if err != nil {
-		t.Fatalf("parse %s: %v", path, err)
+		t.Fatalf("glob %s: %v", dir, err)
 	}
-	methods := map[string]bool{}
-	ast.Inspect(f, func(n ast.Node) bool {
-		ts, ok := n.(*ast.TypeSpec)
-		if !ok || ts.Name.Name != "StoreInterface" {
-			return true
+	ifaces := map[string]*ast.InterfaceType{}
+	for _, path := range files {
+		if strings.HasSuffix(path, "_test.go") {
+			continue
 		}
-		if it, ok := ts.Type.(*ast.InterfaceType); ok {
-			for _, field := range it.Methods.List {
-				for _, name := range field.Names {
-					methods[name.Name] = true
+		f, perr := parser.ParseFile(token.NewFileSet(), path, nil, parser.SkipObjectResolution)
+		if perr != nil {
+			t.Fatalf("parse %s: %v", path, perr)
+		}
+		for _, decl := range f.Decls {
+			gd, ok := decl.(*ast.GenDecl)
+			if !ok {
+				continue
+			}
+			for _, spec := range gd.Specs {
+				if ts, ok := spec.(*ast.TypeSpec); ok {
+					if it, ok := ts.Type.(*ast.InterfaceType); ok {
+						ifaces[ts.Name.Name] = it
+					}
 				}
 			}
 		}
-		return false
-	})
+	}
+	methods := map[string]bool{}
+	var collect func(name string)
+	collect = func(name string) {
+		it, ok := ifaces[name]
+		if !ok {
+			t.Fatalf("interface %s not found in %s", name, dir)
+		}
+		for _, field := range it.Methods.List {
+			if len(field.Names) == 0 {
+				id, ok := field.Type.(*ast.Ident)
+				if !ok {
+					t.Fatalf("%s embeds a non-identifier type; the interface lookup cannot follow it", name)
+				}
+				collect(id.Name)
+				continue
+			}
+			for _, n := range field.Names {
+				methods[n.Name] = true
+			}
+		}
+	}
+	collect("StoreInterface")
 	return methods
 }
