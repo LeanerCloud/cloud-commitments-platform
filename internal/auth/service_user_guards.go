@@ -141,3 +141,220 @@ func (s *Service) guardGroupChangeAccess(ctx context.Context, actorUserID, targe
 	}
 	return s.checkMembershipGrantCeiling(ctx, actorUserID, added)
 }
+
+// guardSelfEscalation runs the self-edit checks: the #907 manage-users gate,
+// the #1550 carved-out-verb gate that manage-users is not sufficient to pass,
+// and the #1756 account ceiling. Split out of guardGroupChange to keep that
+// function under gocyclo's threshold.
+//
+// The two dimensions have deliberately different reach, and the difference is
+// a property of the data rather than a convenience:
+//
+//   - Permissions are a plain union with no inverted empty case, so dropping a
+//     group can only SHRINK the effective set. Only an added group can grant a
+//     permission, which is why the permission checks stay behind addsNewGroup.
+//   - allowed_accounts is a union in which the EMPTY set means every account
+//     (IsUnrestrictedAccess). Dropping the group that carries the restriction
+//     collapses the union to empty and thereby WIDENS scope, so the account
+//     ceiling has to run on every self-edit, additions or not.
+//
+// DO NOT "simplify" this back to re-reading the actor's row
+// (GetUserPermissions, or any fresh GetUserByID). That is the shorter
+// spelling and it is a silent regression.
+//
+// Both checks are evaluated against the actor's PRIOR membership, resolved
+// from `prior` directly. "Did you hold this BEFORE the change?" is the
+// question a self-escalation guard has to ask, so resolving it from the
+// snapshot is the correct implementation as well as the simpler one -- not a
+// workaround for anything.
+//
+// The previous version re-read the row and was correct only by accident of
+// transaction timing: UpdateUser calls applyUpdateUserRequest BEFORE these
+// guards run, so the in-memory user already carries the NEW membership, and
+// the re-read returned the old values purely because the write had not been
+// committed yet. The tell was in the test suite, where this case had to hand
+// back "a distinct, unmutated viewer copy for that second read" to avoid
+// aliasing the just-mutated object. Any caller that passes the mutated user,
+// or any future change that resolves permissions through it, makes the guard
+// authorize the very escalation it exists to block.
+//
+// Enforced by mutation, not just by this comment: swapping `prior` for `next`
+// below fails the suite (see the M13 row in the PR #1737 mutation matrix).
+//
+// heldBefore is that PRIOR permission set, resolved once by guardGroupChange
+// and shared with the #226 grant-ceiling check.
+func (s *Service) guardSelfEscalation(ctx context.Context, prior, next []string, heldBefore []Permission) error {
+	if addsNewGroup(prior, next) {
+		if !permissionsAllow(heldBefore, ActionUpdate, ResourceUsers, nil) {
+			return ErrSelfEscalation
+		}
+		// Holding update:users is NOT enough to hand yourself the money verbs.
+		if err := s.guardSelfCarvedOutGrant(ctx, heldBefore, next, prior); err != nil {
+			return err
+		}
+	}
+	// Runs whether or not anything was added: see the account bullet above.
+	return s.guardSelfAccountScope(ctx, prior, next)
+}
+
+// guardSelfAccountScope bounds the account dimension of a self-membership
+// change: the scope the actor comes out with may not reach beyond the scope
+// they went in with (issue #1756).
+//
+// It compares RESULTING scope against PRIOR scope rather than inspecting what
+// is being added, and that is the whole point. Two routes widen scope and they
+// run in opposite directions, so an "is anything being granted?" check only
+// ever sees one of them:
+//
+//   - JOIN a wider group. The seeded Administrators group ships
+//     allowed_accounts = ARRAY['*'] (migrations 000024/000057), so adding it
+//     hands the actor every account. The permission gate passes this happily:
+//     update:users is what it asks for and the actor already holds it.
+//   - LEAVE the scoping group. The union collapses to empty, which
+//     IsUnrestrictedAccess reads as every account. Removing the restriction
+//     grants the restriction.
+//
+// accountScopeGap gets both cases right because it treats empty and "*" as
+// UNRESTRICTED on EITHER side, so it is not a subset test: the empty set is a
+// subset of everything while meaning the opposite of narrow. Prior
+// unrestricted accepts anything (nothing left to widen); next unrestricted
+// against a restricted prior is refused whatever produced it; otherwise next
+// must name only accounts prior already named.
+func (s *Service) guardSelfAccountScope(ctx context.Context, prior, next []string) error {
+	priorAccounts, err := s.accountsForGroups(ctx, prior)
+	if err != nil {
+		return err
+	}
+	nextAccounts, err := s.accountsForGroups(ctx, next)
+	if err != nil {
+		return err
+	}
+	if gap := accountScopeGap(priorAccounts, nextAccounts); gap != "" {
+		return fmt.Errorf(
+			"%w: this change would give you %s, beyond your current account scope; ask another administrator to make it",
+			ErrSelfEscalation, gap)
+	}
+	return nil
+}
+
+// guardSelfCarvedOutGrant blocks the membership route to the same escalation
+// the group-permission grant ceiling blocks (issue #1550).
+//
+// The check above gates self-added groups on update:users, which admin:*
+// grants -- so an admin could add themselves to the Purchaser group and pick
+// up execute / approve-any / retry-any on purchases in one request, voiding
+// the #923 separation of duties exactly as writing those verbs onto their own
+// group would. It is the "one-request alternative" named in #1550's report,
+// and it is why closing only the group-permission path would leave the issue
+// open.
+//
+// The rule matches the grant ceiling's: you cannot grant yourself a carved-out
+// verb you do not already hold. Adding a SECOND group that carries a verb the
+// actor already holds is not an escalation and is allowed, so a user who is
+// legitimately a purchaser is not blocked from ordinary membership changes.
+//
+// Only SELF-edits reach here; trusted internal callers (actorUserID == "")
+// never reach here either, so seeding and bootstrap paths are unaffected.
+// guardGroupChange also applies the #226 membership grant ceiling to every
+// edit, self-edits included, which covers the same carved-out rule; this
+// check stays as the self-edit statement of it. Together they keep the
+// two-person control intact from both directions: an admin cannot add
+// themselves here, and cannot use a puppet account or a low-privilege
+// update:users grant to add someone else either.
+//
+// held is the actor's PRIOR permission set (see guardSelfEscalation). Fails
+// closed: any error loading a group being joined refuses the change.
+func (s *Service) guardSelfCarvedOutGrant(ctx context.Context, held []Permission, next, prior []string) error {
+	added := addedGroups(prior, next)
+	if len(added) == 0 {
+		return nil
+	}
+	for _, groupID := range added {
+		group, err := s.store.GetGroup(ctx, groupID)
+		if err != nil {
+			return fmt.Errorf("failed to load group %s: %w", groupID, err)
+		}
+		if group == nil {
+			// A membership entry for a group that does not exist grants
+			// nothing; the change is validated elsewhere.
+			continue
+		}
+		if perm := s.firstUnheldCarvedOut(group, held); perm != nil {
+			return fmt.Errorf(
+				"%w: joining %q would grant you %s:%s, which is reserved for separation of duties (issue #923); ask another administrator to add you",
+				ErrSelfEscalation, group.Name, perm.Action, perm.Resource)
+		}
+	}
+	return nil
+}
+
+// firstUnheldCarvedOut returns the first permission on group that is carved
+// out of the admin:* wildcard and is NOT already covered by held, or nil if
+// there is none. Coverage is evaluated with permissionsAllow so the carve-out
+// applies: an actor holding only admin:* does not "already hold" these.
+func (s *Service) firstUnheldCarvedOut(group *Group, held []Permission) *Permission {
+	for i, perm := range group.Permissions {
+		if !coversCarvedOut(perm) {
+			continue
+		}
+		if carvedOutHeld(held, perm) {
+			continue
+		}
+		return &group.Permissions[i]
+	}
+	return nil
+}
+
+// checkLastAdminConstraint returns ErrLastAdmin if removing or deactivating
+// the Administrators group's current sole holder would leave the group with
+// no other member to fall back on. Pulled out of guardGroupChange to keep that
+// function under the cyclomatic limit and reused by the deactivation guard.
+// This is a best-effort early reject; the 000065 deferred trigger is the
+// race-free backstop that also accounts for already-inactive members.
+func (s *Service) checkLastAdminConstraint(ctx context.Context) error {
+	count, err := s.store.CountGroupMembers(ctx, DefaultAdminGroupID)
+	if err != nil {
+		return fmt.Errorf("failed to count administrators: %w", err)
+	}
+	if count <= 1 {
+		return ErrLastAdmin
+	}
+	return nil
+}
+
+func containsGroup(groups []string, target string) bool {
+	for _, g := range groups {
+		if g == target {
+			return true
+		}
+	}
+	return false
+}
+
+// addedGroups returns the groups present in next but not in prior.
+func addedGroups(prior, next []string) []string {
+	var added []string
+	for _, g := range next {
+		if !containsGroup(prior, g) {
+			added = append(added, g)
+		}
+	}
+	return added
+}
+
+// addsNewGroup reports whether next contains any group not present in prior.
+func addsNewGroup(prior, next []string) bool {
+	return len(addedGroups(prior, next)) > 0
+}
+
+// applyUpdateUserRequest applies the non-nil fields of req to user. GroupID
+// membership changes are validated separately by the caller via
+// guardGroupChange; Active is a bool with no per-field validation.
+func applyUpdateUserRequest(user *User, req UpdateUserRequest) {
+	if req.GroupIDs != nil {
+		user.GroupIDs = req.GroupIDs
+	}
+	if req.Active != nil {
+		user.Active = *req.Active
+	}
+}
