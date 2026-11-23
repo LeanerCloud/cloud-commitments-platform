@@ -12,10 +12,15 @@ import {
 import {
   savePlan,
   closePlanModal,
+  openCreatePlanModal,
+  openNewPlanModal,
+  closePurchaseModal,
+  setupPlanHandlers,
   _resetRampHandlersForTest,
 } from '../plans';
 
 import * as api from '../api';
+import * as state from '../state';
 
 describe('Plans Module', () => {
   beforeEach(() => {
@@ -242,6 +247,111 @@ describe('Plans Module', () => {
         expect(api.createPlan).not.toHaveBeenCalled();
         expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({ kind: 'error' }));
       });
+    });
+  });
+
+  describe('closePlanModal', () => {
+    test('adds hidden class to plan modal', () => {
+      const modal = document.getElementById('plan-modal');
+      modal?.classList.remove('hidden');
+
+      closePlanModal();
+
+      expect(modal?.classList.contains('hidden')).toBe(true);
+    });
+
+    test('handles missing modal element', () => {
+      document.body.innerHTML = '';
+
+      expect(() => closePlanModal()).not.toThrow();
+    });
+  });
+
+  test.each([openNewPlanModal, openCreatePlanModal])('collapses Advanced per open and removes its native-invalid listener on close (%#)', open => {
+    const form = document.getElementById('plan-form')!, advanced = document.createElement('details');
+    advanced.id = 'plan-advanced-settings'; form.appendChild(advanced);
+    const notify = document.getElementById('plan-notify-days')!; advanced.appendChild(notify);
+    advanced.open = true; open(); expect(advanced.open).toBe(false);
+    document.getElementById('plan-name')!.dispatchEvent(new Event('invalid')); expect(advanced.open).toBe(false);
+    notify.dispatchEvent(new Event('invalid')); expect(advanced.open).toBe(true);
+    closePlanModal(); advanced.open = false;
+    notify.dispatchEvent(new Event('invalid')); expect(advanced.open).toBe(false);
+    advanced.open = true; open(); expect(advanced.open).toBe(false); open(); closePlanModal();
+    advanced.open = false; notify.dispatchEvent(new Event('invalid')); expect(advanced.open).toBe(false);
+  });
+
+  describe('openNewPlanModal', () => {
+    test('opens modal without requiring selected recommendations', () => {
+      (state.getSelectedRecommendationIDs as jest.Mock).mockReturnValue(new Set());
+
+      openNewPlanModal();
+
+      const modal = document.getElementById('plan-modal');
+      expect(modal?.classList.contains('hidden')).toBe(false);
+    });
+
+    test('sets correct title for new plan', () => {
+      openNewPlanModal();
+
+      const title = document.getElementById('plan-modal-title');
+      expect(title?.textContent).toBe('New purchase plan');
+    });
+
+    test('resets form', () => {
+      (document.getElementById('plan-name') as HTMLInputElement).value = 'Old Plan';
+
+      openNewPlanModal();
+
+      expect((document.getElementById('plan-id') as HTMLInputElement).value).toBe('');
+    });
+
+    test('sets up ramp schedule handlers', () => {
+      openNewPlanModal();
+
+      // Verify handlers are attached by triggering change
+      const rampRadio = document.querySelector('input[value="custom"]') as HTMLInputElement;
+      rampRadio.dispatchEvent(new Event('change'));
+
+      const customConfig = document.getElementById('custom-ramp-config');
+      expect(customConfig?.classList.contains('hidden')).toBe(false);
+    });
+  });
+
+  describe('closePurchaseModal', () => {
+    test('adds hidden class to purchase modal', () => {
+      const modal = document.getElementById('purchase-modal');
+      modal?.classList.remove('hidden');
+
+      closePurchaseModal();
+
+      expect(modal?.classList.contains('hidden')).toBe(true);
+    });
+  });
+
+  describe('setupPlanHandlers', () => {
+    test('sets up provider change handler', () => {
+      setupPlanHandlers();
+
+      const providerSelect = document.getElementById('plan-provider') as HTMLSelectElement;
+      providerSelect.value = 'azure';
+      providerSelect.dispatchEvent(new Event('change'));
+
+      // Should hide + disable the AWS services optgroup. Previously this
+      // test asserted on inline style.display — that was indicator-only
+      // and missed the real bug (issue #11: the hidden class stayed
+      // baked in, so switching away from AWS never re-showed the target
+      // provider's services). The class + disabled state is the new
+      // source of truth.
+      const serviceSelect = document.getElementById('plan-service') as HTMLSelectElement;
+      const awsOptgroup = serviceSelect.querySelector('optgroup[label="AWS Services"]') as HTMLOptGroupElement;
+      expect(awsOptgroup.classList.contains('hidden')).toBe(true);
+      expect(awsOptgroup.disabled).toBe(true);
+    });
+
+    test('handles missing elements gracefully', () => {
+      document.body.innerHTML = '';
+
+      expect(() => setupPlanHandlers()).not.toThrow();
     });
   });
 });
