@@ -49,6 +49,18 @@ const PAIRS: ReadonlyArray<readonly [string, string]> = [
   ['--cudly-on-solid', '--cudly-primary'], ['--cudly-on-solid', '--cudly-primary-hover'],
   ['--cudly-on-solid', '--cudly-success'], ['--cudly-on-solid', '--cudly-error'],
   ['--cudly-on-solid', '--cudly-error-fg'],
+  // Links, neutral and info badges, table rows and hovers, chart axis text, tinted accents
+  ['--cudly-link', '--cudly-surface'], ['--cudly-link-hover', '--cudly-surface'],
+  ['--cudly-text-muted', '--cudly-border'], ['--cudly-primary', '--cudly-info-bg'],
+  ['--cudly-text', '--cudly-surface-faint'], ['--cudly-text', '--cudly-surface-subtle'],
+  ['--cudly-text', '--cudly-surface-hover'], ['--cudly-text', '--cudly-surface-header'],
+  ['--cudly-accent-fg', '--cudly-surface-tint'],
+  ['--cudly-chart-text', '--cudly-surface'], ['--cudly-chart-text', '--cudly-bg'],
+];
+
+/** Non-text contrast (WCAG 1.4.11): control borders against the surface they sit on. */
+const BORDER_PAIRS: ReadonlyArray<readonly [string, string]> = [
+  ['--cudly-border-strong', '--cudly-surface'],
 ];
 
 describe('dark palette tokens', () => {
@@ -73,6 +85,11 @@ describe('dark palette tokens', () => {
       const ratio = contrast(tokens.get(fg)!, tokens.get(bg)!);
       expect([name, fg, bg, ratio >= 4.5]).toEqual([name, fg, bg, true]);
     }
+  });
+
+  it.each(BORDER_PAIRS)('%s on %s reaches the 3:1 non-text minimum in dark', (fg, bg) => {
+    const tokens = new Map([...light, ...dark]);
+    expect(contrast(tokens.get(fg)!, tokens.get(bg)!)).toBeGreaterThanOrEqual(3);
   });
 
   it('leaves no literal white in any stylesheet (use a token)', () => {
