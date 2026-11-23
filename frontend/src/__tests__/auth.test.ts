@@ -1,62 +1,14 @@
 /**
  * Auth module tests
  */
+// The harness registers the module mocks, so it must be imported first.
+import { mockShowToast } from './auth-harness';
 import { showLoginModal, showResetPasswordModal, updateUserUI, logout, emailInitials } from '../auth';
 import { ADMINISTRATORS_GROUP_ID } from '../permissions';
 import { reloadPage } from '../utils';
-
-jest.mock('../utils', () => ({
-  ...jest.requireActual('../utils'),
-  reloadPage: jest.fn(),
-}));
-
-// Mock the api module
-jest.mock('../api', () => {
-  // Mirror the real MFALoginError class shape so production code's
-  // `error instanceof api.MFALoginError` branch can be exercised by
-  // tests. Defined inside the factory so the inline `class`
-  // declaration isn't hoisted past the jest.mock factory boundary.
-  class MFALoginError extends Error {
-    code: string;
-    constructor(code: string) {
-      super(code);
-      this.name = 'MFALoginError';
-      this.code = code;
-      Object.setPrototypeOf(this, MFALoginError.prototype);
-    }
-  }
-  return {
-    login: jest.fn(),
-    logout: jest.fn(),
-    requestPasswordReset: jest.fn(),
-    resetPassword: jest.fn(),
-    getResetTokenStatus: jest.fn(),
-    apiRequest: jest.fn(),
-    base64Encode: (s: string) => btoa(s),
-    MFALoginError,
-    setupMFA: jest.fn(),
-    enableMFA: jest.fn(),
-    disableMFA: jest.fn(),
-    regenerateMFARecoveryCodes: jest.fn(),
-  };
-});
-
-// Mock the state module
-jest.mock('../state', () => ({
-  getCurrentUser: jest.fn(),
-  setCurrentUser: jest.fn()
-}));
-
 import * as api from '../api';
 import * as state from '../state';
 import { flushPromises } from './flush-promises';
-
-// Mock toast so alert() -> showToast() migrations (finding 11-L3) don't
-// require a real DOM toast implementation in jsdom.
-const mockShowToast = jest.fn();
-jest.mock('../toast', () => ({
-  showToast: (...args: unknown[]) => mockShowToast(...args),
-}));
 
 // Module-level mock time that persists across tests to ensure
 // each test gets a time later than any previous rate limit timestamp
