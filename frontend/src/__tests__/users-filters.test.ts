@@ -153,4 +153,122 @@ describe('users/filters', () => {
       expect(userState.groupFilter).toBe('');
     });
   });
+
+  describe('clearFilters', () => {
+    it('should clear all filters', () => {
+      userState.setSearchQuery('test');
+      userState.setMfaFilter('enabled');
+      userState.setGroupFilter('00000000-0000-5000-8000-000000000001');
+
+      userFilters.clearFilters();
+
+      expect(userState.searchQuery).toBe('');
+      expect(userState.mfaFilter).toBe('');
+      expect(userState.groupFilter).toBe('');
+    });
+
+    it('should reset filter inputs', () => {
+      const searchInput = document.getElementById('user-search') as HTMLInputElement;
+      const mfaSelect = document.getElementById('user-mfa-filter') as HTMLSelectElement;
+      const groupSelect = document.getElementById('user-group-filter') as HTMLSelectElement;
+
+      searchInput.value = 'test';
+      mfaSelect.value = 'enabled';
+      groupSelect.value = 'admins';
+
+      userFilters.clearFilters();
+
+      expect(searchInput.value).toBe('');
+      expect(mfaSelect.value).toBe('');
+      expect(groupSelect.value).toBe('');
+    });
+
+    it('should re-render all users after clearing', () => {
+      userState.setMfaFilter('disabled');
+      userFilters.applyFilters();
+      // Only 1 user has MFA disabled
+      expect(userState.filteredUsers.length).toBe(1);
+
+      userFilters.clearFilters();
+      expect(userState.filteredUsers.length).toBe(4);
+    });
+
+    it('should handle missing DOM elements gracefully', () => {
+      document.body.innerHTML = '';
+      expect(() => userFilters.clearFilters()).not.toThrow();
+    });
+  });
+
+  describe('updateGroupFilterDropdown', () => {
+    beforeEach(() => {
+      document.body.innerHTML = `
+        <select id="user-group-filter">
+          <option value="">All Groups</option>
+        </select>
+      `;
+      userState.setAvailableGroups([
+        { id: 'g1', name: 'Admins', permissions: [], description: '' },
+        { id: 'g2', name: 'Users', permissions: [], description: '' }
+      ] as any);
+    });
+
+    it('should populate group dropdown', () => {
+      userFilters.updateGroupFilterDropdown();
+
+      const select = document.getElementById('user-group-filter') as HTMLSelectElement;
+      expect(select.options.length).toBe(3); // All Groups + 2 groups
+      expect(select.options[1]?.value).toBe('g1');
+      expect(select.options[1]?.textContent?.trim()).toBe('Admins');
+      expect(select.options[2]?.value).toBe('g2');
+      expect(select.options[2]?.textContent?.trim()).toBe('Users');
+    });
+
+    it('should preserve current selection', () => {
+      const select = document.getElementById('user-group-filter') as HTMLSelectElement;
+      select.innerHTML = '<option value="">All</option><option value="g1">Admins</option>';
+      select.value = 'g1';
+
+      userFilters.updateGroupFilterDropdown();
+
+      expect(select.value).toBe('g1');
+    });
+
+    it('should handle missing element gracefully', () => {
+      document.body.innerHTML = '';
+      expect(() => userFilters.updateGroupFilterDropdown()).not.toThrow();
+    });
+
+    it('should escape HTML in group names', () => {
+      userState.setAvailableGroups([
+        { id: 'g1', name: '<script>alert("xss")</script>', permissions: [], description: '' }
+      ] as any);
+
+      userFilters.updateGroupFilterDropdown();
+
+      const select = document.getElementById('user-group-filter') as HTMLSelectElement;
+      expect(select.innerHTML).toContain('&lt;script&gt;');
+    });
+
+    it('11-M2: escapes HTML special chars in group id (value attribute)', () => {
+      // Regression: group.id was injected raw into value="..." in the innerHTML
+      // template. An id containing quotes or angle brackets could break the
+      // option element boundary. Verify escapeHtml() is applied to the id too.
+      userState.setAvailableGroups([
+        { id: '"><img src=x onerror=alert(1)>', name: 'Evil Group', permissions: [], description: '' }
+      ] as any);
+
+      userFilters.updateGroupFilterDropdown();
+
+      const select = document.getElementById('user-group-filter') as HTMLSelectElement;
+      // No element may be injected out of the value attribute.
+      expect(select.querySelector('img')).toBeNull();
+      // The raw payload must not appear verbatim inside the rendered HTML.
+      expect(select.innerHTML).not.toContain('"><img src=x');
+      // With full escaping (issue #1195 made escapeHtml quote-safe), the
+      // option value round-trips the original id intact instead of being
+      // truncated at the first double quote.
+      const opt = select.options[1];
+      expect(opt?.value).toBe('"><img src=x onerror=alert(1)>');
+    });
+  });
 });
