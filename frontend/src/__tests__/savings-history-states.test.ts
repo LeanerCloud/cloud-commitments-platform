@@ -5,7 +5,7 @@
  */
 
 // The harness registers the module mocks, so it must be imported first.
-import './savings-history-harness';
+import { mockChartInstance } from './savings-history-harness';
 import { loadSavingsHistory } from '../modules/savings-history';
 import { getSavingsAnalytics } from '../api';
 import * as state from '../state';
@@ -169,6 +169,108 @@ describe('Savings History Module', () => {
 
       const help = document.getElementById('savings-history-empty')?.querySelector('p.help-text');
       expect(help?.textContent).toContain('Unknown error');
+    });
+  });
+
+  describe('edge cases', () => {
+    test('handles empty summary object', async () => {
+      const mockData = {
+        summary: {},
+        data_points: [
+          { timestamp: '2024-01-01T00:00:00Z', total_savings: 100, cumulative_savings: 100, total_upfront: 500, purchase_count: 1 }
+        ]
+      };
+      (getSavingsAnalytics as jest.Mock).mockResolvedValue(mockData);
+
+      await loadSavingsHistory();
+
+      // Should calculate from data points
+      const periodSavingsEl = document.getElementById('period-savings');
+      expect(periodSavingsEl?.textContent).toBe('$100.00/mo');
+    });
+
+    test('handles missing stats elements', async () => {
+      document.getElementById('period-savings')?.remove();
+      document.getElementById('avg-hourly-savings')?.remove();
+      document.getElementById('peak-savings')?.remove();
+
+      const mockData = {
+        summary: { total_monthly_savings: 1500, total_annual_savings: 18000 },
+        data_points: [
+          { timestamp: '2024-01-01T00:00:00Z', total_savings: 100, cumulative_savings: 100, total_upfront: 500, purchase_count: 1 }
+        ]
+      };
+      (getSavingsAnalytics as jest.Mock).mockResolvedValue(mockData);
+
+      // Should not throw
+      await expect(loadSavingsHistory()).resolves.not.toThrow();
+    });
+
+    test('handles missing chart container parent', async () => {
+      const canvas = document.getElementById('savings-history-chart');
+      if (canvas && canvas.parentElement) {
+        canvas.parentElement.removeChild(canvas);
+        document.body.appendChild(canvas);
+      }
+
+      const mockData = {
+        data_points: [
+          { timestamp: '2024-01-01T00:00:00Z', total_savings: 10, cumulative_savings: 10, total_upfront: 100, purchase_count: 1 }
+        ]
+      };
+      (getSavingsAnalytics as jest.Mock).mockResolvedValue(mockData);
+
+      // Should not throw
+      await expect(loadSavingsHistory()).resolves.not.toThrow();
+    });
+
+    test('handles zero values in data points', async () => {
+      const mockData = {
+        data_points: [
+          { timestamp: '2024-01-01T00:00:00Z', total_savings: 0, cumulative_savings: 0, total_upfront: 0, purchase_count: 0 }
+        ]
+      };
+      (getSavingsAnalytics as jest.Mock).mockResolvedValue(mockData);
+
+      await loadSavingsHistory();
+
+      expect(Chart).toHaveBeenCalled();
+    });
+
+    test('calculates peak savings from data points', async () => {
+      const mockData = {
+        summary: null,
+        data_points: [
+          { timestamp: '2024-01-01T00:00:00Z', total_savings: 50, cumulative_savings: 50, total_upfront: 500, purchase_count: 1 },
+          { timestamp: '2024-01-02T00:00:00Z', total_savings: 150, cumulative_savings: 200, total_upfront: 1000, purchase_count: 2 },
+          { timestamp: '2024-01-03T00:00:00Z', total_savings: 100, cumulative_savings: 300, total_upfront: 1500, purchase_count: 1 }
+        ]
+      };
+      (getSavingsAnalytics as jest.Mock).mockResolvedValue(mockData);
+
+      await loadSavingsHistory();
+
+      const peakSavingsEl = document.getElementById('peak-savings');
+      // Peak should be 150
+      expect(peakSavingsEl?.textContent).toBe('$150.00/mo');
+    });
+
+    test('destroys chart when showing empty state', async () => {
+      // First load with data to create chart
+      (getSavingsAnalytics as jest.Mock).mockResolvedValue({
+        data_points: [
+          { timestamp: '2024-01-01T00:00:00Z', total_savings: 10, cumulative_savings: 10, total_upfront: 100, purchase_count: 1 }
+        ]
+      });
+      await loadSavingsHistory();
+
+      // Then load with no data
+      (getSavingsAnalytics as jest.Mock).mockResolvedValue({
+        data_points: []
+      });
+      await loadSavingsHistory();
+
+      expect(mockChartInstance.destroy).toHaveBeenCalled();
     });
   });
 });
