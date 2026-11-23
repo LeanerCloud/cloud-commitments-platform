@@ -171,4 +171,118 @@ describe('Savings History Module', () => {
       expect(y1Cb(0)).toBe('$0');
     });
   });
+
+  describe('chart callback functions', () => {
+    test('y-axis tick callback formats currency for number values', async () => {
+      const mockData = {
+        data_points: [
+          { timestamp: '2024-01-01T00:00:00Z', total_savings: 10, cumulative_savings: 10, total_upfront: 100, purchase_count: 1 }
+        ]
+      };
+      (getSavingsAnalytics as jest.Mock).mockResolvedValue(mockData);
+
+      await loadSavingsHistory();
+
+      const chartCall = (Chart as unknown as jest.Mock).mock.calls[0];
+      const yAxisCallback = chartCall[1].options.scales.y.ticks.callback;
+
+      // Compact shared formatter, not `$${x.toFixed(2)}` (issue #749)
+      expect(yAxisCallback(50)).toBe('$50');
+      expect(yAxisCallback(123.456)).toBe('$123.46');
+      expect(yAxisCallback(1500)).toBe('$1.5K');
+      expect(yAxisCallback(12500)).toBe('$12.5K');
+    });
+
+    test('y-axis tick callback formats currency for string values', async () => {
+      const mockData = {
+        data_points: [
+          { timestamp: '2024-01-01T00:00:00Z', total_savings: 10, cumulative_savings: 10, total_upfront: 100, purchase_count: 1 }
+        ]
+      };
+      (getSavingsAnalytics as jest.Mock).mockResolvedValue(mockData);
+
+      await loadSavingsHistory();
+
+      const chartCall = (Chart as unknown as jest.Mock).mock.calls[0];
+      const yAxisCallback = chartCall[1].options.scales.y.ticks.callback;
+
+      // Test with string value
+      expect(yAxisCallback('75.5')).toBe('$75.5');
+      expect(yAxisCallback('100')).toBe('$100');
+      expect(yAxisCallback('2500')).toBe('$2.5K');
+    });
+
+    test('tooltip label callback formats period savings with unit suffix (default monthly)', async () => {
+      const mockData = {
+        data_points: [
+          { timestamp: '2024-01-01T00:00:00Z', total_savings: 10, cumulative_savings: 10, total_upfront: 100, purchase_count: 1 }
+        ]
+      };
+      (getSavingsAnalytics as jest.Mock).mockResolvedValue(mockData);
+
+      await loadSavingsHistory();
+
+      const chartCall = (Chart as unknown as jest.Mock).mock.calls[0];
+      const tooltipLabelCallback = chartCall[1].options.plugins.tooltip.callbacks.label;
+
+      // Test period savings (datasetIndex 0) -- must be 2 decimal places (QA 2.3)
+      const periodContext = {
+        raw: 25.5678,
+        datasetIndex: 0,
+        dataset: { label: 'Period Savings' }
+      };
+      expect(tooltipLabelCallback(periodContext)).toBe('Period Savings: $25.57/mo');
+    });
+
+    test('tooltip label callback formats cumulative savings without unit suffix', async () => {
+      const mockData = {
+        data_points: [
+          { timestamp: '2024-01-01T00:00:00Z', total_savings: 10, cumulative_savings: 10, total_upfront: 100, purchase_count: 1 }
+        ]
+      };
+      (getSavingsAnalytics as jest.Mock).mockResolvedValue(mockData);
+      (document.getElementById('savings-series') as HTMLSelectElement).value = 'cumulative';
+
+      await loadSavingsHistory();
+
+      const chartCall = (Chart as unknown as jest.Mock).mock.calls[0];
+      const tooltipLabelCallback = chartCall[1].options.plugins.tooltip.callbacks.label;
+
+      const cumulativeContext = {
+        raw: 1234.56,
+        datasetIndex: 0,
+        dataset: { label: 'Cumulative Savings' }
+      };
+      expect(tooltipLabelCallback(cumulativeContext)).toBe('Cumulative Savings: $1,234.56');
+    });
+
+    test('tooltip label callback handles null/undefined raw value', async () => {
+      const mockData = {
+        data_points: [
+          { timestamp: '2024-01-01T00:00:00Z', total_savings: 10, cumulative_savings: 10, total_upfront: 100, purchase_count: 1 }
+        ]
+      };
+      (getSavingsAnalytics as jest.Mock).mockResolvedValue(mockData);
+
+      await loadSavingsHistory();
+
+      const chartCall = (Chart as unknown as jest.Mock).mock.calls[0];
+      const tooltipLabelCallback = chartCall[1].options.plugins.tooltip.callbacks.label;
+
+      // Test with null/undefined raw value -- 2 decimal places for period savings (QA 2.3)
+      const nullContext = {
+        raw: null,
+        datasetIndex: 0,
+        dataset: { label: 'Period Savings' }
+      };
+      expect(tooltipLabelCallback(nullContext)).toBe('Period Savings: $0.00/mo');
+
+      const undefinedContext = {
+        raw: undefined,
+        datasetIndex: 0,
+        dataset: { label: 'Period Savings' }
+      };
+      expect(tooltipLabelCallback(undefinedContext)).toBe('Period Savings: $0.00/mo');
+    });
+  });
 });
