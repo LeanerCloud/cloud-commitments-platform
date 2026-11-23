@@ -2,9 +2,18 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
+	"sync"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
+	awsrecommendations "github.com/LeanerCloud/cloud-commitments-go/providers/aws/recommendations"
+	azureprovider "github.com/LeanerCloud/cloud-commitments-go/providers/azure"
+	gcpprovider "github.com/LeanerCloud/cloud-commitments-go/providers/gcp"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/execution"
+	"golang.org/x/sync/errgroup"
 )
 
 // collectProviderRecommendations collects recommendations from a specific
@@ -144,4 +153,175 @@ type accountOutcome struct {
 	IncompleteAccountIDs []string
 	SucceededCount       int
 	FailedCount          int
+}
+
+// fanOutPerAccount runs fn concurrently across accounts, bounded by the
+// shared CUDLY_MAX_ACCOUNT_PARALLELISM env var. Per-account errors are
+// logged and the run continues — the stale-row preservation in the
+// UpsertRecommendations write path (see commit "parallelise collection")
+// keeps those accounts' older rows visible. Order is not preserved; the
+// SQL read in ListStoredRecommendations re-sorts anyway.
+//
+// Returns the merged recommendations + an accountOutcome the caller
+// uses to detect "all accounts failed" → return error → provider
+// flagged as failed in CollectRecommendations.
+func fanOutPerAccount(
+	ctx context.Context,
+	providerLabel string,
+	accounts []config.CloudAccount,
+	fn func(ctx context.Context, acct config.CloudAccount) ([]config.RecommendationRecord, *sweepGap, error),
+) ([]config.RecommendationRecord, accountOutcome) {
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(execution.ConcurrencyFromEnv())
+
+	// One mutex guards both the recs accumulator AND the outcome
+	// counters — the same critical section, no second mutex needed.
+	var mu sync.Mutex
+	var all []config.RecommendationRecord
+	var outcome accountOutcome
+
+	for i := range accounts {
+		acct := accounts[i]
+		g.Go(func() error {
+			recs, gap, err := fn(gctx, acct)
+			if err != nil {
+				if isAccountPermissionError(providerLabel, err) {
+					// Operator-fixable misconfiguration (missing IAM role
+					// on the deploy SA): log at WARN so a single
+					// misconfigured account doesn't drown out other log
+					// signals. The collection still counts as a per-account
+					// failure — provider-success semantics are unchanged.
+					logging.Warnf("%s account %s (%s) permission gap (operator action needed: grant required IAM role): %v",
+						providerLabel, acct.Name, acct.ExternalID, err)
+				} else {
+					logging.Errorf("%s account %s (%s): %v", providerLabel, acct.Name, acct.ExternalID, err)
+				}
+				mu.Lock()
+				outcome.FailedCount++
+				outcome.LastErr = fmt.Sprintf("account %s (%s): %v", acct.Name, acct.ExternalID, err)
+				mu.Unlock()
+				return nil // never fail the whole group — partial is fine
+			}
+			mu.Lock()
+			all = append(all, recs...)
+			// A partially-swept account counts as succeeded -- its rows are
+			// kept and upserted, and it must not trip the all-accounts-failed
+			// guard -- but it is deliberately withheld from
+			// SucceededAccountIDs, the roster that authorizes stale-row
+			// eviction. See tolerateIncompleteSweep for why (issue #1652).
+			outcome.SucceededCount++
+			if gap.holdsEviction() {
+				outcome.IncompleteAccountIDs = append(outcome.IncompleteAccountIDs, acct.ID)
+			} else {
+				outcome.SucceededAccountIDs = append(outcome.SucceededAccountIDs, acct.ID)
+			}
+			outcome.Gap = mergeSweepGaps(outcome.Gap, gap.forAccount().withHeld(acct.ID))
+			mu.Unlock()
+			return nil
+		})
+	}
+	if waitErr := g.Wait(); waitErr != nil {
+		// Goroutines return nil to isolate per-account failures; non-nil is unexpected.
+		logging.Warnf("fanOutPerAccount: errgroup.Wait returned unexpected error: %v", waitErr)
+	}
+	return all, outcome
+}
+
+// isAccountPermissionError reports whether err from a per-account
+// collection call represents an operator-fixable IAM permission gap
+// (rather than a genuine collector error). Used by fanOutPerAccount to
+// downgrade the log severity from ERROR to WARN — see issue #57: a
+// single misconfigured GCP account otherwise emits an [ERROR] line on
+// every scheduler tick (~15 min) and drowns out other log signals.
+//
+// Currently dispatches per provider:
+//   - "GCP": gcpprovider.IsPermissionError (HTTP 403 / gRPC PermissionDenied)
+//   - other providers: false (existing ERROR behavior preserved until
+//     analogous predicates are added for AWS/Azure)
+func isAccountPermissionError(providerLabel string, err error) bool {
+	if err == nil {
+		return false
+	}
+	switch providerLabel {
+	case "GCP":
+		return gcpprovider.IsPermissionError(err)
+	default:
+		return false
+	}
+}
+
+// errAllAccountsFailed wraps an accountOutcome's LastErr so callers
+// (the per-provider collect funcs) can surface a single error to
+// CollectRecommendations when every registered account failed.
+func errAllAccountsFailed(providerLabel string, outcome accountOutcome) error {
+	return fmt.Errorf("%s: all %d accounts failed; last error: %s",
+		providerLabel, outcome.FailedCount, outcome.LastErr)
+}
+
+// tolerateIncompleteSweep converts an incomplete recommendation collection
+// into a warning and a nil error, so the caller keeps the recommendations that
+// WERE collected instead of discarding them.
+//
+// Every recommendation-fetch site in this file has the shape
+// `recs, err := ...; if err != nil { return nil, ... }`, which throws the
+// results away. That is correct for a real error, but for a partial sweep it
+// would turn one flaky subscription out of fifty into a total collection
+// outage -- strictly worse than the silent under-collection that
+// PartialSubscriptionFailureError exists to prevent. Routing every site
+// through this helper keeps the policy in one place rather than relying on
+// each call site to remember it.
+//
+// The failed subscription IDs are named in the log so an operator can tell an
+// under-collected sweep from a genuinely shrinking savings opportunity. Any
+// other error is returned unchanged, preserving the existing fail-loud
+// behavior.
+//
+// The gap return value is what stops a tolerated sweep from being mistaken
+// for a whole one. It is nil for a complete sweep (and for a hard error, which
+// callers handle via err first); non-nil only for a partial sweep, and callers
+// must keep such an account OUT of the succeeded-account roster: that roster
+// drives UpsertRecommendations' stale-row eviction, which deletes with
+//
+//	DELETE FROM recommendations
+//	 WHERE collected_at < $1 AND (provider, account_key) IN (…)
+//
+// keyed on the CUDly account UUID, while a sweep fails one SUBSCRIPTION at a
+// time. Reporting a partial sweep as succeeded therefore deletes the
+// previous-cycle rows of every subscription the sweep never queried, and
+// their savings silently read as "nothing to buy" rather than "collection
+// incomplete" (issue #1652). That is data loss, not a display gap.
+//
+// Withholding eviction is deliberately all this does. The rows that WERE
+// collected are still upserted by natural key, and the account is not marked
+// failed -- failing it would blank the whole account's dashboard over one
+// flaky subscription, the opposite failure and the one the succeeded-account
+// roster exists to prevent.
+//
+// The gap is also how the incompleteness leaves the logs (issue #87): it is
+// threaded up through fanOutPerAccount and collectAllProviders into
+// recommendations_state.last_collection_partial, which the freshness API
+// serves, so the dashboard can tell 1-of-10 coverage from full coverage. It
+// is sanitized (counts and reason categories); the failed subscription IDs
+// and raw errors stay in this WARN log only. See sweepGap.
+func tolerateIncompleteSweep(providerName string, err error) (*sweepGap, error) {
+	var incomplete *awsrecommendations.IncompleteRecommendationsError
+	if errors.As(err, &incomplete) {
+		logging.Warnf("%s recommendations incomplete: failed_details=%d failed_scopes=%d; %v; keeping collected rows and withholding stale-row eviction",
+			providerName, incomplete.FailedDetails, incomplete.FailedScopes, incomplete)
+		return gapFromAWSIncomplete(incomplete), nil
+	}
+	partial := azureprovider.AsPartialSubscriptionFailure(err)
+	if partial == nil {
+		return tolerateSkippedRecommendations(providerName, err)
+	}
+	skipped := 0
+	if sk := partial.Skips(); sk != nil {
+		skipped = sk.SkippedCount()
+	}
+	logging.Warnf(
+		"%s recommendations incomplete: %d of %d subscriptions succeeded; not queried: %s; %d recommendation(s) skipped "+
+			"(keeping the %d that did, and holding back stale-row eviction so the un-queried subscriptions' previous rows survive)",
+		providerName, partial.Succeeded, partial.Attempted,
+		strings.Join(partial.FailedSubscriptionIDs(), ", "), skipped, partial.Succeeded)
+	return gapFromPartialSubscriptions(partial), nil
 }
