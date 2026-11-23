@@ -7,6 +7,7 @@
 // The harness registers the module mocks, so it must be imported first.
 import { mockShowToast, mockConfirmDialog, mockGroupRecsByCell, mockPageLevelRange, mockFormatSavingsRange } from './dashboard-harness';
 import { loadDashboard, loadSavingsTrendChart, setupSavingsTrendHandlers } from '../dashboard';
+import { Chart } from 'chart.js';
 import * as api from '../api';
 import * as state from '../state';
 
@@ -195,6 +196,129 @@ describe('Dashboard Module', () => {
         expect(loading.querySelector('.skeleton')).toBeNull();
         expect(emptyText()).toBe('Savings history could not be loaded. Reload the page to try again.');
       });
+    });
+
+    // #747: a slower, older response must not overwrite a newer one.
+    describe('stale-response guard (#747)', () => {
+      type Deferred = { resolve: (v: unknown) => void; reject: (e: unknown) => void };
+      const deferAnalytics = (): Deferred => {
+        const d = {} as Deferred;
+        (api.getSavingsAnalytics as jest.Mock).mockImplementationOnce(() => new Promise((resolve, reject) => {
+          d.resolve = resolve; d.reject = reject;
+        }));
+        return d;
+      };
+      const plotted = (): number[] => {
+        const calls = (Chart as unknown as jest.Mock).mock.calls;
+        const cfg = calls[calls.length - 1]?.[1] as { data: { datasets: { data: { y: number }[] }[] } } | undefined;
+        return cfg?.data.datasets[0]?.data.map((p) => p.y) ?? [];
+      };
+      // Two points: one point is the sparse-data state (#188), which draws no chart.
+      const point = (y: number) => ({ data_points: [
+        { timestamp: '2025-12-31T00:00:00Z', cumulative_savings: 0 },
+        { timestamp: '2026-01-01T00:00:00Z', cumulative_savings: y },
+      ] });
+
+      test('an older response landing last is ignored', async () => {
+        const older = deferAnalytics();
+        const newer = deferAnalytics();
+        const first = loadSavingsTrendChart();
+        const second = loadSavingsTrendChart();
+
+        newer.resolve(point(200));
+        await second;
+        older.resolve(point(100));
+        await first;
+
+        expect(Chart).toHaveBeenCalledTimes(1);
+        expect(plotted()).toEqual([0, 200]);
+      });
+
+      test('an older request failing last does not replace the newer chart with an error', async () => {
+        const older = deferAnalytics();
+        const newer = deferAnalytics();
+        const first = loadSavingsTrendChart();
+        const second = loadSavingsTrendChart();
+
+        newer.resolve(point(200));
+        await second;
+        older.reject(new Error('503'));
+        await first;
+
+        expect(document.getElementById('savings-trend-chart')?.classList.contains('hidden')).toBe(false);
+        expect(document.getElementById('savings-trend-empty')?.classList.contains('hidden')).toBe(true);
+      });
+    });
+
+    // #747: a range change updates the existing chart instead of rebuilding it.
+    test('a second load updates the trend chart in place without animation (#747)', async () => {
+      const update = jest.fn();
+      const destroy = jest.fn();
+      (Chart as unknown as jest.Mock).mockImplementationOnce((canvas: HTMLCanvasElement, config: { type: string }) => ({ canvas, config, update, destroy }));
+      (api.getSavingsAnalytics as jest.Mock)
+        .mockResolvedValueOnce({ data_points: [
+          { timestamp: '2025-12-31T00:00:00Z', cumulative_savings: 0 },
+          { timestamp: '2026-01-01T00:00:00Z', cumulative_savings: 100 },
+        ] })
+        .mockResolvedValueOnce({ data_points: [
+          { timestamp: '2025-12-31T00:00:00Z', cumulative_savings: 0 },
+          { timestamp: '2026-01-01T00:00:00Z', cumulative_savings: 300 },
+        ] });
+
+      await loadSavingsTrendChart();
+      await loadSavingsTrendChart();
+
+      expect(Chart).toHaveBeenCalledTimes(1);
+      expect(destroy).not.toHaveBeenCalled();
+      expect(update).toHaveBeenCalledWith('none');
+      // The trend chart is module state; drop it so later tests start fresh.
+      (api.getSavingsAnalytics as jest.Mock).mockResolvedValueOnce({ data_points: [] });
+      await loadSavingsTrendChart();
+    });
+
+    // #744: summary label + table for the trend chart.
+    test('describes the plotted series and lists every point as a table (#744)', async () => {
+      (api.getSavingsAnalytics as jest.Mock).mockResolvedValue({ data_points: [
+        { timestamp: '2026-01-01T00:00:00Z', cumulative_savings: 100 },
+        { timestamp: '2026-01-02T00:00:00Z', cumulative_savings: 250 },
+      ] });
+
+      await loadSavingsTrendChart();
+
+      const label = document.getElementById('savings-trend-chart')?.getAttribute('aria-label') ?? '';
+      expect(label).toContain('cumulative savings over the last');
+      expect(label).toContain('$250');
+      expect(label).toContain('2 data points');
+      const rows = document.querySelectorAll('#savings-trend-table tbody tr');
+      expect(rows).toHaveLength(2);
+      expect(rows[1]?.querySelector('td')?.textContent).toBe('$250');
+    });
+
+    // Two points: one point is the sparse-data state (#1334), which draws
+    // no chart and so has no table.
+    const twoTrendPoints = [
+      { timestamp: '2026-01-01T00:00:00Z', cumulative_savings: 100 },
+      { timestamp: '2026-01-02T00:00:00Z', cumulative_savings: 150 },
+    ];
+
+    test('removes the trend table when there is no data to plot (#744)', async () => {
+      (api.getSavingsAnalytics as jest.Mock).mockResolvedValueOnce({ data_points: twoTrendPoints });
+      await loadSavingsTrendChart();
+      expect(document.getElementById('savings-trend-table')).not.toBeNull();
+
+      (api.getSavingsAnalytics as jest.Mock).mockResolvedValueOnce({ data_points: [] });
+      await loadSavingsTrendChart();
+      expect(document.getElementById('savings-trend-table')).toBeNull();
+    });
+
+    test('removes the trend table in the sparse-data state (#744, #1334)', async () => {
+      (api.getSavingsAnalytics as jest.Mock).mockResolvedValueOnce({ data_points: twoTrendPoints });
+      await loadSavingsTrendChart();
+      expect(document.getElementById('savings-trend-table')).not.toBeNull();
+
+      (api.getSavingsAnalytics as jest.Mock).mockResolvedValueOnce({ data_points: [twoTrendPoints[0]] });
+      await loadSavingsTrendChart();
+      expect(document.getElementById('savings-trend-table')).toBeNull();
     });
   });
 });
