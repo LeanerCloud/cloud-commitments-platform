@@ -12,6 +12,7 @@ import {
 import {
   loadRecommendations,
   openPurchaseModal,
+  getPurchaseModalRecommendations,
   resetAutoRefreshInFlight,
 } from '../recommendations';
 import * as api from '../api';
@@ -345,6 +346,129 @@ describe('Recommendations Module', () => {
       expect(details?.textContent).toContain('Include'); // select-all column header label
       expect(details?.textContent).toContain('Totals');  // totals row label
       expect(details?.textContent).toContain('approval'); // approval-required note
+    });
+
+    test('lists individual recommendations', async () => {
+      const recommendations = [
+        { id: 'rec-4', provider: 'aws' as const, service: 'ec2', resource_type: 't3.medium', region: 'us-east-1', count: 5, term: 1, savings: 100, upfront_cost: 500 }
+      ];
+
+      await openPurchaseModal(recommendations);
+
+      const details = document.getElementById('purchase-details');
+      expect(details?.textContent).toContain('EC2');
+      expect(details?.textContent).toContain('t3.medium');
+      expect(details?.textContent).toContain('us-east-1');
+    });
+
+    test('handles missing modal element', async () => {
+      document.body.replaceChildren();
+
+      await expect(openPurchaseModal([])).resolves.not.toThrow();
+    });
+
+    // Issue #288: the primary action does NOT execute the purchase — it
+    // sends an approval-request email. Pin the post-fix label + body
+    // wording so a regression that reverts to the misleading "Execute
+    // Purchase" framing fails this suite.
+    describe('approval-required messaging (issue #288)', () => {
+      beforeEach(() => {
+        // These tests exercise the approval-required path that renders the
+        // explanatory note. After issue #923 / PR #924, the execute-mode
+        // toggle renders only for sessions with execute-any:purchases or
+        // execute-own:purchases (both gated on isAdmin()). Using a regular
+        // user here ensures the approval-required note is rendered and the
+        // execute-mode toggle is absent, which is what the assertions below
+        // expect. The admin execute-mode toggle path is covered in
+        // execute-mode-toggle.test.ts.
+        (state.getCurrentUser as jest.Mock).mockReturnValue({ id: 'u-reg', email: 'user@example.com', groups: [] });
+      });
+
+      afterEach(() => {
+        // Restore the default admin mock so tests in sibling describe blocks
+        // are not affected by this scope's non-admin override. The outer
+        // beforeEach only calls clearAllMocks() which does not reset return
+        // values, so we must restore explicitly.
+        (state.getCurrentUser as jest.Mock).mockReturnValue({ id: 'u-admin', email: 'admin@example.com', groups: ['00000000-0000-5000-8000-000000000001'] });
+      });
+
+      const baseRec = {
+        id: 'rec-288',
+        provider: 'aws' as const,
+        service: 'ec2',
+        resource_type: 't3.medium',
+        region: 'us-east-1',
+        count: 5,
+        term: 1,
+        savings: 100,
+        upfront_cost: 500,
+      };
+
+      test('primary button reads "Send for approval", not "Execute Purchase"', async () => {
+        await openPurchaseModal([baseRec]);
+
+        const btn = document.getElementById('execute-purchase-btn');
+        expect(btn?.textContent).toBe('Send for approval');
+        // Belt-and-braces: ensure no element on the rendered modal still
+        // carries the pre-#288 text — guards against a future template
+        // re-introducing the misleading wording somewhere new.
+        const modal = document.getElementById('purchase-modal');
+        expect(modal?.textContent).not.toContain('Execute Purchase');
+      });
+
+      test('modal body carries the approval-required explanation', async () => {
+        await openPurchaseModal([baseRec]);
+
+        const details = document.getElementById('purchase-details');
+        expect(details?.textContent).toContain('will email an approval request');
+      });
+
+      test('approval-required note renders with its dedicated class', async () => {
+        await openPurchaseModal([baseRec]);
+
+        const note = document.querySelector('#purchase-details .approval-required-note');
+        expect(note).not.toBeNull();
+        expect(note?.textContent).toMatch(/approval request/i);
+      });
+    });
+
+    // Issue #320: per-row checkboxes, select-all, live totals, Execute button state.
+    describe('per-row skip checkboxes (issue #320)', () => {
+      const makeRec = (id: string, opts: Partial<{
+        savings: number; upfront_cost: number; monthly_cost: number | null;
+        on_demand_cost: number | null; count: number; term: number;
+      }> = {}) => ({
+        id,
+        provider: 'aws' as const,
+        service: 'ec2',
+        resource_type: 't3.medium',
+        region: 'us-east-1',
+        count: opts.count ?? 1,
+        term: opts.term ?? 1,
+        payment: 'partial-upfront',
+        savings: opts.savings ?? 100,
+        upfront_cost: opts.upfront_cost ?? 600,
+        monthly_cost: opts.monthly_cost !== undefined ? opts.monthly_cost : 400,
+        on_demand_cost: opts.on_demand_cost !== undefined ? opts.on_demand_cost : null,
+      });
+
+      test('all rows are checked by default on modal open', async () => {
+        await openPurchaseModal([makeRec('a'), makeRec('b'), makeRec('c')]);
+
+        const checkboxes = document.querySelectorAll<HTMLInputElement>('.purchase-modal-row-include');
+        expect(checkboxes.length).toBe(3);
+        checkboxes.forEach((cb) => {
+          expect(cb.checked).toBe(true);
+        });
+      });
+
+      test('getPurchaseModalRecommendations returns all recs when all checked', async () => {
+        const recs = [makeRec('r1'), makeRec('r2')];
+        await openPurchaseModal(recs);
+
+        const result = getPurchaseModalRecommendations();
+        expect(result.map((r) => r.id)).toEqual(['r1', 'r2']);
+      });
     });
   });
 });
