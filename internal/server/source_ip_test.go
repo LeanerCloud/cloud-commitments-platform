@@ -52,7 +52,7 @@ func TestRequestSourceIP(t *testing.T) {
 func TestHTTPToLambdaRequest_UsesRequestSourceIP(t *testing.T) {
 	t.Parallel()
 	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, "http.go", nil, 0)
+	f, err := parser.ParseFile(fset, "http_lambda.go", nil, 0)
 	require.NoError(t, err)
 	var found, calls bool
 	ast.Inspect(f, func(n ast.Node) bool {
@@ -71,6 +71,6 @@ func TestHTTPToLambdaRequest_UsesRequestSourceIP(t *testing.T) {
 		})
 		return false
 	})
-	require.True(t, found, "httpToLambdaRequest not found in http.go")
+	require.True(t, found, "httpToLambdaRequest not found in http_lambda.go")
 	assert.True(t, calls, "httpToLambdaRequest must derive SourceIP via requestSourceIP")
 }
