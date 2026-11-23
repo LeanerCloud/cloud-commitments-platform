@@ -6,7 +6,6 @@ internal/api/handler_registrations.go	727	2026-11-23	split pending #341 (hot: co
 internal/api/types.go	1199	2026-11-23	split pending #341 (hot: 15 commits in 14 days)
 internal/api/validation.go	878	2026-11-23	split pending #341 (hot: concurrent branches touch it)
 internal/config/interfaces.go	1060	2026-11-23	split pending #341 (hot: 10 commits in 14 days)
-internal/config/store_postgres_ladder.go	540	2026-11-23	split pending #341
 internal/config/types.go	1939	2026-11-23	split pending #341 (hot: 21 commits in 14 days)
 internal/config/validation.go	1065	2026-11-23	split pending #341 (hot: concurrent branches touch it)
 internal/mocks/stores.go	3262	2026-11-23	split pending #341 (hot: 11 commits in 14 days)
