@@ -31,7 +31,7 @@
 ## Project Architecture
 
 - Follow Domain-Driven Design with bounded contexts
-- Keep files under 500 lines
+- Keep files under 500 lines (for non-test Go, `internal/filesizeguard` enforces it; existing offenders are capped in its `allowlist.txt`)
 - Use typed interfaces for all public APIs
 - Prefer TDD London School (mock-first) for new code
 - Use event sourcing for state changes
