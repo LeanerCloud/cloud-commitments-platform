@@ -2,6 +2,12 @@
  * Settings — account management tests
  * DOM is built with createElement to avoid innerHTML in source.
  */
+// The harness registers the module mocks, so it must be imported first.
+import {
+  mockShowToast,
+  mockConfirmDialog,
+  mockLoadRecommendations,
+} from './settings-accounts-harness';
 import {
   loadAccountsForProvider,
   loadOverridesPanel,
@@ -10,44 +16,6 @@ import {
   setupSettingsHandlers,
   setGlobalDefaultsForTest,
 } from '../settings';
-
-jest.mock('../api', () => ({
-  getConfig: jest.fn(),
-  updateConfig: jest.fn(),
-  listAccounts: jest.fn(),
-  createAccount: jest.fn(),
-  updateAccount: jest.fn(),
-  deleteAccount: jest.fn(),
-  testAccountCredentials: jest.fn(),
-  saveAccountCredentials: jest.fn(),
-  listAccountServiceOverrides: jest.fn(),
-  saveAccountServiceOverride: jest.fn(),
-  deleteAccountServiceOverride: jest.fn(),
-  // Issue #606 — Cancel-All-Then-Delete UX calls cancelPurchase per
-  // pending execution before retrying the account delete.
-  cancelPurchase: jest.fn(),
-  // Issue #734 — the cascade confirm lists each pending purchase.
-  getPurchaseDetails: jest.fn()
-}));
-
-const mockShowToast = jest.fn<{ dismiss: () => void }, [unknown]>(() => ({ dismiss: jest.fn() }));
-jest.mock('../toast', () => ({
-  showToast: (opts: unknown) => mockShowToast(opts)
-}));
-
-const mockConfirmDialog = jest.fn<Promise<boolean>, [unknown]>();
-jest.mock('../confirmDialog', () => ({
-  confirmDialog: (opts: unknown) => mockConfirmDialog(opts)
-}));
-
-// Mock the recommendations module to keep the settings tests focused on
-// the settings flows. Issue #196 wires settings.ts to call loadRecommendations
-// after override mutations; without this mock the test bundle would pull in
-// the full recommendations page module (~2k LOC) and its DOM expectations.
-const mockLoadRecommendations = jest.fn<Promise<void>, []>().mockResolvedValue(undefined);
-jest.mock('../recommendations', () => ({
-  loadRecommendations: () => mockLoadRecommendations()
-}));
 
 import * as api from '../api';
 import { formatDateTime } from '../utils';
