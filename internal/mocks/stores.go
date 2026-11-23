@@ -218,55 +218,6 @@ func (m *MockConfigStore) ListServiceConfigs(ctx context.Context) ([]config.Serv
 	return v, args.Error(1)
 }
 
-// CountPendingExecutionsForAccount mocks the CountPendingExecutionsForAccount operation.
-// Defaults to (0, nil) when no Fn is set and no expectation is registered.
-func (m *MockConfigStore) CountPendingExecutionsForAccount(ctx context.Context, accountID string) (int, error) {
-	m.record("CountPendingExecutionsForAccount", ctx, accountID)
-	if m.CountPendingExecutionsForAccountFn != nil {
-		return m.CountPendingExecutionsForAccountFn(ctx, accountID)
-	}
-	if !isExpected(&m.Mock, "CountPendingExecutionsForAccount") {
-		return 0, nil
-	}
-	args := m.Called(ctx, accountID)
-	return args.Int(0), args.Error(1)
-}
-
-// CountLiveExecutionsForAccount mocks the CountLiveExecutionsForAccount operation.
-// Defaults to (0, nil) when no Fn is set and no expectation is registered.
-func (m *MockConfigStore) CountLiveExecutionsForAccount(ctx context.Context, accountID string) (int, error) {
-	m.record("CountLiveExecutionsForAccount", ctx, accountID)
-	if m.CountLiveExecutionsForAccountFn != nil {
-		return m.CountLiveExecutionsForAccountFn(ctx, accountID)
-	}
-	if !isExpected(&m.Mock, "CountLiveExecutionsForAccount") {
-		return 0, nil
-	}
-	args := m.Called(ctx, accountID)
-	return args.Int(0), args.Error(1)
-}
-
-// ListPendingExecutionIDsForAccount mocks the ListPendingExecutionIDsForAccount operation.
-// Defaults to (nil, nil) when no Fn is set and no expectation is registered.
-func (m *MockConfigStore) ListPendingExecutionIDsForAccount(ctx context.Context, accountID string) ([]string, error) {
-	m.record("ListPendingExecutionIDsForAccount", ctx, accountID)
-	if m.ListPendingExecutionIDsForAccountFn != nil {
-		return m.ListPendingExecutionIDsForAccountFn(ctx, accountID)
-	}
-	if !isExpected(&m.Mock, "ListPendingExecutionIDsForAccount") {
-		return nil, nil
-	}
-	args := m.Called(ctx, accountID)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	v, ok := args.Get(0).([]string)
-	if !ok {
-		m.reporter.wrongReturnType("ListPendingExecutionIDsForAccount", "[]string", args.Get(0))
-	}
-	return v, args.Error(1)
-}
-
 // SavePurchaseHistory mocks the SavePurchaseHistory operation.
 func (m *MockConfigStore) SavePurchaseHistory(ctx context.Context, record *config.PurchaseHistoryRecord) error {
 	m.record("SavePurchaseHistory", ctx, record)
@@ -1288,17 +1239,6 @@ func (m *MockConfigStore) ListAccountServiceOverrides(ctx context.Context, accou
 
 // Plan ↔ account association
 
-// CleanupOldExecutions mocks the CleanupOldExecutions operation.
-func (m *MockConfigStore) CleanupOldExecutions(ctx context.Context, retentionDays int) (int64, error) {
-	m.record("CleanupOldExecutions", ctx, retentionDays)
-	args := m.Called(ctx, retentionDays)
-	v, ok := args.Get(0).(int64)
-	if !ok {
-		m.reporter.wrongReturnType("CleanupOldExecutions", "int64", args.Get(0))
-	}
-	return v, args.Error(1)
-}
-
 // Recommendations cache
 // These methods default to zero-value returns when no .On() expectation is
 // registered — they were opt-in in the per-package mocks and many callers
@@ -1743,81 +1683,6 @@ func (m *MockConfigStore) HistorySummaryAggregate(ctx context.Context, filter co
 	v, ok := args.Get(0).(*config.HistorySummaryGroups)
 	if !ok {
 		m.reporter.wrongReturnType("HistorySummaryAggregate", "*config.HistorySummaryGroups", args.Get(0))
-	}
-	return v, args.Error(1)
-}
-
-// CountExecutionsByPlanAndStatus mocks the CountExecutionsByPlanAndStatus operation.
-func (m *MockConfigStore) CountExecutionsByPlanAndStatus(ctx context.Context, statuses []string, since time.Time) (map[string]config.ExecutionStatusCounts, error) {
-	m.record("CountExecutionsByPlanAndStatus", ctx, statuses, since)
-	args := m.Called(ctx, statuses, since)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	v, ok := args.Get(0).(map[string]config.ExecutionStatusCounts)
-	if !ok {
-		m.reporter.wrongReturnType("CountExecutionsByPlanAndStatus", "map[string]config.ExecutionStatusCounts", args.Get(0))
-	}
-	return v, args.Error(1)
-}
-
-// GetPlannedExecutions mocks the GetPlannedExecutions operation.
-func (m *MockConfigStore) GetPlannedExecutions(ctx context.Context, statuses []string, limit int) ([]config.PurchaseExecution, error) {
-	m.record("GetPlannedExecutions", ctx, statuses, limit)
-	args := m.Called(ctx, statuses, limit)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	v, ok := args.Get(0).([]config.PurchaseExecution)
-	if !ok {
-		m.reporter.wrongReturnType("GetPlannedExecutions", "[]config.PurchaseExecution", args.Get(0))
-	}
-	return v, args.Error(1)
-}
-
-// GetStaleApprovedExecutions mocks the GetStaleApprovedExecutions operation.
-func (m *MockConfigStore) GetStaleApprovedExecutions(ctx context.Context, olderThan time.Duration) ([]config.PurchaseExecution, error) {
-	m.record("GetStaleApprovedExecutions", ctx, olderThan)
-	args := m.Called(ctx, olderThan)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	v, ok := args.Get(0).([]config.PurchaseExecution)
-	if !ok {
-		m.reporter.wrongReturnType("GetStaleApprovedExecutions", "[]config.PurchaseExecution", args.Get(0))
-	}
-	return v, args.Error(1)
-}
-
-// ListStuckExecutions mocks the ListStuckExecutions operation.
-func (m *MockConfigStore) ListStuckExecutions(ctx context.Context, statuses []string, olderThan time.Duration) ([]config.PurchaseExecution, error) {
-	m.record("ListStuckExecutions", ctx, statuses, olderThan)
-	args := m.Called(ctx, statuses, olderThan)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	v, ok := args.Get(0).([]config.PurchaseExecution)
-	if !ok {
-		m.reporter.wrongReturnType("ListStuckExecutions", "[]config.PurchaseExecution", args.Get(0))
-	}
-	return v, args.Error(1)
-}
-
-// GetScheduledExecutionsDue mocks the GetScheduledExecutionsDue operation.
-// Defaults to (nil, nil) when no expectation is registered so existing scheduler
-// tests that don't exercise the pre-fire delay path keep working without changes.
-func (m *MockConfigStore) GetScheduledExecutionsDue(ctx context.Context) ([]config.PurchaseExecution, error) {
-	m.record("GetScheduledExecutionsDue", ctx)
-	if !isExpected(&m.Mock, "GetScheduledExecutionsDue") {
-		return nil, nil
-	}
-	args := m.Called(ctx)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	v, ok := args.Get(0).([]config.PurchaseExecution)
-	if !ok {
-		m.reporter.wrongReturnType("GetScheduledExecutionsDue", "[]config.PurchaseExecution", args.Get(0))
 	}
 	return v, args.Error(1)
 }
