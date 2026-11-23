@@ -414,9 +414,26 @@ the runner once and returns `{"status":"ok","from":N,"to":M}`.
 reports a `FunctionError` or the payload status is not `ok`. A successful run
 writes `migrations ok: from N to M` to the job summary. The step has a
 20-minute timeout. Production is excluded from the step: it migrates only on
-demand (see below). GCP and Azure have no runner yet (#1966), the
-production rollout is not done (#1967), and the Fargate workflow
-(`deploy-aws-fargate.yml`) has no migrate step.
+demand (see below). The production rollout is not done (#1967), and the
+Fargate workflow (`deploy-aws-fargate.yml`) has no migrate step.
+
+GCP and Azure run the same binary mode as a job (#1966). The compute modules
+create a Cloud Run job (`<service>-migrate`, `migrate-job.tf`) and a Container
+Apps job (`<app>-migrate`) that use the same image, database settings,
+secrets and identity as the service and run `/app/cudly --migrate`, bypassing
+`/entrypoint.sh`. After `terraform apply`, `deploy-gcp.yml` executes the Cloud
+Run job with `gcloud run jobs execute --wait`, and `deploy-azure.yml` starts a
+Container Apps job execution and polls it. Both steps ("Run database
+migrations") fail the deploy unless the execution succeeds, skip production
+like the AWS step, and time out after 25 minutes (the job itself after 20).
+The Azure deploy identity needs `Microsoft.App/jobs/*`, added to
+`terraform/environments/azure/ci-cd-permissions/locals_compute.tf`; a human
+must re-apply that bootstrap stack before the first deploy that creates the
+job. The GCP deploy identity already holds `roles/run.admin`. These workflows
+are paused, so none of this has run against a real cloud yet. The flip of
+`auto_migrate` to `false` on GCP and Azure is pending: it is the owner's step
+after a verified apply (#31 D4), and until then the lazy path below still
+runs there.
 
 The lazy path still exists as a safety net. When `DB_AUTO_MIGRATE=true`
 (Terraform variable `database_auto_migrate`: `true` in `github-dev.tfvars` and
@@ -427,8 +444,8 @@ fail-open: a migration error is logged, reported by the `migrations` check of
 `/health`, and the app keeps serving. Its time limit is
 `CUDLY_MIGRATION_TIMEOUT` (a Go duration such as `180s`, default `120s`); it
 does not apply to the deploy-time runner. With `DB_AUTO_MIGRATE` off, the
-`migrations` check reports `disabled`. GCP and Azure have no runner yet, so
-their stacks still rely on the lazy path (`auto_migrate = true`). The lazy
+`migrations` check reports `disabled`. GCP and Azure keep `auto_migrate = true`
+until the owner flips it (see above). The lazy
 path still honors `CUDLY_FORCE_MIGRATION_VERSION` without the validation the
 deploy-time event applies to `force_version`, so do not set it there.
 
@@ -456,6 +473,27 @@ migration state" below). Without `timeout_seconds`, the run is bounded by 15
 minutes or by the time left before the Lambda deadline minus a 20-second
 margin, whichever is shorter. The run is refused when less than 30 seconds of
 budget remain.
+
+On GCP and Azure, run the job by hand. Confirm the project or subscription
+first (`gcloud config get-value project`, `az account show`), and take a
+database snapshot before running against production. The job names are the
+Terraform outputs `cloud_run_migrate_job_name` (with `region`) and
+`container_app_migrate_job_name` (with `resource_group_name`):
+
+```bash
+# GCP: exits non-zero when the execution fails
+gcloud run jobs execute "<service>-migrate" --region "<region>" --wait
+
+# Azure: start, then poll the execution until it is Succeeded or Failed
+az containerapp job start --name "<app>-migrate" --resource-group "<resource-group>"
+az containerapp job execution show --name "<app>-migrate" \
+  --resource-group "<resource-group>" --job-execution-name "<execution-name>" \
+  --query properties.status --output tsv
+```
+
+The job has no `--migrate-force-version`; to clear a dirty row, follow the
+manual procedure under "Dirty migration state" with the binary from a shell
+that has the database environment.
 
 From a shell that has the app's database environment (`DB_HOST`,
 `DB_PASSWORD` or the secret settings, and so on), the binary runs the same
