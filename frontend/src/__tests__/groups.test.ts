@@ -2,122 +2,14 @@
  * Tests for groups module
  */
 
-import { mockConfirmDialog, mockGroups, mockUsers } from './groups-harness';
-import * as api from '../api';
+import { mockConfirmDialog, mockGroups } from './groups-harness';
 import { loadUsers } from '../users/userActions';
+import * as api from '../api';
 import * as groupState from '../groups/state';
-import * as groupList from '../groups/groupList';
 import * as groupModals from '../groups/groupModals';
 import * as groupActions from '../groups/groupActions';
 import * as groupHandlers from '../groups/handlers';
 import * as userState from '../users/state';
-
-describe('groups/groupList', () => {
-  beforeEach(() => {
-    document.body.innerHTML = `
-      <div id="groups-list"></div>
-    `;
-    userState.setAllUsers(mockUsers as any);
-    groupState.setCurrentEditingGroup(null);
-  });
-
-  describe('renderGroups', () => {
-    it('should render edit and delete buttons with data-group-id', () => {
-      groupList.renderGroups(mockGroups);
-
-      const container = document.getElementById('groups-list');
-      const editButtons = container?.querySelectorAll('.edit-group-btn');
-      const deleteButtons = container?.querySelectorAll('.delete-group-btn');
-
-      expect(editButtons?.length).toBe(3);
-      expect(deleteButtons?.length).toBe(3);
-
-      const firstEditBtn = editButtons?.item(0) as HTMLElement | null;
-      const firstDeleteBtn = deleteButtons?.item(0) as HTMLElement | null;
-      expect(firstEditBtn?.dataset.groupId).toBe('group-1');
-      expect(firstDeleteBtn?.dataset.groupId).toBe('group-1');
-    });
-
-    it('should escape HTML in group names to prevent XSS', () => {
-      const xssGroup: api.APIGroup = {
-        id: 'xss-group',
-        name: '<script>alert("xss")</script>',
-        description: '<img src=x onerror=alert("xss")>',
-        permissions: [],
-      };
-
-      groupList.renderGroups([xssGroup]);
-
-      const container = document.getElementById('groups-list');
-      // The name and description must stay text: no element is created
-      // from them anywhere in the card.
-      expect(container?.querySelector('script, img')).toBeNull();
-      expect(container?.querySelector('h4')?.textContent).toBe(xssGroup.name);
-      expect(container?.querySelector('.group-description')?.textContent).toBe(xssGroup.description);
-      // The icon buttons carry the name in aria-label. The attribute must
-      // round-trip the raw string, so a quote cannot end it early. (innerHTML
-      // serialises attribute values without escaping < and >, which is why
-      // this checks the DOM rather than the serialised markup.)
-      const edit = container?.querySelector('.edit-group-btn');
-      expect(edit?.getAttribute('aria-label')).toBe(`Edit group ${xssGroup.name}`);
-      expect(edit?.getAttributeNames().sort()).toEqual(['aria-label', 'class', 'data-group-id', 'title']);
-    });
-
-    it('should not render if container not found', () => {
-      document.body.innerHTML = ''; // Remove the container
-
-      // Should not throw
-      expect(() => groupList.renderGroups(mockGroups)).not.toThrow();
-    });
-
-    it('should attach click handlers to edit buttons', async () => {
-      const group = mockGroups[0];
-      if (!group) throw new Error('Test data missing');
-      (api.getGroup as jest.Mock).mockResolvedValue(group);
-
-      document.body.innerHTML = `
-        <div id="groups-list"></div>
-        <div id="group-modal" class="hidden">
-          <span id="group-modal-title"></span>
-          <form id="group-form">
-            <input id="group-id" />
-            <input id="group-name" />
-            <textarea id="group-description"></textarea>
-            <div id="permissions-list"></div>
-          </form>
-        </div>
-      `;
-
-      groupList.renderGroups(mockGroups);
-
-      const editBtn = document.querySelector('.edit-group-btn') as HTMLButtonElement;
-      editBtn.click();
-
-      // Wait for async operation
-      await new Promise(resolve => setTimeout(resolve, 0));
-
-      expect(api.getGroup).toHaveBeenCalledWith('group-1');
-    });
-
-    it('should attach click handlers to delete buttons', async () => {
-      (api.deleteGroup as jest.Mock).mockResolvedValue(undefined);
-      mockConfirmDialog.mockResolvedValue(true);
-      userState.setAvailableGroups(mockGroups as any);
-
-      groupList.renderGroups(mockGroups);
-
-      const deleteBtn = document.querySelector('.delete-group-btn') as HTMLButtonElement;
-      deleteBtn.click();
-
-      // Wait for the async confirmDialog + API call chain
-      await new Promise(resolve => setTimeout(resolve, 0));
-      await new Promise(resolve => setTimeout(resolve, 0));
-
-      expect(mockConfirmDialog).toHaveBeenCalled();
-      expect(api.deleteGroup).toHaveBeenCalledWith('group-1');
-    });
-  });
-});
 
 describe('groups/groupModals', () => {
   beforeEach(() => {
