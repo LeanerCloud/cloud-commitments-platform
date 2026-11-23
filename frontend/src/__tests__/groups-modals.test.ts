@@ -119,6 +119,12 @@ describe('groups/groupModals', () => {
       (api.getGroup as jest.Mock).mockResolvedValue(group);
     });
 
+    // openEditGroupModal leaves currentEditingGroup set; saveGroup in a later
+    // test would then update instead of create (#1971).
+    afterEach(() => {
+      groupState.setCurrentEditingGroup(null);
+    });
+
     it('should fetch group details from API', async () => {
       await groupModals.openEditGroupModal('group-1');
       expect(api.getGroup).toHaveBeenCalledWith('group-1');

@@ -6,6 +6,7 @@ import './groups-harness';
 import { loadUsers } from '../users/userActions';
 import * as api from '../api';
 import * as groupModals from '../groups/groupModals';
+import * as groupState from '../groups/state';
 import * as userState from '../users/state';
 
 describe('groups/groupModals — duplicate', () => {
@@ -279,6 +280,12 @@ describe('groups/groupModals — duplicate', () => {
 // parseFloat assignment in collectPermissions.
 // ---------------------------------------------------------------------------
 describe('11-M3 max_amount validation in collectPermissions', () => {
+  // saveGroup updates instead of creating while a group is being edited; an
+  // openEditGroupModal test leaves that state set (#1971).
+  beforeEach(() => {
+    groupState.setCurrentEditingGroup(null);
+  });
+
   // Access collectPermissions indirectly via saveGroup and observe API call.
 
   it('accepts a valid positive max_amount', async () => {
