@@ -24,7 +24,6 @@ internal/config/validation.go	1065	2026-11-23	split pending #341 (hot: concurren
 internal/database/postgres/migrations/migrate.go	651	2026-11-23	split pending #341
 internal/email/sender.go	734	2026-11-23	split pending #341
 internal/email/smtp_sender.go	710	2026-11-23	split pending #341
-internal/email/templates.go	1214	2026-11-23	split pending #341
 internal/mocks/stores.go	3262	2026-11-23	split pending #341 (hot: 11 commits in 14 days)
 internal/planstep/resolve.go	713	2026-11-23	split pending #341 (hot: concurrent branches touch it)
 internal/scheduler/scheduler.go	2152	2026-11-23	split pending #341 (hot: 10 commits in 14 days)

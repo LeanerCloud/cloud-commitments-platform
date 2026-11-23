@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
-	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 )
 
 // Email templates
@@ -343,64 +342,6 @@ func (s *Sender) SendUserInviteEmail(ctx context.Context, email, setupURL string
 		func() (string, error) { return RenderUserInviteEmail(email, setupURL) },
 		func() (string, error) { return RenderUserInviteEmailHTML(email, setupURL) },
 	)
-}
-
-// renderRIExchangePendingApproval composes the plain-text + HTML approval
-// bodies. HTML render failures are non-fatal and degrade to single-part text.
-// Shared by the SES and SMTP delivery paths.
-func renderRIExchangePendingApproval(data RIExchangeNotificationData) (textBody, htmlBody string, err error) {
-	textBody, err = RenderRIExchangePendingApprovalEmail(data)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to render ri exchange pending approval email (text): %w", err)
-	}
-	htmlBody, htmlErr := RenderRIExchangePendingApprovalEmailHTML(data)
-	if htmlErr != nil {
-		logging.Warnf("email: HTML ri-exchange-pending render failed, falling back to text-only: %v", htmlErr)
-		htmlBody = ""
-	}
-	return textBody, htmlBody, nil
-}
-
-// SendRIExchangePendingApproval sends an email with RI exchange approval links
-// as multipart/alternative (plain-text + styled HTML). The rendered body
-// contains per-exchange approve/reject links that carry live tokens; any
-// subscriber of the SNS topic who received this body could approve spend they
-// were never authorized for. This method therefore routes through targeted SES
-// (SendToEmailWithCCMultipart), mirroring the hardened path used by
-// SendPurchaseApprovalRequest, and never falls back to the SNS broadcast topic.
-//
-// Returns ErrNoRecipient when data.RecipientEmail is empty. Callers must
-// resolve a recipient (e.g. the global notification email from GlobalConfig)
-// before invoking this method. Issue #296.
-func (s *Sender) SendRIExchangePendingApproval(ctx context.Context, data RIExchangeNotificationData) error {
-	if data.RecipientEmail == "" {
-		return ErrNoRecipient
-	}
-	scope := string(common.ScopeRIExchangeApprovals)
-	filteredCC, unsubHdr, postHdr, muted := prepareMuteAwareDelivery(
-		ctx, s.muteChecker, s.unsubscribeBaseURL, data.RecipientEmail, data.CCEmails, scope,
-	)
-	if muted {
-		logging.Infof("email: RI exchange approval skipped for muted recipient (scope=%s)", scope)
-		return nil
-	}
-	textBody, htmlBody, err := renderRIExchangePendingApproval(data)
-	if err != nil {
-		return err
-	}
-	subject := fmt.Sprintf("CUDly - RI Exchange Approval Required (%d exchanges)", len(data.Exchanges))
-	extraHeaders := addListUnsubscribeHeaders(unsubHdr, postHdr)
-	return s.sendToEmailWithCCMultipartHeaders(ctx, data.RecipientEmail, filteredCC, subject, textBody, htmlBody, extraHeaders)
-}
-
-// SendRIExchangeCompleted sends a notification about completed RI exchanges.
-func (s *Sender) SendRIExchangeCompleted(ctx context.Context, data RIExchangeNotificationData) error {
-	body, err := RenderRIExchangeCompletedEmail(data)
-	if err != nil {
-		return fmt.Errorf("failed to render ri exchange completed email: %w", err)
-	}
-
-	return s.SendNotification(ctx, riExchangeCompletedSubject(data), body)
 }
 
 // ---------------------------------------------------------------------------
