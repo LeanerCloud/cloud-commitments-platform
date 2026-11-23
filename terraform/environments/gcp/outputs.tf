@@ -62,6 +62,16 @@ output "cloud_run_service_url" {
   value       = var.compute_platform == "cloud-run" ? module.compute_cloud_run[0].service_url : null
 }
 
+output "region" {
+  description = "GCP region of the deployment (used by deploy-gcp.yml to run the migration job)"
+  value       = var.region
+}
+
+output "cloud_run_migrate_job_name" {
+  description = "Cloud Run job that runs the database migrations (executed by deploy-gcp.yml)"
+  value       = var.compute_platform == "cloud-run" ? module.compute_cloud_run[0].migrate_job_name : null
+}
+
 output "cloud_run_service_name" {
   description = "Cloud Run service name"
   value       = var.compute_platform == "cloud-run" ? module.compute_cloud_run[0].service_name : null

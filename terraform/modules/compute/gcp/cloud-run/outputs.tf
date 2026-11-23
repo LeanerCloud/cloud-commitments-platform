@@ -37,3 +37,8 @@ output "latest_created_revision" {
   description = "Latest created revision name"
   value       = google_cloud_run_v2_service.main.latest_created_revision
 }
+
+output "migrate_job_name" {
+  description = "Cloud Run job that applies database migrations once (run by the deploy workflow)"
+  value       = google_cloud_run_v2_job.migrate.name
+}

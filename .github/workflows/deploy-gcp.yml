@@ -222,6 +222,32 @@ jobs:
           SERVICE_URL=$(terraform output -raw cloud_run_service_url 2>/dev/null | grep -v '::' || echo "")
           echo "service_url=$SERVICE_URL" >> "$GITHUB_OUTPUT"
 
+      # One-shot migration runner (#1966, mirrors the AWS step from #31): runs
+      # `/app/cudly --migrate` in the Cloud Run job that the apply above just
+      # pointed at the new image, waits for it, and fails the deploy when the
+      # execution fails. Prod is excluded until the owner confirms it may
+      # migrate inside the deploy job (plan decision D1); it migrates on demand
+      # with the command in docs/DEPLOYMENT.md. The lazy path (auto_migrate) is
+      # still on until the owner flips it after a verified apply.
+      - name: Run database migrations
+        if: needs.prepare.outputs.target_environment != 'prod'
+        timeout-minutes: 25
+        env:
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          cd terraform/environments/gcp
+          # grep drops setup-terraform's `::debug::` wrapper lines; under
+          # pipefail a missing (null) output fails the step with terraform's
+          # own error instead of running gcloud with an empty name.
+          job="$(terraform output -raw cloud_run_migrate_job_name | grep -v '::')"
+          region="$(terraform output -raw region | grep -v '::')"
+          gcloud run jobs execute "$job" \
+            --project "$GCP_PROJECT_ID" \
+            --region "$region" \
+            --wait
+          echo "migrations ok: Cloud Run job $job" >> "$GITHUB_STEP_SUMMARY"
+
       # No automatic state-lock release on failure. The step that used to live
       # here ran on `failure() || cancelled()` with no age check and no check
       # that the lock was this run's, so it deleted whatever lock object was
