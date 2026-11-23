@@ -29,6 +29,8 @@ func TestMarketplaceTerminalPollCutoff_Postgres(t *testing.T) {
 	t.Run("NullTerminalAtIsPolled", func(t *testing.T) { checkNullTerminalAtPolled(ctx, t, store, pool) })
 	t.Run("ActiveAndPendingNeverCutOff", func(t *testing.T) { checkActivePendingNeverCutOff(ctx, t, store, pool) })
 	t.Run("PricedTerminalNotPolled", func(t *testing.T) { checkPricedTerminalNotPolled(ctx, t, store, pool) })
+	t.Run("RelistedListingGetsFreshClock", func(t *testing.T) { checkRelistFreshClock(ctx, t, store, pool) })
+	t.Run("InsertedTerminalRowsAreStamped", func(t *testing.T) { checkInsertStamped(ctx, t, store, pool) })
 	t.Run("SupersededListingCutOffAndUnsettledInTotals", func(t *testing.T) { checkSupersededCutOff(ctx, t, store, pool) })
 }
 
@@ -107,6 +109,9 @@ func checkCutoffBoundary(ctx context.Context, t *testing.T, store *PostgresStore
 	}{
 		{"n-1d", time.Duration(n-1) * 24 * time.Hour, true},
 		{"n-1m", time.Duration(n)*24*time.Hour - time.Minute, true},
+		// The clock advances between the write and the poll, so N days old
+		// really means N days plus an instant: not polled. Equality (the
+		// > versus >= question) cannot be observed.
 		{"n", time.Duration(n) * 24 * time.Hour, false},
 		{"n+1d", time.Duration(n+1) * 24 * time.Hour, false},
 	} {
@@ -161,4 +166,48 @@ func checkSupersededCutOff(ctx context.Context, t *testing.T, store *PostgresSto
 	assert.NotContains(t, due, "ril-tc-a")
 	assert.Contains(t, due, "ril-tc-b", "the current listing is still polled")
 	requireTotal(ctx, t, store, id, 0, 0, 0, 1)
+}
+
+// A listing closed long ago must not lend its clock to the RI's next listing:
+// B, relisted from A and closed unpriced just now, is polled; A is cut off.
+func checkRelistFreshClock(ctx context.Context, t *testing.T, store *PostgresStore, pool *pgxpool.Pool) {
+	const id = "tc-relist"
+	seedUnpricedTerminal(ctx, t, store, id, "ril-tc-ra", daysAgo(400))
+	old := daysAgo(MarketplaceTerminalPollCutoffDays + 20)
+	setPollTerminalAt(ctx, t, pool, id, &old)
+	relist(ctx, t, store, id, "ril-tc-rb")
+	listed := daysAgo(1)
+	_, err := store.RecordMarketplaceListingActive(ctx, id, "ril-tc-rb", listed)
+	require.NoError(t, err)
+	assert.Nil(t, readTerminalAt(ctx, t, pool, id), "an active listing has no terminal_at")
+	applied, err := store.SettleMarketplaceListing(ctx, MarketplaceListingSettlement{
+		PurchaseID: id, ListingID: "ril-tc-rb", State: ListingStateClosed, ListedAt: &listed})
+	require.NoError(t, err)
+	require.True(t, applied)
+
+	at := readTerminalAt(ctx, t, pool, id)
+	require.NotNil(t, at)
+	assert.WithinDuration(t, time.Now(), *at, time.Minute, "B's clock starts at its own close")
+	due := pollListings(ctx, t, store, id)
+	assert.Contains(t, due, "ril-tc-rb")
+	assert.NotContains(t, due, "ril-tc-ra")
+}
+
+// Rows inserted already terminal are stamped now(), in both tables.
+func checkInsertStamped(ctx context.Context, t *testing.T, store *PostgresStore, pool *pgxpool.Pool) {
+	_, err := pool.Exec(ctx, `INSERT INTO purchase_history (account_id, purchase_id, timestamp, provider, service, region,
+		resource_type, count, term, payment, listing_id, listing_state)
+		VALUES ('acct', 'tc-ins', now(), 'aws', 'ec2', 'us-east-1', 't3.micro', 1, 1, 'all-upfront', 'ril-tc-ins', 'closed')`)
+	require.NoError(t, err)
+	at := readTerminalAt(ctx, t, pool, "tc-ins")
+	require.NotNil(t, at, "purchase_history insert of a terminal row")
+	assert.WithinDuration(t, time.Now(), *at, time.Minute)
+
+	_, err = pool.Exec(ctx, `INSERT INTO marketplace_listing_settlements (listing_id, purchase_history_id, purchase_id, status)
+		SELECT 'ril-tc-ins-s', id, purchase_id, 'cancelled' FROM purchase_history WHERE purchase_id = 'tc-ins'`)
+	require.NoError(t, err)
+	var sat *time.Time
+	require.NoError(t, pool.QueryRow(ctx, `SELECT terminal_at FROM marketplace_listing_settlements WHERE listing_id = 'ril-tc-ins-s'`).Scan(&sat))
+	require.NotNil(t, sat, "settlement insert of a terminal row")
+	assert.WithinDuration(t, time.Now(), *sat, time.Minute)
 }
