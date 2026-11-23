@@ -7,6 +7,8 @@
 import * as api from '../api';
 import * as state from '../state';
 import * as recsApi from '../api/recommendations';
+import { resetAutoRefreshInFlight } from '../recommendations';
+import type { LocalRecommendation } from '../types';
 
 // Mock the api module
 jest.mock('../api', () => ({
@@ -131,3 +133,115 @@ jest.mock('../utils', () => ({
 export const mockFactoryDefaults = [...[api, state, recsApi].flatMap((mod) => Object.values(mod)), mockShowToast]
   .filter((fn): fn is jest.Mock => jest.isMockFunction(fn))
   .map((fn) => [fn, fn.getMockImplementation()] as const);
+
+/** The "Recommendations Module" describe's beforeEach, shared by every piece that re-opens it. */
+export function setupRecommendationsTest(): void {
+  // Reset DOM
+  document.body.innerHTML = `
+      <div id="opportunities-tab" class="tab-content active">
+        <div id="recommendations-summary"></div>
+        <div id="recommendations-list"></div>
+      </div>
+      <div id="purchase-modal" class="hidden">
+        <div id="purchase-details"></div>
+        <div class="modal-buttons">
+          <button type="button" id="close-purchase-modal-btn">Cancel</button>
+          <button type="button" id="execute-purchase-btn" class="primary">Send for approval</button>
+        </div>
+      </div>
+    `;
+
+  jest.clearAllMocks();
+  jest.useFakeTimers();
+  window.alert = jest.fn();
+
+  // Default freshness for pre-#284 tests: fresh (1h ago) → auto-refresh
+  // does NOT fire, so existing tests are unaffected by the new toast calls.
+  (recsApi.getRecommendationsFreshness as jest.Mock).mockResolvedValue({
+    last_collected_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+    last_collection_error: null,
+  });
+  (recsApi.refreshRecommendations as jest.Mock).mockResolvedValue({});
+  mockShowToast.mockReturnValue({ dismiss: jest.fn() });
+
+  // Reset the auto-refresh in-flight guard AND the once-per-session
+  // latch so each test starts with a clean auto-refresh state. Without
+  // this, the first stale-load test latches autoRefreshAttempted and
+  // every later test in this block would silently skip the auto-refresh.
+  resetAutoRefreshInFlight();
+}
+
+/** Helper to build a minimal LocalRecommendation fixture. */
+export const mkRec = (overrides: Partial<LocalRecommendation> = {}): LocalRecommendation => ({
+  id: 'rec-' + Math.random().toString(36).slice(2),
+  provider: 'aws',
+  service: 'ec2',
+  resource_type: 'm5.large',
+  region: 'us-east-1',
+  count: 3,
+  term: 1,
+  payment: 'no-upfront',
+  savings: 100,
+  upfront_cost: 0,
+  monthly_cost: 50,
+  ...overrides,
+} as unknown as LocalRecommendation);
+
+/** Two recs sharing the same cell key (same provider/account/service/region/resource_type/engine). */
+export const sameCell = (savingsA: number, savingsB: number): LocalRecommendation[] => [
+  mkRec({ id: 'a1', savings: savingsA, term: 1, payment: 'no-upfront', upfront_cost: 0 }),
+  mkRec({ id: 'a2', savings: savingsB, term: 3, payment: 'all-upfront', upfront_cost: 1200 }),
+];
+
+export const DOM_FOR_319 = (
+  '<div id="opportunities-tab" class="tab-content active">'
+  + '<div id="recommendations-summary"></div>'
+  + '<div id="recommendations-list"></div>'
+  + '</div>'
+  + '<div id="purchase-modal" class="hidden">'
+  + '<div id="purchase-details"></div>'
+  + '<div class="modal-buttons">'
+  + '<button type="button" id="close-purchase-modal-btn">Cancel</button>'
+  + '<button type="button" id="execute-purchase-btn" class="primary">Send for approval</button>'
+  + '</div></div>'
+);
+
+// Helper used by the issue-#479/#480/#481/#482/#483/#484 describes below to
+// set up the same DOM the top-level "Recommendations Module" describe seeds
+// in its beforeEach. Each describe block runs at module scope and therefore
+// doesn't inherit that hook.
+export function setupOpportunitiesTabDom(): void {
+  document.body.replaceChildren();
+  const recsTab = document.createElement('div');
+  recsTab.id = 'opportunities-tab';
+  recsTab.className = 'tab-content active';
+  const summary = document.createElement('div');
+  summary.id = 'recommendations-summary';
+  const list = document.createElement('div');
+  list.id = 'recommendations-list';
+  recsTab.appendChild(summary);
+  recsTab.appendChild(list);
+  document.body.appendChild(recsTab);
+  const purchaseModal = document.createElement('div');
+  purchaseModal.id = 'purchase-modal';
+  purchaseModal.className = 'hidden';
+  const purchaseDetails = document.createElement('div');
+  purchaseDetails.id = 'purchase-details';
+  purchaseModal.appendChild(purchaseDetails);
+  document.body.appendChild(purchaseModal);
+}
+
+export const mkSpRec = (service: string, overrides: Partial<LocalRecommendation> = {}): LocalRecommendation => ({
+  id: 'sp-' + service + '-' + Math.random().toString(36).slice(2),
+  provider: 'aws',
+  service,
+  resource_type: 'sp',
+  region: 'us-east-1',
+  cloud_account_id: 'acct-1',
+  count: 1,
+  term: 1,
+  payment: 'no-upfront',
+  savings: 100,
+  upfront_cost: 0,
+  ...overrides,
+} as unknown as LocalRecommendation);

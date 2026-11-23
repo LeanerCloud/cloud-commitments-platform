@@ -2,12 +2,60 @@
  * Recommendations module tests
  */
 // The harness registers the module mocks, so it must be imported first.
-import { mockFactoryDefaults, mockShowToast } from './recommendations-harness';
-import { loadRecommendations, startRecommendationsRefresh, openPurchaseModal, getPurchaseModalRecommendations, clearPurchaseModalRecommendations, refreshRecommendations, setupRecommendationsHandlers, pickBestVariantPerCell, seedGlobalDefaults, effectiveMonthlySavings, effectiveSavingsPct, displaySavingsPct, onDemandMonthly, groupRecsByCell, cellSummary, pageLevelRange, resetExpandedCells, resetAutoRefreshInFlight, scaleCost, formatCostForPeriod, periodSuffix, loadColumnVisibility, saveColumnVisibility, resetColumnVisibilityState, TOGGLEABLE_COLUMNS, COLUMN_DEFS, renderUsageSparkline, loadColumnFilters, saveColumnFilters, resetColumnFiltersState, spGroupKey, groupSpCellKeys, formatCapacity, scaleRecForCapacity, weightedDisplaySavingsPct } from '../recommendations';
+import {
+  mockFactoryDefaults,
+  mockShowToast,
+  setupRecommendationsTest,
+  mkRec,
+  sameCell,
+  DOM_FOR_319,
+  setupOpportunitiesTabDom,
+  mkSpRec,
+} from './recommendations-harness';
+import {
+  loadRecommendations,
+  startRecommendationsRefresh,
+  openPurchaseModal,
+  getPurchaseModalRecommendations,
+  clearPurchaseModalRecommendations,
+  refreshRecommendations,
+  setupRecommendationsHandlers,
+  pickBestVariantPerCell,
+  seedGlobalDefaults,
+  effectiveMonthlySavings,
+  effectiveSavingsPct,
+  displaySavingsPct,
+  onDemandMonthly,
+  groupRecsByCell,
+  cellSummary,
+  pageLevelRange,
+  resetExpandedCells,
+  resetAutoRefreshInFlight,
+  scaleCost,
+  formatCostForPeriod,
+  periodSuffix,
+  loadColumnVisibility,
+  saveColumnVisibility,
+  resetColumnVisibilityState,
+  TOGGLEABLE_COLUMNS,
+  COLUMN_DEFS,
+  renderUsageSparkline,
+  loadColumnFilters,
+  saveColumnFilters,
+  resetColumnFiltersState,
+  spGroupKey,
+  groupSpCellKeys,
+  formatCapacity,
+  scaleRecForCapacity,
+  weightedDisplaySavingsPct,
+  parseNumericFilter,
+  applyColumnFilters,
+} from '../recommendations';
 import { closeModal } from '../modal';
 import type { CostPeriod } from '../state';
 import { HOURS_PER_MONTH } from '../lib/hours-per-month';
-
+import type { LocalRecommendation } from '../types';
+import { localStorageMock } from './setup';
 import * as api from '../api';
 import * as state from '../state';
 import * as recsApi from '../api/recommendations';
@@ -20,41 +68,7 @@ beforeEach(() => {
 });
 
 describe('Recommendations Module', () => {
-  beforeEach(() => {
-    // Reset DOM
-    document.body.innerHTML = `
-      <div id="opportunities-tab" class="tab-content active">
-        <div id="recommendations-summary"></div>
-        <div id="recommendations-list"></div>
-      </div>
-      <div id="purchase-modal" class="hidden">
-        <div id="purchase-details"></div>
-        <div class="modal-buttons">
-          <button type="button" id="close-purchase-modal-btn">Cancel</button>
-          <button type="button" id="execute-purchase-btn" class="primary">Send for approval</button>
-        </div>
-      </div>
-    `;
-
-    jest.clearAllMocks();
-    jest.useFakeTimers();
-    window.alert = jest.fn();
-
-    // Default freshness for pre-#284 tests: fresh (1h ago) → auto-refresh
-    // does NOT fire, so existing tests are unaffected by the new toast calls.
-    (recsApi.getRecommendationsFreshness as jest.Mock).mockResolvedValue({
-      last_collected_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
-      last_collection_error: null,
-    });
-    (recsApi.refreshRecommendations as jest.Mock).mockResolvedValue({});
-    mockShowToast.mockReturnValue({ dismiss: jest.fn() });
-
-    // Reset the auto-refresh in-flight guard AND the once-per-session
-    // latch so each test starts with a clean auto-refresh state. Without
-    // this, the first stale-load test latches autoRefreshAttempted and
-    // every later test in this block would silently skip the auto-refresh.
-    resetAutoRefreshInFlight();
-  });
+  beforeEach(setupRecommendationsTest);
 
   afterEach(() => {
     jest.useRealTimers();
@@ -2581,9 +2595,6 @@ describe('Recommendations Module', () => {
 //
 // Bundle A: numeric expression parser + applyColumnFilters
 //
-
-import { parseNumericFilter, applyColumnFilters } from '../recommendations';
-import type { LocalRecommendation } from '../types';
 
 describe('parseNumericFilter', () => {
   const accept = (expr: string, n: number): boolean => {
@@ -5991,28 +6002,6 @@ describe('Monthly Cost + Effective % column rendering', () => {
 // Issues #225 + #226: cell grouping with savings range and collapse/expand
 //
 
-/** Helper to build a minimal LocalRecommendation fixture. */
-const mkRec = (overrides: Partial<LocalRecommendation> = {}): LocalRecommendation => ({
-  id: 'rec-' + Math.random().toString(36).slice(2),
-  provider: 'aws',
-  service: 'ec2',
-  resource_type: 'm5.large',
-  region: 'us-east-1',
-  count: 3,
-  term: 1,
-  payment: 'no-upfront',
-  savings: 100,
-  upfront_cost: 0,
-  monthly_cost: 50,
-  ...overrides,
-} as unknown as LocalRecommendation);
-
-/** Two recs sharing the same cell key (same provider/account/service/region/resource_type/engine). */
-const sameCell = (savingsA: number, savingsB: number): LocalRecommendation[] => [
-  mkRec({ id: 'a1', savings: savingsA, term: 1, payment: 'no-upfront', upfront_cost: 0 }),
-  mkRec({ id: 'a2', savings: savingsB, term: 3, payment: 'all-upfront', upfront_cost: 1200 }),
-];
-
 describe('Issues #225 + #226: cell grouping with savings range and collapse/expand', () => {
   describe('groupRecsByCell (pure helper)', () => {
     test('groups two recs with the same cell key into one entry', () => {
@@ -6356,19 +6345,6 @@ describe('Issues #225 + #226: cell grouping with savings range and collapse/expa
 //
 // Issue #319: cost-period selector tests
 //
-
-const DOM_FOR_319 = (
-  '<div id="opportunities-tab" class="tab-content active">'
-  + '<div id="recommendations-summary"></div>'
-  + '<div id="recommendations-list"></div>'
-  + '</div>'
-  + '<div id="purchase-modal" class="hidden">'
-  + '<div id="purchase-details"></div>'
-  + '<div class="modal-buttons">'
-  + '<button type="button" id="close-purchase-modal-btn">Cancel</button>'
-  + '<button type="button" id="execute-purchase-btn" class="primary">Send for approval</button>'
-  + '</div></div>'
-);
 
 describe('Issue #319: scaleCost', () => {
   test('monthly factor is 1 (identity)', () => {
@@ -6903,8 +6879,6 @@ describe('Issue #319: localStorage persistence (state.ts getCostPeriod / setCost
 // ============================================================================
 // Issue #318: Column visibility — localStorage persistence + toggle layer
 // ============================================================================
-import { localStorageMock } from './setup';
-
 describe('Column visibility (issue #318)', () => {
   beforeEach(() => {
     resetColumnVisibilityState();
@@ -7737,31 +7711,6 @@ describe('Issue #494: deterministic group sort on multi-variant cells', () => {
       .toBeLessThan(indexOrFail(order, 'pure-null'));
   });
 });
-
-// Helper used by the issue-#479/#480/#481/#482/#483/#484 describes below to
-// set up the same DOM the top-level "Recommendations Module" describe seeds
-// in its beforeEach. Each describe block runs at module scope and therefore
-// doesn't inherit that hook.
-function setupOpportunitiesTabDom(): void {
-  document.body.replaceChildren();
-  const recsTab = document.createElement('div');
-  recsTab.id = 'opportunities-tab';
-  recsTab.className = 'tab-content active';
-  const summary = document.createElement('div');
-  summary.id = 'recommendations-summary';
-  const list = document.createElement('div');
-  list.id = 'recommendations-list';
-  recsTab.appendChild(summary);
-  recsTab.appendChild(list);
-  document.body.appendChild(recsTab);
-  const purchaseModal = document.createElement('div');
-  purchaseModal.id = 'purchase-modal';
-  purchaseModal.className = 'hidden';
-  const purchaseDetails = document.createElement('div');
-  purchaseDetails.id = 'purchase-details';
-  purchaseModal.appendChild(purchaseDetails);
-  document.body.appendChild(purchaseModal);
-}
 
 //
 // Issue #479: Select-all checkbox tri-state.
@@ -8755,21 +8704,6 @@ describe('Column filters localStorage persistence (issue #163)', () => {
 //
 // Issue #135: SP plan-type row grouping in the Recommendations table
 //
-
-const mkSpRec = (service: string, overrides: Partial<LocalRecommendation> = {}): LocalRecommendation => ({
-  id: 'sp-' + service + '-' + Math.random().toString(36).slice(2),
-  provider: 'aws',
-  service,
-  resource_type: 'sp',
-  region: 'us-east-1',
-  cloud_account_id: 'acct-1',
-  count: 1,
-  term: 1,
-  payment: 'no-upfront',
-  savings: 100,
-  upfront_cost: 0,
-  ...overrides,
-} as unknown as LocalRecommendation);
 
 describe('Issue #135: spGroupKey helper', () => {
   test('returns sp-group| prefix with provider, account_id, region', () => {
