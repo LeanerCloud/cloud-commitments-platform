@@ -1,5 +1,5 @@
 /**
- * Tests for groups module (group modal create and edit)
+ * Tests for groups module (group modal create, edit and close)
  */
 
 import { mockGroups } from './groups-harness';
@@ -201,6 +201,30 @@ describe('groups/groupModals', () => {
       const permissionsList = document.getElementById('permissions-list');
       const items = permissionsList?.querySelectorAll('.permission-item');
       expect(items?.length).toBe(1); // Should add one empty permission
+    });
+  });
+
+  describe('closeGroupModal', () => {
+    it('should add hidden class to modal', () => {
+      const modal = document.getElementById('group-modal');
+      modal?.classList.remove('hidden');
+
+      groupModals.closeGroupModal();
+
+      expect(modal?.classList.contains('hidden')).toBe(true);
+    });
+
+    it('should clear current editing group', () => {
+      const group = mockGroups[0];
+      if (!group) throw new Error('Test data missing');
+      groupState.setCurrentEditingGroup(group);
+      groupModals.closeGroupModal();
+      expect(groupState.currentEditingGroup).toBeNull();
+    });
+
+    it('should handle missing modal gracefully', () => {
+      document.body.innerHTML = '';
+      expect(() => groupModals.closeGroupModal()).not.toThrow();
     });
   });
 });
