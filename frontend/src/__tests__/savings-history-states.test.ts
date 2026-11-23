@@ -6,10 +6,11 @@
 
 // The harness registers the module mocks, so it must be imported first.
 import { mockChartInstance } from './savings-history-harness';
-import { loadSavingsHistory } from '../modules/savings-history';
+import { loadSavingsHistory, initSavingsHistory } from '../modules/savings-history';
 import { getSavingsAnalytics } from '../api';
 import * as state from '../state';
 import { Chart } from 'chart.js';
+import { flushPromises } from './flush-promises';
 
 describe('Savings History Module', () => {
   beforeEach(() => {
@@ -271,6 +272,95 @@ describe('Savings History Module', () => {
       await loadSavingsHistory();
 
       expect(mockChartInstance.destroy).toHaveBeenCalled();
+    });
+  });
+
+  // CR feedback on PR #741 F2: a provider chip set to the "all" sentinel
+  // is the user explicitly choosing unfiltered, so buildFilterDesc must not
+  // include "ALL" in the empty-state copy.
+  describe('buildFilterDesc — "all" sentinel handling (PR #741 F2)', () => {
+    test('treats provider === "all" as unfiltered (no provider clause in heading)', async () => {
+      (state.getCurrentProvider as jest.Mock).mockReturnValue('all');
+      (state.getCurrentAccountIDs as jest.Mock).mockReturnValue([]);
+      (getSavingsAnalytics as jest.Mock).mockResolvedValue({ data_points: [] });
+
+      await loadSavingsHistory();
+
+      const heading = document.getElementById('savings-history-empty')?.querySelector('p:first-child');
+      expect(heading?.textContent).toContain('available yet');
+      expect(heading?.textContent).not.toMatch(/all/i);
+    });
+
+    test('treats provider === "ALL" (case-insensitive) as unfiltered', async () => {
+      (state.getCurrentProvider as jest.Mock).mockReturnValue('ALL');
+      (state.getCurrentAccountIDs as jest.Mock).mockReturnValue([]);
+      (getSavingsAnalytics as jest.Mock).mockResolvedValue({ data_points: [] });
+
+      await loadSavingsHistory();
+
+      const heading = document.getElementById('savings-history-empty')?.querySelector('p:first-child');
+      expect(heading?.textContent).toContain('available yet');
+      expect(heading?.textContent).not.toContain('ALL');
+    });
+
+    test('still shows account clause when provider === "all" but account chip is set', async () => {
+      const testUUID = 'aabbccdd-1234-5678-abcd-aabbccddee00';
+      (state.getCurrentProvider as jest.Mock).mockReturnValue('all');
+      (state.getCurrentAccountIDs as jest.Mock).mockReturnValue([testUUID]);
+      (getSavingsAnalytics as jest.Mock).mockResolvedValue({ data_points: [] });
+
+      await loadSavingsHistory();
+
+      const heading = document.getElementById('savings-history-empty')?.querySelector('p:first-child');
+      expect(heading?.textContent).toContain(testUUID);
+      expect(heading?.textContent).not.toMatch(/all,/i);
+    });
+  });
+
+  describe('one series on one axis (issue #749)', () => {
+    const mockData = {
+      data_points: [
+        { timestamp: '2024-01-01T00:00:00Z', total_savings: 100, cumulative_savings: 100, total_upfront: 0, purchase_count: 1 },
+        { timestamp: '2024-01-02T00:00:00Z', total_savings: 300, cumulative_savings: 400, total_upfront: 0, purchase_count: 1 },
+      ],
+    };
+
+    test('period view draws bars on a single y-axis', async () => {
+      (getSavingsAnalytics as jest.Mock).mockResolvedValue(mockData);
+      await loadSavingsHistory();
+      const config = (Chart as unknown as jest.Mock).mock.calls[0][1];
+      expect(Object.keys(config.options.scales)).toEqual(['x', 'y']);
+      expect(config.data.datasets).toHaveLength(1);
+      expect(config.data.datasets[0].type).toBe('bar');
+      expect(config.data.datasets[0].data.map((d: { y: number }) => d.y)).toEqual([100, 300]);
+      expect(config.options.scales.y.title.text).toBe('Savings per period (Monthly)');
+    });
+
+    test('cumulative view plots the running total alone, without a rate suffix', async () => {
+      (getSavingsAnalytics as jest.Mock).mockResolvedValue(mockData);
+      (document.getElementById('savings-series') as HTMLSelectElement).value = 'cumulative';
+      await loadSavingsHistory();
+      const config = (Chart as unknown as jest.Mock).mock.calls[0][1];
+      expect(Object.keys(config.options.scales)).toEqual(['x', 'y']);
+      expect(config.type).toBe('line');
+      expect(config.data.datasets).toHaveLength(1);
+      expect(config.data.datasets[0].label).toBe('Cumulative Savings');
+      expect(config.data.datasets[0].data.map((d: { y: number }) => d.y)).toEqual([100, 400]);
+      expect(config.options.scales.y.title.text).toBe('Cumulative savings');
+      const tooltip = config.options.plugins.tooltip.callbacks.label;
+      expect(tooltip({ raw: { x: 0, y: 400 }, dataset: { label: 'Cumulative Savings' } })).toBe('Cumulative Savings: $400.00');
+    });
+
+    test('changing the series reloads the chart once, even after a second init', async () => {
+      (getSavingsAnalytics as jest.Mock).mockResolvedValue(mockData);
+      initSavingsHistory();
+      initSavingsHistory();
+      (getSavingsAnalytics as jest.Mock).mockClear();
+      const series = document.getElementById('savings-series') as HTMLSelectElement;
+      series.value = 'cumulative';
+      series.dispatchEvent(new Event('change'));
+      await flushPromises();
+      expect(getSavingsAnalytics).toHaveBeenCalledTimes(1);
     });
   });
 });
