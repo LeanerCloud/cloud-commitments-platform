@@ -248,4 +248,93 @@ describe('users/userList', () => {
       expect(container?.innerHTML).toContain('&lt;script&gt;');
     });
   });
+
+  describe('user table event listeners', () => {
+    beforeEach(() => {
+      userList.renderUsers(mockUsers as any);
+    });
+
+    it('should toggle user selection on checkbox click', () => {
+      const checkbox = document.querySelector('.user-checkbox') as HTMLInputElement;
+      expect(checkbox).toBeTruthy();
+
+      checkbox.checked = true;
+      checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+
+      expect(userState.selectedUserIds.has('1')).toBe(true);
+    });
+
+    it('should deselect user on checkbox uncheck', () => {
+      userState.addSelectedUserId('1');
+      userList.renderUsers(mockUsers as any);
+
+      const checkbox = document.querySelector('.user-checkbox[data-user-id="1"]') as HTMLInputElement;
+      checkbox.checked = false;
+      checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+
+      expect(userState.selectedUserIds.has('1')).toBe(false);
+    });
+
+    it('should select all users on select all click', () => {
+      const selectAll = document.getElementById('select-all-users') as HTMLInputElement;
+      selectAll.checked = true;
+      selectAll.dispatchEvent(new Event('change', { bubbles: true }));
+
+      expect(userState.selectedUserIds.size).toBe(2);
+    });
+
+    it('should deselect all users on select all uncheck', () => {
+      userState.addSelectedUserId('1');
+      userState.addSelectedUserId('2');
+      userList.renderUsers(mockUsers as any);
+
+      const selectAll = document.getElementById('select-all-users') as HTMLInputElement;
+      selectAll.checked = false;
+      selectAll.dispatchEvent(new Event('change', { bubbles: true }));
+
+      expect(userState.selectedUserIds.size).toBe(0);
+    });
+  });
+
+  describe('updateBulkActionsBar', () => {
+    it('should hide bulk actions when no users selected', () => {
+      userList.updateBulkActionsBar();
+
+      const bar = document.getElementById('bulk-actions-bar');
+      expect(bar?.classList.contains('hidden')).toBe(true);
+    });
+
+    it('should show bulk actions when users are selected', () => {
+      userState.addSelectedUserId('user-1');
+      userState.addSelectedUserId('user-2');
+
+      userList.updateBulkActionsBar();
+
+      const bar = document.getElementById('bulk-actions-bar');
+      expect(bar?.classList.contains('hidden')).toBe(false);
+
+      const count = document.getElementById('selected-count');
+      expect(count?.textContent).toBe('2');
+    });
+
+    it('should update count correctly', () => {
+      userState.addSelectedUserId('user-1');
+      userList.updateBulkActionsBar();
+
+      let count = document.getElementById('selected-count');
+      expect(count?.textContent).toBe('1');
+
+      userState.addSelectedUserId('user-2');
+      userState.addSelectedUserId('user-3');
+      userList.updateBulkActionsBar();
+
+      count = document.getElementById('selected-count');
+      expect(count?.textContent).toBe('3');
+    });
+
+    it('should handle missing elements gracefully', () => {
+      document.body.innerHTML = '';
+      expect(() => userList.updateBulkActionsBar()).not.toThrow();
+    });
+  });
 });
