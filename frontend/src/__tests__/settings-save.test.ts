@@ -146,4 +146,118 @@ describe('Settings Module', () => {
       );
     });
   });
+
+  describe('saveGlobalSettings', () => {
+    const fillForm = (): void => {
+      // Set up form values
+      (document.getElementById('provider-aws') as HTMLInputElement).checked = true;
+      (document.getElementById('provider-azure') as HTMLInputElement).checked = false;
+      (document.getElementById('provider-gcp') as HTMLInputElement).checked = true;
+      (document.getElementById('setting-notification-email') as HTMLInputElement).value = 'test@test.com';
+      (document.getElementById('setting-auto-collect') as HTMLInputElement).checked = true;
+      (document.getElementById('setting-default-term') as HTMLSelectElement).value = '3';
+      (document.getElementById('setting-default-payment') as HTMLSelectElement).value = 'all-upfront';
+      (document.getElementById('setting-default-coverage') as HTMLInputElement).value = '80';
+      (document.getElementById('setting-notification-days') as HTMLInputElement).value = '3';
+    };
+
+    beforeEach(fillForm);
+
+    // Load a pristine config so the saved snapshot matches the form, as in the
+    // real page; an edit made afterwards is then the only dirty field.
+    const loadPristine = async (): Promise<void> => {
+      (api.getConfig as jest.Mock).mockResolvedValue({
+        global: {
+          enabled_providers: ['aws'], default_term: 3, default_payment: 'all-upfront',
+          default_coverage: 80, notification_days_before: 3,
+        },
+        services: [
+          { provider: 'aws', service: 'savings-plans-compute', enabled: true, term: 3, payment: 'all-upfront', coverage: 80 },
+          { provider: 'aws', service: 'savings-plans-sagemaker', enabled: true, term: 3, payment: 'all-upfront', coverage: 80 },
+          { provider: 'aws', service: 'savings-plans-database', enabled: true, term: 3, payment: 'all-upfront', coverage: 80 },
+        ],
+      });
+      await loadGlobalSettings();
+    };
+
+    // Issue #22 follow-up: AWS Savings Plans split into four per-plan-type
+    // cards (Compute / EC2 Instance / SageMaker / Database). Each gets
+    // a dedicated card in index.html so users can pin term/payment per
+    // workload independently. Lambda is intentionally absent — it has no
+    // standalone SP product (Lambda commitments roll into Compute SP).
+    test('four per-plan-type SP cards present in index.html (issue #22)', () => {
+      const fs = require('fs') as typeof import('fs');
+      const path = require('path') as typeof import('path');
+      const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8');
+      expect(html).toMatch(/<h5>\s*Compute Savings Plans\s*<\/h5>/);
+      expect(html).toMatch(/<h5>\s*EC2 Instance Savings Plans\s*<\/h5>/);
+      expect(html).toMatch(/<h5>\s*SageMaker Savings Plans\s*<\/h5>/);
+      expect(html).toMatch(/<h5>\s*Database Savings Plans\s*<\/h5>/);
+      for (const planType of ['compute', 'ec2instance', 'sagemaker', 'database']) {
+        expect(html).toMatch(new RegExp(`id="aws-savings-plans-${planType}-term"`));
+        expect(html).toMatch(new RegExp(`id="aws-savings-plans-${planType}-payment"`));
+        // Issue #136: coverage and enabled controls must be present on each card.
+        expect(html).toMatch(new RegExp(`id="aws-savings-plans-${planType}-coverage"`));
+        expect(html).toMatch(new RegExp(`id="aws-savings-plans-${planType}-enabled"`));
+      }
+    });
+
+    test('no Lambda card in index.html — Lambda has no standalone SP, only Compute SP (issue #22)', () => {
+      const fs = require('fs') as typeof import('fs');
+      const path = require('path') as typeof import('path');
+      const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8');
+      // Guard against accidental re-introduction of a Lambda-specific card.
+      expect(html).not.toMatch(/<h5>\s*Lambda Savings Plans\s*<\/h5>/);
+      expect(html).not.toMatch(/id="aws-lambda-term"/);
+      expect(html).not.toMatch(/id="aws-lambda-payment"/);
+    });
+
+    test('saveGlobalSettings sends per-plan-type SP term and payment (issue #22)', async () => {
+      (api.updateConfig as jest.Mock).mockResolvedValue({});
+      (api.updateServiceConfig as jest.Mock).mockClear().mockResolvedValue(undefined);
+      window.alert = jest.fn();
+
+      // User pins SageMaker SP to 1yr / no-upfront while leaving Compute
+      // SP at the global default (3yr / all-upfront, matching the seeded
+      // baseline from beforeEach).
+      (document.getElementById('aws-savings-plans-sagemaker-term') as HTMLSelectElement).value = '1';
+      (document.getElementById('aws-savings-plans-sagemaker-payment') as HTMLSelectElement).value = 'no-upfront';
+
+      const event = { preventDefault: jest.fn() } as unknown as Event;
+      await saveGlobalSettings(event);
+
+      const call = (api.updateServiceConfig as jest.Mock).mock.calls.find(
+        ([provider, service]) => provider === 'aws' && service === 'savings-plans-sagemaker',
+      );
+      expect(call).toBeDefined();
+      const cfg = call![2];
+      expect(cfg.term).toBe(1);
+      expect(cfg.payment).toBe('no-upfront');
+    });
+
+    test('saveGlobalSettings sends per-card coverage from SP coverage input (issue #136)', async () => {
+      await loadPristine();
+      (api.updateConfig as jest.Mock).mockResolvedValue({});
+      (api.updateServiceConfig as jest.Mock).mockClear().mockResolvedValue(undefined);
+      window.alert = jest.fn();
+
+      // Pin compute SP to 60% coverage, leave others at default 80%.
+      (document.getElementById('aws-savings-plans-compute-coverage') as HTMLInputElement).value = '60';
+
+      const event = { preventDefault: jest.fn() } as unknown as Event;
+      await saveGlobalSettings(event);
+
+      const computeCall = (api.updateServiceConfig as jest.Mock).mock.calls.find(
+        ([provider, service]) => provider === 'aws' && service === 'savings-plans-compute',
+      );
+      expect(computeCall).toBeDefined();
+      expect(computeCall![2].coverage).toBe(60);
+
+      // Other SP cards were not edited, so they are not sent (#539).
+      const ec2Call = (api.updateServiceConfig as jest.Mock).mock.calls.find(
+        ([provider, service]) => provider === 'aws' && service === 'savings-plans-ec2instance',
+      );
+      expect(ec2Call).toBeUndefined();
+    });
+  }); // end saveGlobalSettings
 });
