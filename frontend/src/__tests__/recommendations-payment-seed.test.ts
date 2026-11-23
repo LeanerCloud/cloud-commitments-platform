@@ -10,6 +10,7 @@ import {
   openPurchaseModal,
   getPurchaseModalRecommendations,
 } from '../recommendations';
+import { closeModal } from '../modal';
 import * as api from '../api';
 import * as state from '../state';
 
@@ -198,5 +199,182 @@ describe('Issue #111 (iii): per-row Payment seed in openPurchaseModal', () => {
     expect(overrideWarnings()).toHaveLength(1);
     expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({ kind: 'warning', timeout: null }));
     expect(getPurchaseModalRecommendations()[0]!.payment).toBe('all-upfront');
+  });
+
+  test('superseded open with a failed override fetch shows no toast (#1957)', async () => {
+    let rejectFirst!: (e: Error) => void;
+    (api.listAccountServiceOverrides as jest.Mock)
+      .mockImplementationOnce(() => new Promise((_, rej) => { rejectFirst = rej; }))
+      .mockResolvedValue([]);
+    const rec = {
+      id: 'rec-x', provider: 'aws' as const, cloud_account_id: 'test-account-a',
+      service: 'ec2', resource_type: 't3.medium', region: 'us-east-1',
+      count: 1, term: 1, payment: 'all-upfront', savings: 100, upfront_cost: 500,
+    };
+    (state.getRecommendations as jest.Mock).mockReturnValue([rec]);
+    mockShowToast.mockClear();
+    const first = openPurchaseModal([rec]);
+    await openPurchaseModal([rec]);
+    rejectFirst(new Error('late'));
+    await first;
+    expect(mockShowToast.mock.calls.filter(
+      ([o]) => String((o as { message?: string }).message).includes('overrides could not be loaded'),
+    )).toHaveLength(0);
+  });
+
+  const failingRecs = (n: number) => Array.from({ length: n }, (_, i) => ({
+    id: `rec-n${i}`, provider: 'aws' as const, cloud_account_id: `acct-${i + 1}`,
+    service: 'ec2', resource_type: 't3.medium', region: 'us-east-1',
+    count: 1, term: 1, payment: 'all-upfront', savings: 100, upfront_cost: 500,
+  }));
+  const warningMessages = () => mockShowToast.mock.calls
+    .map(([o]) => String((o as { message?: string }).message))
+    .filter((m) => m.includes('overrides could not be loaded'));
+
+  test.each([
+    [5, '5 account(s) (acct-1, acct-2, acct-3, acct-4, acct-5); check'],
+    [6, '6 account(s) (acct-1, acct-2, acct-3, acct-4, acct-5 +1 more); check'],
+    [7, '7 account(s) (acct-1, acct-2, acct-3, acct-4, acct-5 +2 more); check'],
+  ])('%i failed accounts: count is the total, ids capped at 5 (#1957)', async (n, expected) => {
+    (api.listAccountServiceOverrides as jest.Mock).mockRejectedValue(new Error('boom'));
+    const recs = failingRecs(n);
+    (state.getRecommendations as jest.Mock).mockReturnValue(recs);
+    mockShowToast.mockClear();
+    await openPurchaseModal(recs);
+    const msgs = warningMessages();
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]).toContain(`for ${expected}`);
+  });
+
+  test('cached account names replace raw ids in the warning (#1957)', async () => {
+    (api.listAccountsMinimal as jest.Mock).mockResolvedValue([{ id: 'acct-1', name: 'Prod Account' }]);
+    try {
+      await loadRecommendations();
+      (api.listAccountServiceOverrides as jest.Mock).mockRejectedValue(new Error('boom'));
+      const recs = failingRecs(2);
+      (state.getRecommendations as jest.Mock).mockReturnValue(recs);
+      mockShowToast.mockClear();
+      await openPurchaseModal(recs);
+      expect(warningMessages()[0]).toContain('(Prod Account, acct-2)');
+    } finally {
+      (api.listAccountsMinimal as jest.Mock).mockResolvedValue([]);
+      await loadRecommendations();
+    }
+  });
+
+  const openFailingModal = async () => {
+    (api.listAccountServiceOverrides as jest.Mock).mockRejectedValue(new Error('boom'));
+    const recs = failingRecs(1);
+    (state.getRecommendations as jest.Mock).mockReturnValue(recs);
+    mockShowToast.mockClear();
+    await openPurchaseModal(recs);
+    const dismiss = mockShowToast.mock.results[0]!.value.dismiss as jest.Mock;
+    expect(dismiss).not.toHaveBeenCalled();
+    return dismiss;
+  };
+
+  test('closing the modal dismisses the warning toast (#1957)', async () => {
+    const dismiss = await openFailingModal();
+    closeModal(document.getElementById('purchase-modal') as HTMLElement);
+    expect(dismiss).toHaveBeenCalledTimes(1);
+  });
+
+  test('Escape on the modal dismisses the warning toast (#1957)', async () => {
+    const dismiss = await openFailingModal();
+    document.getElementById('purchase-modal')!.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    );
+    expect(dismiss).toHaveBeenCalledTimes(1);
+  });
+
+  test('a new open replaces the previous warning instead of stacking (#1957)', async () => {
+    const dismiss = await openFailingModal();
+    await openPurchaseModal(failingRecs(1));
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    expect(warningMessages()).toHaveLength(2);
+  });
+
+  test('an open with no failures clears the previous warning (#1957)', async () => {
+    const dismiss = await openFailingModal();
+    (api.listAccountServiceOverrides as jest.Mock).mockResolvedValue([]);
+    await openPurchaseModal(failingRecs(1));
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    expect(warningMessages()).toHaveLength(1);
+  });
+
+  test('successful override fetch: no override warning toast (#1957)', async () => {
+    const rec = {
+      id: 'rec-s', provider: 'aws' as const, cloud_account_id: 'test-account-a',
+      service: 'ec2', resource_type: 't3.medium', region: 'us-east-1',
+      count: 1, term: 1, payment: 'all-upfront', savings: 100, upfront_cost: 500,
+    };
+    (state.getRecommendations as jest.Mock).mockReturnValue([rec]);
+    await openPurchaseModal([rec]);
+    expect(overrideWarnings()).toHaveLength(0);
+  });
+
+  test('(a) single rec with matching override → row Payment seeded from override; source-note rendered', async () => {
+    (api.listAccountServiceOverrides as jest.Mock).mockImplementation(async (id: string) => {
+      if (id === 'test-account-a') {
+        return [{ id: 'ovr-1', account_id: 'test-account-a', provider: 'aws', service: 'ec2', payment: 'partial-upfront' }];
+      }
+      return [];
+    });
+
+    const rec = {
+      id: 'rec-1', provider: 'aws' as const, cloud_account_id: 'test-account-a',
+      service: 'ec2', resource_type: 't3.medium', region: 'us-east-1',
+      count: 5, term: 1, payment: 'all-upfront', savings: 100, upfront_cost: 500,
+    };
+    // Issue #1903: the override is only honoured when a priced variant for
+    // it was actually loaded.
+    (state.getRecommendations as jest.Mock).mockReturnValue([
+      rec,
+      { ...rec, id: 'rec-1-partial', payment: 'partial-upfront', upfront_cost: 250, monthly_cost: 20 },
+    ]);
+
+    await openPurchaseModal([rec]);
+
+    const live = getPurchaseModalRecommendations();
+    expect(live).toHaveLength(1);
+    expect(live[0]!.payment).toBe('partial-upfront');
+    expect(live[0]!.upfront_cost).toBe(250);
+    expect(live[0]!.id).toBe('rec-1-partial');
+
+    const select = document.querySelector<HTMLSelectElement>('.purchase-row-payment');
+    expect(select).not.toBeNull();
+    expect(select!.value).toBe('partial-upfront');
+
+    const note = document.querySelector<HTMLElement>('.purchase-row-payment-source');
+    expect(note).not.toBeNull();
+    expect(note!.textContent).toContain('account override');
+  });
+
+  test('(b) single rec with NO matching override → row Payment seeded from rec.payment; no source-note', async () => {
+    // Override exists but for a different service — the lookup misses
+    // and the rec's own payment ('partial-upfront') wins.
+    (api.listAccountServiceOverrides as jest.Mock).mockImplementation(async (id: string) => {
+      if (id === 'test-account-a') {
+        return [{ id: 'ovr-1', account_id: 'test-account-a', provider: 'aws', service: 'rds', payment: 'no-upfront' }];
+      }
+      return [];
+    });
+
+    const rec = {
+      id: 'rec-2', provider: 'aws' as const, cloud_account_id: 'test-account-a',
+      service: 'ec2', resource_type: 't3.medium', region: 'us-east-1',
+      count: 5, term: 1, payment: 'partial-upfront', savings: 100, upfront_cost: 500,
+    };
+
+    await openPurchaseModal([rec]);
+
+    const live = getPurchaseModalRecommendations();
+    expect(live[0]!.payment).toBe('partial-upfront');
+
+    const select = document.querySelector<HTMLSelectElement>('.purchase-row-payment');
+    expect(select!.value).toBe('partial-upfront');
+
+    const note = document.querySelector('.purchase-row-payment-source');
+    expect(note).toBeNull();
   });
 });
