@@ -9,6 +9,7 @@ import { mockShowToast, mockConfirmDialog, mockGroupRecsByCell, mockPageLevelRan
 import { loadDashboard } from '../dashboard';
 import * as api from '../api';
 import * as state from '../state';
+import { flushPromises } from './flush-promises';
 
 describe('Dashboard Module', () => {
   beforeEach(() => {
@@ -209,5 +210,182 @@ describe('Dashboard Module', () => {
     // pruned-from-index plan_id is enforced by the `if (!purchase) {
     // showToast(...) }` guard in dashboard.ts but isn't easily reached
     // through the public surface, so it's covered by code-review only.)
+
+    test('cancel purchase button cancels and reloads', async () => {
+      (api.getDashboardSummary as jest.Mock).mockResolvedValue({
+        potential_monthly_savings: 1000,
+        by_service: {}
+      });
+      (api.getUpcomingPurchases as jest.Mock).mockResolvedValue({
+        purchases: [
+          {
+            execution_id: 'exec-123', plan_id: 'plan-123',
+            plan_name: 'Test Plan',
+            provider: 'aws',
+            service: 'ec2',
+            step_number: 1,
+            total_steps: 4,
+            estimated_savings: 100,
+            scheduled_date: '2024-02-15'
+          }
+        ]
+      });
+      (api.deletePlannedPurchase as jest.Mock).mockResolvedValue({});
+      window.confirm = jest.fn().mockReturnValue(true);
+
+      await loadDashboard();
+
+      // Reset mocks to track the reload
+      (api.getDashboardSummary as jest.Mock).mockClear();
+      (api.getUpcomingPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+
+      const cancelBtn = document.querySelector('[data-action="cancel-purchase"]') as HTMLButtonElement;
+      cancelBtn?.click();
+
+      await flushPromises();
+
+      expect(api.deletePlannedPurchase).toHaveBeenCalledWith('exec-123');
+      // Cancel must NOT delete the entire plan — that was the wrong fix
+      // in PR #207. deletePlan should not be called from this path.
+      expect(api.deletePlan).not.toHaveBeenCalled();
+      expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({
+        message: 'Purchase cancelled successfully',
+        kind: 'success',
+      }));
+    });
+
+    test('cancel purchase does nothing if user declines confirmation', async () => {
+      (api.getDashboardSummary as jest.Mock).mockResolvedValue({
+        potential_monthly_savings: 1000,
+        by_service: {}
+      });
+      (api.getUpcomingPurchases as jest.Mock).mockResolvedValue({
+        purchases: [
+          {
+            execution_id: 'exec-123', plan_id: 'plan-123',
+            plan_name: 'Test Plan',
+            provider: 'aws',
+            service: 'ec2',
+            step_number: 1,
+            total_steps: 4,
+            estimated_savings: 100,
+            scheduled_date: '2024-02-15'
+          }
+        ]
+      });
+      mockConfirmDialog.mockResolvedValueOnce(false);
+
+      await loadDashboard();
+
+      const cancelBtn = document.querySelector('[data-action="cancel-purchase"]') as HTMLButtonElement;
+      cancelBtn?.click();
+
+      await flushPromises();
+
+      expect(api.deletePlannedPurchase).not.toHaveBeenCalled();
+    });
+
+    test('cancel purchase shows error on failure', async () => {
+      (api.getDashboardSummary as jest.Mock).mockResolvedValue({
+        potential_monthly_savings: 1000,
+        by_service: {}
+      });
+      (api.getUpcomingPurchases as jest.Mock).mockResolvedValue({
+        purchases: [
+          {
+            execution_id: 'exec-123', plan_id: 'plan-123',
+            plan_name: 'Test Plan',
+            provider: 'aws',
+            service: 'ec2',
+            step_number: 1,
+            total_steps: 4,
+            estimated_savings: 100,
+            scheduled_date: '2024-02-15'
+          }
+        ]
+      });
+      (api.deletePlannedPurchase as jest.Mock).mockRejectedValue(new Error('API Error'));
+      window.confirm = jest.fn().mockReturnValue(true);
+      console.error = jest.fn();
+
+      await loadDashboard();
+
+      const cancelBtn = document.querySelector('[data-action="cancel-purchase"]') as HTMLButtonElement;
+      cancelBtn?.click();
+
+      await flushPromises();
+
+      expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({
+        message: 'Failed to cancel purchase',
+        kind: 'error',
+      }));
+    });
+
+    // #731: the details dialog goes through openModal and shares the card's
+    // cancel path (same confirm copy, one DELETE per step at a time).
+    describe('upcoming purchase details dialog (#731)', () => {
+      const upcoming = {
+        execution_id: 'exec-731', plan_id: 'plan-731', plan_name: 'Test Plan', provider: 'aws',
+        service: 'ec2', step_number: 1, total_steps: 4, estimated_savings: 100, scheduled_date: '2024-02-15',
+      };
+
+      async function openDetails(): Promise<{ viewBtn: HTMLButtonElement; modal: HTMLElement }> {
+        (api.getDashboardSummary as jest.Mock).mockResolvedValue({ potential_monthly_savings: 0, by_service: {} });
+        (api.getUpcomingPurchases as jest.Mock).mockResolvedValue({ purchases: [upcoming] });
+        await loadDashboard();
+        const viewBtn = document.querySelector('[data-action="view-purchase"]') as HTMLButtonElement;
+        viewBtn.focus();
+        viewBtn.click();
+        return { viewBtn, modal: document.getElementById('purchase-details-modal') as HTMLElement };
+      }
+
+      test('is a named dialog that takes focus, closes on Escape and restores focus', async () => {
+        const { viewBtn, modal } = await openDetails();
+        expect(modal.getAttribute('role')).toBe('dialog');
+        expect(modal.getAttribute('aria-modal')).toBe('true');
+        const titleId = modal.getAttribute('aria-labelledby') ?? '';
+        expect(document.getElementById(titleId)?.textContent).toBe('Upcoming Purchase Details');
+        expect(modal.contains(document.activeElement)).toBe(true);
+
+        modal.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        expect(document.getElementById('purchase-details-modal')).toBeNull();
+        expect(document.activeElement).toBe(viewBtn);
+      });
+
+      // #1653: opening the dialog must not put focus on the destructive action.
+      test('initial focus lands on Close, not Cancel Purchase', async () => {
+        const { modal } = await openDetails();
+        expect(modal.querySelector('#cancel-purchase-detail-btn')).not.toBeNull();
+        expect(document.activeElement?.id).toBe('close-purchase-details-btn');
+      });
+
+      test('Cancel Purchase uses the card confirm copy and sends one DELETE while in flight', async () => {
+        const { modal } = await openDetails();
+        let finishDelete: () => void = () => {};
+        (api.deletePlannedPurchase as jest.Mock).mockReturnValue(new Promise<void>(r => { finishDelete = r; }));
+        mockConfirmDialog.mockClear();
+
+        const cancelBtn = modal.querySelector('#cancel-purchase-detail-btn') as HTMLButtonElement;
+        cancelBtn.click();
+        await new Promise(resolve => setTimeout(resolve, 0));
+        expect(cancelBtn.disabled).toBe(true);
+        cancelBtn.disabled = false; // force a second click through
+        cancelBtn.click();
+        (document.querySelector('[data-action="cancel-purchase"]') as HTMLButtonElement).click();
+        await new Promise(resolve => setTimeout(resolve, 0));
+
+        expect(mockConfirmDialog).toHaveBeenCalledTimes(1);
+        const body = (mockConfirmDialog.mock.calls[0]![0] as { body: string }).body;
+        expect(body).toContain('removes this upcoming step from the plan');
+        expect(body).not.toContain('refunded');
+        expect(api.deletePlannedPurchase).toHaveBeenCalledTimes(1);
+
+        (api.getUpcomingPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+        finishDelete();
+        await flushPromises();
+        expect(document.getElementById('purchase-details-modal')).toBeNull();
+        expect(api.deletePlannedPurchase).toHaveBeenCalledWith('exec-731');
+      });
+    });
   });
 });
