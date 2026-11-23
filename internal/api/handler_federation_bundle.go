@@ -2,6 +2,7 @@ package api
 
 import (
 	"archive/zip"
+	"bytes"
 	"fmt"
 	"strings"
 
@@ -176,4 +177,58 @@ func buildBundleReadme(data federationIaCData, target, source string) string {
 	}
 
 	return sb.String()
+}
+
+// buildFederationBundle creates a zip bundle containing:
+//   - The generated .tfvars file
+//   - The Terraform module files (main.tf, variables.tf, outputs.tf)
+//   - For aws-target: the CloudFormation template + parameters JSON + deploy script
+//
+// Returns the raw zip bytes and output filename. base64 wrapping happens in
+// buildZipResponse.
+func buildFederationBundle(data federationIaCData, target, source, slug string) (zipData []byte, outputName string, err error) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+
+	if err := addBundleTerraform(zw, data, target, source, slug); err != nil {
+		return nil, "", err
+	}
+	if err := addBundleCFN(zw, data, target, source, slug); err != nil {
+		return nil, "", err
+	}
+
+	providerNote, noteErr := bundleProviderReadmeSection(target, source)
+	if noteErr != nil {
+		return nil, "", fmt.Errorf("bundle: %w", noteErr)
+	}
+	readme := buildBundleReadme(data, target, source) + providerNote
+	if err := addStringToZip(zw, "README.txt", readme); err != nil {
+		return nil, "", fmt.Errorf("bundle: write readme: %w", err)
+	}
+	if err := zw.Close(); err != nil {
+		return nil, "", fmt.Errorf("bundle: finalize zip: %w", err)
+	}
+
+	return buf.Bytes(), bundleZipName(target, source, slug), nil
+}
+
+// buildCFNZip creates a self-contained CloudFormation zip with template.yaml,
+// the parameters JSON, and deploy-cfn.sh. Returns raw zip bytes + filename.
+func buildCFNZip(data federationIaCData, target, source, slug string) (zipData []byte, outputName string, err error) {
+	if target != "aws" {
+		return nil, "", NewClientError(400, "format=cfn requires target=aws")
+	}
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	if err := writeCFNFiles(zw, data, source, slug); err != nil {
+		return nil, "", err
+	}
+	if err := zw.Close(); err != nil {
+		return nil, "", fmt.Errorf("cfn: finalize zip: %w", err)
+	}
+	zipName := slug + "-aws-wif-cfn.zip"
+	if source == "aws" {
+		zipName = slug + "-aws-cross-account-cfn.zip"
+	}
+	return buf.Bytes(), zipName, nil
 }
