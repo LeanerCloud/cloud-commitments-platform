@@ -118,3 +118,111 @@ func (h *Handler) fetchCommitmentPurchases(ctx context.Context, asOf time.Time, 
 type commitmentCounts struct {
 	Active, ExcludedLegacy int
 }
+
+// calculateCommitmentMetrics aggregates active-commitment counts and monthly
+// savings from purchase history. The account scope arrives pre-resolved as the
+// dual-column filter inputs (see resolveDashboardAccountScope); the
+// scope-to-query mapping (including the zero-account short-circuit for issue
+// #956) lives in fetchCommitmentPurchases.
+//
+// provider, when non-empty, restricts the result set to purchases for that
+// cloud provider so the KPIs match the provider chip selection. This mirrors
+// the recommendations half which passes the same provider param to
+// ListRecommendations.
+//
+// EstimatedSavings on purchase_history rows is always written in monthly units
+// (populated from PurchaseExecution.EstimatedSavings which derives from
+// recommendation monthly savings at purchase time, see SavePurchaseHistory
+// and the purchase manager). No unit normalisation is needed.
+//
+// The fourth return value is the per-service breakdown of active
+// EstimatedSavings, derived from aggregateActiveCommitmentsPerService so both
+// this KPI path (committedMonthly) and the per-service chart use exactly the
+// same gate.
+//
+// counts.ExcludedLegacy counts the active commitments whose amounts are legacy
+// estimates (issue #669): they are in activeCommitments but add nothing to
+// committedMonthly, savingsByService or ytdSavings. It is counted in the same
+// loop, under the same isActiveCommitment gate and provider/account scope.
+//
+// A store error is returned, never reported as zeroed metrics (issue #72).
+func (h *Handler) calculateCommitmentMetrics(ctx context.Context, provider string, accountUUIDs []string, accountExternalIDsByProvider map[string][]string) (counts commitmentCounts, committedMonthly, ytdSavings float64, savingsByService map[string]float64, err error) {
+	currentTime := time.Now()
+	purchases, err := h.fetchCommitmentPurchases(ctx, currentTime, provider, accountUUIDs, accountExternalIDsByProvider)
+	if err != nil {
+		return commitmentCounts{}, 0, 0, nil, err
+	}
+
+	yearStart := time.Date(currentTime.Year(), 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// Derive the per-service breakdown from the shared primitive so the
+	// active-commitment gate is applied consistently everywhere.
+	savingsByService = aggregateActiveCommitmentsPerService(purchases, currentTime)
+	for _, v := range savingsByService {
+		committedMonthly += v
+	}
+
+	for i := range purchases {
+		p := purchases[i]
+		if !isActiveCommitment(p, currentTime) {
+			continue
+		}
+
+		counts.Active++
+		if p.IsLegacyEstimate() {
+			counts.ExcludedLegacy++
+			continue
+		}
+
+		// committedMonthly is derived from aggregateActiveCommitmentsPerService
+		// above (same gate), so it is intentionally NOT summed here to avoid
+		// double-counting. EstimatedSavings is in monthly units (see doc above).
+		//
+		// YTD savings: count whole calendar months from year start or from the
+		// purchase date, whichever is later. Use AddDate-stepping rather than
+		// dividing by a 30-day constant so January (31 days) and February (28/29
+		// days) are handled correctly and the result never truncates a partial
+		// month that spans a 29-30-31-day boundary.
+		countFrom := yearStart
+		if p.Timestamp.After(yearStart) {
+			countFrom = p.Timestamp
+		}
+		ytdSavings += p.EstimatedSavings * float64(elapsedWholeMonths(countFrom, currentTime))
+	}
+
+	return counts, committedMonthly, ytdSavings, savingsByService, nil
+}
+
+// elapsedWholeMonths returns the number of complete calendar months between
+// from and to, counted by AddDate-stepping rather than dividing by a fixed
+// 30-day constant. This avoids truncation errors for months of varying length
+// (e.g. a 28-day gap in February scores 0 under the 30-day divisor, 1 here).
+// Returns 0 when to is before or equal to from.
+func elapsedWholeMonths(from, to time.Time) int {
+	if !to.After(from) {
+		return 0
+	}
+	months := 0
+	for from.AddDate(0, months+1, 0).Before(to) || from.AddDate(0, months+1, 0).Equal(to) {
+		months++
+	}
+	return months
+}
+
+// calculateCurrentCoverage returns committed / (committed + potential) as a
+// percentage, or nil when both are zero and there is nothing to measure.
+//
+// It used to return a hard-coded 100% whenever potentialSavings was 0, even
+// with nothing committed, so an empty or zeroed commitment half rendered as a
+// reassuring "100% coverage, $0 committed" (issue #72). Committed savings with
+// no remaining recommendations still compute to 100% through the ratio; only
+// the 0/0 case is now reported as unknown (JSON null) rather than invented.
+func (h *Handler) calculateCurrentCoverage(potentialSavings, committedMonthly float64) *float64 {
+	totalPossible := potentialSavings + committedMonthly
+	if totalPossible == 0 {
+		return nil
+	}
+
+	coverage := (committedMonthly / totalPossible) * 100
+	return &coverage
+}
