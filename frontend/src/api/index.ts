@@ -292,5 +292,6 @@ export {
 // Re-export Archera comparison functions
 export {
   getInsuranceStatus,
-  getInsuranceComparison
+  getInsuranceComparison,
+  getInsuranceRecommendation
 } from './insurance';
