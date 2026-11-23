@@ -2,4 +2,3 @@ internal/config/interfaces.go	1060	2026-11-23	split pending #341 (hot: 10 commit
 internal/config/types.go	1939	2026-11-23	split pending #341 (hot: 21 commits in 14 days)
 internal/config/validation.go	1065	2026-11-23	split pending #341 (hot: concurrent branches touch it)
 internal/planstep/resolve.go	713	2026-11-23	split pending #341 (hot: concurrent branches touch it)
-internal/server/handler_ladder.go	1013	2026-11-23	split pending #341 (hot: 8 commits in 14 days)
