@@ -22,10 +22,20 @@ import { loadGlobalSettings, saveGlobalSettings, resetSettings, setupSettingsHan
 import * as api from '../api';
 
 describe('Settings → Purchasing grace-period inputs', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.clearAllMocks();
     seedDOM();
     (api.updateConfig as jest.Mock).mockResolvedValue(undefined);
+    // Start from a known loaded snapshot and getConfig, not what an earlier
+    // test left in module state (#1975).
+    (api.getConfig as jest.Mock).mockResolvedValue({
+      global: {
+        enabled_providers: ['aws'], default_term: 3, default_payment: 'all-upfront',
+        default_coverage: 80, notification_days_before: 3,
+      },
+      services: [],
+    });
+    await loadGlobalSettings();
   });
 
   it('loads configured grace-period values (explicit 0 preserved)', async () => {

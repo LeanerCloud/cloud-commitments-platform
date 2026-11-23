@@ -16,6 +16,7 @@ import {
   resetSettings,
 } from '../settings';
 
+import { savedSnapshot } from '../modules/settings-state';
 import * as api from '../api';
 
 describe('Settings Module', () => {
@@ -93,6 +94,8 @@ describe('Settings Module', () => {
 
     test('surfaces "Unsaved changes" indicator after reset (#466)', async () => {
       mockConfirmDialog.mockResolvedValueOnce(true);
+      // This test needs the cold (never loaded) snapshot, so empty it.
+      Object.keys(savedSnapshot).forEach(k => { delete savedSnapshot[k]; });
       // Clear any prior dirty flag from a previous test.
       const tabBtn = document.getElementById('admin-tab-btn');
       tabBtn?.classList.remove('has-unsaved');
@@ -162,7 +165,12 @@ describe('Settings Module', () => {
       (document.getElementById('setting-notification-days') as HTMLInputElement).value = '3';
     };
 
-    beforeEach(fillForm);
+    // Every test starts from a known loaded snapshot instead of whatever an
+    // earlier test left in the module-level savedSnapshot (#1975).
+    beforeEach(async () => {
+      await loadPristine();
+      fillForm();
+    });
 
     // Load a pristine config so the saved snapshot matches the form, as in the
     // real page; an edit made afterwards is then the only dirty field.

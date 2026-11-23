@@ -37,7 +37,12 @@ describe('Settings Module', () => {
       (document.getElementById('setting-notification-days') as HTMLInputElement).value = '3';
     };
 
-    beforeEach(fillForm);
+    // Every test starts from a known loaded snapshot instead of whatever an
+    // earlier test left in the module-level savedSnapshot (#1975).
+    beforeEach(async () => {
+      await loadPristine();
+      fillForm();
+    });
 
     // Load a pristine config so the saved snapshot matches the form, as in the
     // real page; an edit made afterwards is then the only dirty field.
