@@ -3,7 +3,7 @@
  * accepts for that service's provider (issue #545).
  *
  * The DOM is the real frontend/src/index.html and the accepted tokens are
- * read from internal/config/validation.go, so a card option or a backend
+ * read from internal/config/validation_payment.go, so a card option or a backend
  * token change that makes them disagree fails here.
  */
 
@@ -31,9 +31,9 @@ jest.mock('../toast', () => ({
 import * as api from '../api';
 
 function validPaymentsByProvider(): Record<string, string[]> {
-  const src = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'internal', 'config', 'validation.go'), 'utf-8');
+  const src = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'internal', 'config', 'validation_payment.go'), 'utf-8');
   const block = /var ValidPaymentOptionsByProvider = map\[string\]\[\]string\{([\s\S]*?)\n\}/.exec(src);
-  if (!block) throw new Error('ValidPaymentOptionsByProvider not found in validation.go');
+  if (!block) throw new Error('ValidPaymentOptionsByProvider not found in validation_payment.go');
   const out: Record<string, string[]> = {};
   for (const line of block[1]!.split('\n')) {
     const m = /"(\w+)":\s*\{([^}]*)\}/.exec(line);
