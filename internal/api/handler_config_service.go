@@ -121,3 +121,107 @@ func mergeAndValidateServiceConfig(existing *config.ServiceConfig, cfg config.Se
 	}
 	return &merged, nil
 }
+
+// serviceConfigOverlayKeys are the JSON fields the Settings UI edits: the four
+// scalars (enabled, term, payment, coverage) and the recommendation filters.
+// They are overlaid onto the existing row only when the
+// request body actually contains the key, so a partial PUT from a non-UI
+// client (or an older UI build) never zeroes a filter the operator set
+// elsewhere. RampSchedule is intentionally absent: it is still set out-of-band
+// and the UI does not own it.
+var serviceConfigOverlayKeys = []string{
+	"enabled", "term", "payment", "coverage",
+	"include_engines", "exclude_engines",
+	"include_regions", "exclude_regions",
+	"include_types", "exclude_types",
+	"min_count",
+}
+
+// mergeServiceConfig overlays the UI-editable fields from cfg onto the stored
+// row existing. Every field (Enabled, Term, Payment, Coverage and the
+// include/exclude engines/regions/types and min_count filters) is overlaid
+// only when the request body actually carried the corresponding key (per
+// presentKeys), so a partial PUT cannot silently revert or wipe a field it
+// did not mean to touch. body is the raw request JSON used to detect which
+// keys are present.
+//
+// A nil existing means no stored row: cfg is returned unchanged. existing is
+// not modified.
+func mergeServiceConfig(existing *config.ServiceConfig, cfg config.ServiceConfig, body string) (config.ServiceConfig, error) {
+	if existing == nil {
+		return cfg, nil // new record — no existing fields to preserve
+	}
+
+	present, perr := presentKeys(body, serviceConfigOverlayKeys)
+	if perr != nil {
+		return cfg, perr
+	}
+	merged := *existing
+	overlayPresentScalarFields(&merged, &cfg, present)
+	overlayPresentFilterFields(&merged, &cfg, present)
+	return merged, nil
+}
+
+// presentKeys returns the subset of keys that appear as top-level fields in the
+// JSON body, matched case-insensitively like encoding/json binds them. A malformed body is reported as a client error so the caller
+// returns 400 rather than silently overlaying nothing.
+func presentKeys(body string, keys []string) (map[string]bool, error) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(body), &raw); err != nil {
+		return nil, NewClientError(400, "invalid request body")
+	}
+	present := make(map[string]bool, len(keys))
+	for _, k := range keys {
+		if bodyHasKey(raw, k) {
+			present[k] = true
+		}
+	}
+	return present, nil
+}
+
+// overlayPresentScalarFields copies enabled, term, payment and coverage from src
+// onto dst only when the body carried the key, so a client that sends just the
+// field the user edited (the Settings page, #539) cannot revert the others. A
+// present zero value (enabled:false, coverage:0) still applies.
+func overlayPresentScalarFields(dst, src *config.ServiceConfig, present map[string]bool) {
+	if present["enabled"] {
+		dst.Enabled = src.Enabled
+	}
+	if present["term"] {
+		dst.Term = src.Term
+	}
+	if present["payment"] {
+		dst.Payment = src.Payment
+	}
+	if present["coverage"] {
+		dst.Coverage = src.Coverage
+	}
+}
+
+// overlayPresentFilterFields copies each filter field from src onto dst only
+// when its JSON key was present in the request body. Split out of
+// mergeServiceConfig to keep that function under the cyclomatic-complexity
+// gate.
+func overlayPresentFilterFields(dst, src *config.ServiceConfig, present map[string]bool) {
+	if present["include_engines"] {
+		dst.IncludeEngines = src.IncludeEngines
+	}
+	if present["exclude_engines"] {
+		dst.ExcludeEngines = src.ExcludeEngines
+	}
+	if present["include_regions"] {
+		dst.IncludeRegions = src.IncludeRegions
+	}
+	if present["exclude_regions"] {
+		dst.ExcludeRegions = src.ExcludeRegions
+	}
+	if present["include_types"] {
+		dst.IncludeTypes = src.IncludeTypes
+	}
+	if present["exclude_types"] {
+		dst.ExcludeTypes = src.ExcludeTypes
+	}
+	if present["min_count"] {
+		dst.MinCount = src.MinCount
+	}
+}
