@@ -4,13 +4,15 @@
  * mocks live in recommendations-harness.ts.
  */
 // The harness registers the module mocks, so it must be imported first.
-import { mockFactoryDefaults, setupOpportunitiesTabDom } from './recommendations-harness';
+import { mockFactoryDefaults, setupOpportunitiesTabDom, mkSpRec } from './recommendations-harness';
 import {
   loadRecommendations,
   COLUMN_DEFS,
   renderUsageSparkline,
   loadColumnFilters,
+  saveColumnFilters,
   resetColumnFiltersState,
+  spGroupKey,
 } from '../recommendations';
 import { localStorageMock } from './setup';
 import * as api from '../api';
@@ -357,5 +359,111 @@ describe('Column filters localStorage persistence (issue #163)', () => {
       const result = loadColumnFilters();
       expect(Object.keys(result)).toHaveLength(0);
     });
+
+    test('silently drops expr filter with empty string expr', () => {
+      localStorageMock.getItem.mockReturnValue(
+        JSON.stringify({
+          schemaVersion: 1,
+          filters: { savings: { kind: 'expr', expr: '' } },
+        }),
+      );
+      const result = loadColumnFilters();
+      expect(Object.keys(result)).toHaveLength(0);
+    });
+  });
+
+  // --- saveColumnFilters ---
+
+  describe('saveColumnFilters', () => {
+    test('writes correct JSON shape to localStorage', () => {
+      saveColumnFilters({ region: { kind: 'set', values: ['us-east-1'] } });
+      expect(localStorageMock.setItem).toHaveBeenCalledWith(
+        'cudly.recs.columnFilters.v1',
+        expect.stringContaining('"schemaVersion":1'),
+      );
+      const callArg = localStorageMock.setItem.mock.calls[0]?.[1] as string;
+      const parsed = JSON.parse(callArg);
+      expect(parsed.schemaVersion).toBe(1);
+      expect(parsed.filters.region).toEqual({ kind: 'set', values: ['us-east-1'] });
+    });
+
+    test('writes empty filters object when no filters active', () => {
+      saveColumnFilters({});
+      const callArg = localStorageMock.setItem.mock.calls[0]?.[1] as string;
+      const parsed = JSON.parse(callArg);
+      expect(parsed.filters).toEqual({});
+    });
+
+    test('round-trips a numeric expr filter', () => {
+      saveColumnFilters({ savings: { kind: 'expr', expr: '>500' } });
+      const callArg = localStorageMock.setItem.mock.calls[0]?.[1] as string;
+      const payload = JSON.parse(callArg);
+      expect(payload.filters.savings).toEqual({ kind: 'expr', expr: '>500' });
+    });
+  });
+
+  // --- round-trip and guard tests ---
+
+  describe('persistence round-trip', () => {
+    test('save then load restores same filter state', () => {
+      const filters = {
+        region: { kind: 'set' as const, values: ['ap-southeast-1'] },
+        savings: { kind: 'expr' as const, expr: '>200' },
+      };
+      const store = new Map<string, string>();
+      localStorageMock.getItem.mockImplementation((k: string) => store.get(k) ?? null);
+      localStorageMock.setItem.mockImplementation((k: string, v: string) => { store.set(k, v); });
+      saveColumnFilters(filters);
+      const restored = loadColumnFilters();
+      expect(restored.region).toEqual({ kind: 'set', values: ['ap-southeast-1'] });
+      expect(restored.savings).toEqual({ kind: 'expr', expr: '>200' });
+      expect(Object.keys(restored)).toHaveLength(2);
+    });
+
+    test('stored key with unknown column is silently dropped, no error', () => {
+      const store = new Map<string, string>([
+        ['cudly.recs.columnFilters.v1', JSON.stringify({
+          schemaVersion: 1,
+          filters: {
+            region: { kind: 'set', values: ['us-east-1'] },
+            deleted_account_col: { kind: 'set', values: ['123456789012'] },
+          },
+        })],
+      ]);
+      localStorageMock.getItem.mockImplementation((k: string) => store.get(k) ?? null);
+      expect(() => loadColumnFilters()).not.toThrow();
+      const result = loadColumnFilters();
+      expect(result.region).toBeDefined();
+      expect((result as Record<string, unknown>)['deleted_account_col']).toBeUndefined();
+    });
+
+    test('corrupted JSON in localStorage falls back to empty object, no error', () => {
+      localStorageMock.getItem.mockReturnValue('}{invalid json][');
+      expect(() => loadColumnFilters()).not.toThrow();
+      const result = loadColumnFilters();
+      expect(Object.keys(result)).toHaveLength(0);
+    });
+  });
+});
+
+//
+// Issue #135: SP plan-type row grouping in the Recommendations table
+//
+
+describe('Issue #135: spGroupKey helper', () => {
+  test('returns sp-group| prefix with provider, account_id, region', () => {
+    const rec = mkSpRec('savings-plans-compute');
+    expect(spGroupKey(rec)).toBe('sp-group|aws|acct-1|us-east-1');
+  });
+
+  test('uses empty string for absent cloud_account_id', () => {
+    const rec = mkSpRec('savings-plans-compute', { cloud_account_id: undefined });
+    expect(spGroupKey(rec)).toBe('sp-group|aws||us-east-1');
+  });
+
+  test('different providers produce different keys', () => {
+    const awsRec   = mkSpRec('savings-plans-compute', { provider: 'aws'   as never });
+    const azureRec = mkSpRec('savingsplans',           { provider: 'azure' as never });
+    expect(spGroupKey(awsRec)).not.toBe(spGroupKey(azureRec));
   });
 });
