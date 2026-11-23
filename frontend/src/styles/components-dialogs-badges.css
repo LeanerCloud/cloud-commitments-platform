@@ -1,0 +1,193 @@
+/* Provider badges */
+.provider-badge {
+    display: inline-block;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    font-size: var(--cudly-fs-xs);
+    font-weight: var(--cudly-fw-semibold);
+    /* No text-transform: let the HTML control casing. Acronyms (AWS,
+     * GCP) render as-written; brand names (Azure) keep their native
+     * title case rather than being SHOUT-CASED by CSS. */
+}
+
+.provider-badge.aws {
+    background: var(--cudly-brand-aws);
+    color: var(--cudly-brand-aws-fg);
+}
+
+.provider-badge.azure {
+    background: var(--cudly-brand-azure);
+    color: var(--cudly-white);
+}
+
+.provider-badge.gcp {
+    background: var(--cudly-brand-gcp);
+    color: var(--cudly-white);
+}
+
+/* Service badges */
+.service-badge {
+    display: inline-block;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    font-size: var(--cudly-fs-xs);
+    background: var(--cudly-info-bg);
+    color: var(--cudly-primary);
+}
+
+/* Cost chips: used in the reshape-alternatives cell and the exchange
+ * modal's per-target-row cost slot. Pill-shaped like .badge so the visual
+ * style stays consistent. Neutral grey
+ * background since costs are advisory information, not status. */
+.cost-chip {
+    display: inline-block;
+    padding: 0.2rem 0.55rem;
+    margin-right: 0.25rem;
+    border-radius: 12px;
+    background: var(--cudly-surface-subtle);
+    color: var(--cudly-text);
+    font-size: var(--cudly-fs-xs);
+    font-family: var(--cudly-font-mono);
+}
+
+/* Running total under the modal's target rows. Muted emphasis — this
+ * is advisory, final cost is the server-side quote. */
+.exchange-running-total {
+    color: var(--cudly-text-muted);
+    font-style: italic;
+    font-size: var(--cudly-fs-sm);
+}
+
+/* Azure RI exchange modal (issue #81). */
+.setting-row.azure-exchange-source-row,
+.setting-row.azure-exchange-target-row {
+    justify-content: flex-start;
+    gap: 0.75rem;
+    padding: 0.5rem 0;
+}
+.setting-row.azure-exchange-target-row {
+    display: grid;
+    grid-template-columns: 2fr 1.5fr 1fr 0.8fr auto;
+    align-items: end;
+}
+.azure-exchange .azure-exchange-target-row label,
+.azure-exchange .azure-exchange-source-row label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: var(--cudly-fs-sm);
+}
+.azure-exchange-source-row input[type="number"] {
+    width: 6em;
+}
+.azure-exchange-preview .quote-row {
+    display: flex;
+    justify-content: space-between;
+    max-width: 22rem;
+}
+.azure-exchange-preview.quote-invalid h4,
+.azure-exchange-policy-errors {
+    color: var(--cudly-error-fg);
+}
+.azure-exchange-guardrails {
+    display: grid;
+    grid-template-columns: 1fr 8rem;
+    gap: 0.5rem 1rem;
+    margin: 1rem 0;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--cudly-border-strong);
+    border-radius: 6px;
+}
+.azure-exchange-guardrails.hidden {
+    display: none;
+}
+.azure-exchange-guardrails legend,
+.azure-exchange-guardrails > p {
+    grid-column: 1 / -1;
+}
+.azure-exchange .azure-exchange-guardrails label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+.setting-row.azure-exchange-toolbar {
+    justify-content: flex-start;
+    gap: 0.75rem;
+    padding: 0.5rem 0;
+}
+
+/* Info icon tooltip */
+/* Issue #909: Opportunities lookback selector toolbar. */
+.recommendations-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    margin: 0.5rem 0;
+}
+
+.recommendations-toolbar:empty {
+    display: none;
+}
+
+.lookback-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: var(--cudly-fs-sm);
+    color: var(--cudly-text-muted);
+}
+
+/* Issue #191: inline "AWS only" scope hint beside the lookback select. */
+.lookback-scope-hint {
+    font-size: var(--cudly-fs-xs);
+    font-style: italic;
+}
+
+.info-icon {
+    display: inline-block;
+    cursor: help;
+    color: var(--cudly-text-muted);
+    font-size: var(--cudly-fs-sm);
+    position: relative;
+}
+
+.info-icon:hover {
+    color: var(--cudly-primary);
+}
+
+.info-icon .tooltip-text {
+    /* display:none, not visibility:hidden: a hidden absolutely positioned
+     * box still extends the scrollable area and widens the page (#703). */
+    display: none;
+    max-width: calc(100vw - 2rem);
+    position: absolute;
+    z-index: 1000;
+    bottom: 125%;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: var(--cudly-text);
+    color: var(--cudly-surface);
+    padding: 0.75rem;
+    border-radius: 6px;
+    font-size: var(--cudly-fs-xs);
+    font-weight: normal;
+    width: 250px;
+    line-height: 1.4;
+    text-align: left;
+    box-shadow: 0 2px 8px var(--cudly-shadow-ink-20);
+    white-space: normal;
+}
+
+.info-icon .tooltip-text::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border-width: 6px;
+    border-style: solid;
+    border-color: var(--cudly-text) transparent transparent transparent;
+}
+
+.info-icon:hover .tooltip-text {
+    display: block;
+}
