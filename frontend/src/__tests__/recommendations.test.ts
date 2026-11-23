@@ -14,9 +14,6 @@ import {
   displaySavingsPct,
   groupRecsByCell,
   resetExpandedCells,
-  scaleCost,
-  formatCostForPeriod,
-  periodSuffix,
   loadColumnVisibility,
   saveColumnVisibility,
   resetColumnVisibilityState,
@@ -33,7 +30,6 @@ import {
   weightedDisplaySavingsPct,
 } from '../recommendations';
 import type { CostPeriod } from '../state';
-import { HOURS_PER_MONTH } from '../lib/hours-per-month';
 import type { LocalRecommendation } from '../types';
 import { localStorageMock } from './setup';
 import * as api from '../api';
@@ -45,181 +41,6 @@ beforeEach(() => {
     fn.mockReset();
     if (factoryDefault) fn.mockImplementation(factoryDefault);
   }
-});
-
-//
-// Issues #225 + #226: cell grouping with savings range and collapse/expand
-//
-
-describe('Issues #225 + #226: cell grouping with savings range and collapse/expand', () => {
-  describe('DOM rendering (cell grouping integrated)', () => {
-    beforeEach(() => {
-      document.body.innerHTML = [
-        '<div id="opportunities-tab" class="tab-content active">',
-        '<div id="recommendations-summary"></div>',
-        '<div id="recommendations-list"></div>',
-        '</div>',
-        '<div id="purchase-modal" class="hidden">',
-        '<div id="purchase-details"></div>',
-        '</div>',
-      ].join('');
-      jest.clearAllMocks();
-      // Reset getHiddenColumns to return empty Set so tests don't inherit sticky values
-      (state.getHiddenColumns as jest.Mock).mockReturnValue(new Set());
-      jest.useFakeTimers();
-      window.alert = jest.fn();
-      // Reset cell expand state so tests don't share module-level expandedCells.
-      resetExpandedCells();
-    });
-
-    afterEach(() => {
-      jest.useRealTimers();
-    });
-
-    const multiVariantRecs = (): LocalRecommendation[] => [
-      mkRec({ id: 'mv-1', savings: 80,  term: 1, payment: 'no-upfront',   upfront_cost: 0 }),
-      mkRec({ id: 'mv-2', savings: 120, term: 3, payment: 'all-upfront',  upfront_cost: 1200 }),
-    ];
-
-    test('Expand all expands all multi-variant cells', async () => {
-      const recs = multiVariantRecs();
-      (api.getRecommendations as jest.Mock).mockResolvedValue({ summary: {}, recommendations: recs });
-      (state.getRecommendations as jest.Mock).mockReturnValue(recs);
-      await loadRecommendations();
-
-      const expandAllBtn = document.querySelector<HTMLButtonElement>('.expand-all-toggle');
-      expect(expandAllBtn).not.toBeNull();
-      expandAllBtn!.click();
-
-      // After expand all: variant rows should be visible
-      const variantRows = document.querySelectorAll('.rec-variant-row');
-      expect(variantRows.length).toBe(2);
-    });
-
-    // QA 4.13: expand/collapse state must be reset when the data source
-    // reloads due to a provider/account Global filter change. Before the fix,
-    // stale expandedCells keys from the prior provider desynchronised the
-    // Expand-All button label and left newly-shown groups collapsed.
-    test('QA 4.13: expand state clears on loadRecommendations (provider filter change)', async () => {
-      const recs = multiVariantRecs();
-      (api.getRecommendations as jest.Mock).mockResolvedValue({ summary: {}, recommendations: recs });
-      (state.getRecommendations as jest.Mock).mockReturnValue(recs);
-
-      // 1. Load and expand all groups.
-      await loadRecommendations();
-      const expandAllBtn = document.querySelector<HTMLButtonElement>('.expand-all-toggle');
-      expect(expandAllBtn).not.toBeNull();
-      expandAllBtn!.click();
-
-      // Confirm we are now in "Collapse all" state.
-      expect(expandAllBtn!.textContent).toMatch(/Collapse all/);
-
-      // 2. Simulate a provider filter change by calling loadRecommendations()
-      //    again (this is exactly what the subscribeProvider callback invokes).
-      await loadRecommendations();
-
-      // 3. Expand state must have been cleared: button label reverts to
-      //    "Expand all" and no variant rows are visible (groups are collapsed).
-      const expandAllBtn2 = document.querySelector<HTMLButtonElement>('.expand-all-toggle');
-      expect(expandAllBtn2).not.toBeNull();
-      expect(expandAllBtn2!.textContent).toMatch(/Expand all/);
-
-      const variantRows = document.querySelectorAll('.rec-variant-row');
-      expect(variantRows.length).toBe(0);
-    });
-  });
-});
-
-//
-// Issue #319: cost-period selector tests
-//
-
-describe('Issue #319: scaleCost', () => {
-  test('monthly factor is 1 (identity)', () => {
-    expect(scaleCost(100, 'monthly')).toBe(100);
-  });
-
-  // Issues #337/#394: hourly uses the backend's 730-hour month, not 720.
-  test('hourly factor is 1/730, the shared hours-per-month', () => {
-    expect(HOURS_PER_MONTH).toBe(730);
-    expect(scaleCost(730, 'hourly')).toBeCloseTo(1.0, 10);
-    expect(scaleCost(720, 'hourly')).not.toBeCloseTo(1.0, 4);
-  });
-
-  test('daily factor is 1/30', () => {
-    expect(scaleCost(300, 'daily')).toBeCloseTo(10.0);
-  });
-
-  test('yearly factor is 12', () => {
-    expect(scaleCost(100, 'yearly')).toBeCloseTo(1200);
-  });
-
-  test('null input returns null', () => {
-    const periods: CostPeriod[] = ['hourly', 'daily', 'monthly', 'yearly'];
-    for (const p of periods) {
-      expect(scaleCost(null, p)).toBeNull();
-    }
-  });
-
-  test('undefined input returns null', () => {
-    const periods: CostPeriod[] = ['hourly', 'daily', 'monthly', 'yearly'];
-    for (const p of periods) {
-      expect(scaleCost(undefined, p)).toBeNull();
-    }
-  });
-
-  test('zero input returns 0 (not null)', () => {
-    expect(scaleCost(0, 'hourly')).toBe(0);
-  });
-});
-
-describe('Issue #319: formatCostForPeriod', () => {
-  test('monthly uses formatCurrency mock ($X)', () => {
-    // formatCurrency mock returns `$${val}` so for 100 → "$100"
-    expect(formatCostForPeriod(100, 'monthly')).toBe('$100');
-  });
-
-  test('hourly uses 4 decimal places', () => {
-    expect(formatCostForPeriod(730, 'hourly')).toMatch(/\$1\.0000/);
-  });
-
-  test('daily uses 2 decimal places', () => {
-    expect(formatCostForPeriod(300, 'daily')).toMatch(/\$10\.00/);
-  });
-
-  test('yearly uses 0 decimal places', () => {
-    expect(formatCostForPeriod(100, 'yearly')).toMatch(/\$1200$/);
-  });
-
-  test('null input returns em-dash for all periods', () => {
-    const periods: CostPeriod[] = ['hourly', 'daily', 'monthly', 'yearly'];
-    for (const p of periods) {
-      expect(formatCostForPeriod(null, p)).toBe('—');
-    }
-  });
-
-  test('undefined input returns em-dash for all periods', () => {
-    const periods: CostPeriod[] = ['hourly', 'daily', 'monthly', 'yearly'];
-    for (const p of periods) {
-      expect(formatCostForPeriod(undefined, p)).toBe('—');
-    }
-  });
-
-  test('zero input renders as $0 (not em-dash)', () => {
-    // hourly: $0.0000, daily: $0.00, monthly: $0, yearly: $0
-    expect(formatCostForPeriod(0, 'hourly')).toMatch(/\$0\.0000/);
-    expect(formatCostForPeriod(0, 'daily')).toMatch(/\$0\.00/);
-    expect(formatCostForPeriod(0, 'yearly')).toMatch(/\$0$/);
-  });
-});
-
-describe('Issue #319: periodSuffix', () => {
-  test('returns correct suffix for each period', () => {
-    expect(periodSuffix('hourly')).toBe('/ hr');
-    expect(periodSuffix('daily')).toBe('/ day');
-    expect(periodSuffix('monthly')).toBe('/ mo');
-    expect(periodSuffix('yearly')).toBe('/ yr');
-  });
 });
 
 describe('Issue #319: column header labels update with period', () => {

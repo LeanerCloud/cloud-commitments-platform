@@ -11,7 +11,9 @@ import {
   cellSummary,
   pageLevelRange,
   resetExpandedCells,
+  scaleCost,
 } from '../recommendations';
+import { HOURS_PER_MONTH } from '../lib/hours-per-month';
 import type { LocalRecommendation } from '../types';
 import * as api from '../api';
 import * as state from '../state';
@@ -397,5 +399,77 @@ describe('Issues #225 + #226: cell grouping with savings range and collapse/expa
       expect(expandAllBtn).not.toBeNull();
       expect(expandAllBtn!.textContent).toMatch(/Expand all/);
     });
+
+    test('Expand all expands all multi-variant cells', async () => {
+      const recs = multiVariantRecs();
+      (api.getRecommendations as jest.Mock).mockResolvedValue({ summary: {}, recommendations: recs });
+      (state.getRecommendations as jest.Mock).mockReturnValue(recs);
+      await loadRecommendations();
+
+      const expandAllBtn = document.querySelector<HTMLButtonElement>('.expand-all-toggle');
+      expect(expandAllBtn).not.toBeNull();
+      expandAllBtn!.click();
+
+      // After expand all: variant rows should be visible
+      const variantRows = document.querySelectorAll('.rec-variant-row');
+      expect(variantRows.length).toBe(2);
+    });
+
+    // QA 4.13: expand/collapse state must be reset when the data source
+    // reloads due to a provider/account Global filter change. Before the fix,
+    // stale expandedCells keys from the prior provider desynchronised the
+    // Expand-All button label and left newly-shown groups collapsed.
+    test('QA 4.13: expand state clears on loadRecommendations (provider filter change)', async () => {
+      const recs = multiVariantRecs();
+      (api.getRecommendations as jest.Mock).mockResolvedValue({ summary: {}, recommendations: recs });
+      (state.getRecommendations as jest.Mock).mockReturnValue(recs);
+
+      // 1. Load and expand all groups.
+      await loadRecommendations();
+      const expandAllBtn = document.querySelector<HTMLButtonElement>('.expand-all-toggle');
+      expect(expandAllBtn).not.toBeNull();
+      expandAllBtn!.click();
+
+      // Confirm we are now in "Collapse all" state.
+      expect(expandAllBtn!.textContent).toMatch(/Collapse all/);
+
+      // 2. Simulate a provider filter change by calling loadRecommendations()
+      //    again (this is exactly what the subscribeProvider callback invokes).
+      await loadRecommendations();
+
+      // 3. Expand state must have been cleared: button label reverts to
+      //    "Expand all" and no variant rows are visible (groups are collapsed).
+      const expandAllBtn2 = document.querySelector<HTMLButtonElement>('.expand-all-toggle');
+      expect(expandAllBtn2).not.toBeNull();
+      expect(expandAllBtn2!.textContent).toMatch(/Expand all/);
+
+      const variantRows = document.querySelectorAll('.rec-variant-row');
+      expect(variantRows.length).toBe(0);
+    });
+  });
+});
+
+//
+// Issue #319: cost-period selector tests
+//
+
+describe('Issue #319: scaleCost', () => {
+  test('monthly factor is 1 (identity)', () => {
+    expect(scaleCost(100, 'monthly')).toBe(100);
+  });
+
+  // Issues #337/#394: hourly uses the backend's 730-hour month, not 720.
+  test('hourly factor is 1/730, the shared hours-per-month', () => {
+    expect(HOURS_PER_MONTH).toBe(730);
+    expect(scaleCost(730, 'hourly')).toBeCloseTo(1.0, 10);
+    expect(scaleCost(720, 'hourly')).not.toBeCloseTo(1.0, 4);
+  });
+
+  test('daily factor is 1/30', () => {
+    expect(scaleCost(300, 'daily')).toBeCloseTo(10.0);
+  });
+
+  test('yearly factor is 12', () => {
+    expect(scaleCost(100, 'yearly')).toBeCloseTo(1200);
   });
 });
