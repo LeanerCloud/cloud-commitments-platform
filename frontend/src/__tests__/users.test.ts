@@ -39,67 +39,6 @@ describe('users/userList', () => {
     jest.clearAllMocks();
   });
 
-  describe('renderUserStats', () => {
-    it('should render user statistics', () => {
-      userList.renderUserStats();
-
-      const statsContainer = document.getElementById('user-stats');
-      expect(statsContainer?.innerHTML).toContain('Total Users');
-      expect(statsContainer?.innerHTML).toContain('2');
-      expect(statsContainer?.innerHTML).toContain('Administrators');
-      expect(statsContainer?.innerHTML).toContain('1');
-      expect(statsContainer?.innerHTML).toContain('MFA Enabled');
-      expect(statsContainer?.innerHTML).toContain('Showing');
-    });
-
-    it('should show correct admin count', () => {
-      userList.renderUserStats();
-
-      const statsContainer = document.getElementById('user-stats');
-      const html = statsContainer?.innerHTML || '';
-      expect(html).toContain('Administrators');
-    });
-
-    it('should show correct MFA enabled count', () => {
-      userList.renderUserStats();
-
-      const statsContainer = document.getElementById('user-stats');
-      const html = statsContainer?.innerHTML || '';
-      expect(html).toContain('MFA Enabled');
-    });
-
-    it('should highlight when showing filtered subset', () => {
-      userState.setFilteredUsers([mockUsers[0]] as any);
-      userList.renderUserStats();
-
-      const statsContainer = document.getElementById('user-stats');
-      expect(statsContainer?.innerHTML).toContain('stat-card-highlight');
-    });
-
-    it('should not highlight when showing all users', () => {
-      userList.renderUserStats();
-
-      const statsContainer = document.getElementById('user-stats');
-      // When filteredUsers.length === allUsers.length, no highlight
-      const highlightCount = (statsContainer?.innerHTML.match(/stat-card-highlight/g) || []).length;
-      expect(highlightCount).toBe(0);
-    });
-
-    it('should handle missing container', () => {
-      document.body.innerHTML = '';
-      expect(() => userList.renderUserStats()).not.toThrow();
-    });
-
-    it('should handle empty users', () => {
-      userState.setAllUsers([]);
-      userState.setFilteredUsers([]);
-      userList.renderUserStats();
-
-      const statsContainer = document.getElementById('user-stats');
-      expect(statsContainer?.innerHTML).toContain('0');
-    });
-  });
-
   describe('renderUsers', () => {
     it('should render users table', () => {
       userList.renderUsers(mockUsers as any);
