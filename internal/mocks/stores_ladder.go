@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/ladder"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
 )
 
@@ -163,6 +164,71 @@ func (m *MockConfigStore) LatestLadderRunStartedAt(ctx context.Context, configID
 	v, ok := args.Get(0).(*time.Time)
 	if !ok {
 		m.reporter.wrongReturnType("LatestLadderRunStartedAt", "*time.Time", args.Get(0))
+	}
+	return v, args.Error(1)
+}
+
+// LatestLadderRunID mocks the LatestLadderRunID operation.
+// Returns config.ErrNotFound when no expectation is registered (fail closed).
+func (m *MockConfigStore) LatestLadderRunID(ctx context.Context, configID string) (string, error) {
+	m.record("LatestLadderRunID", ctx, configID)
+	if !isExpected(&m.Mock, "LatestLadderRunID") {
+		return "", config.ErrNotFound
+	}
+	args := m.Called(ctx, configID)
+	return args.String(0), args.Error(1)
+}
+
+// CancelLadderRun mocks the CancelLadderRun operation.
+// Returns (nil, nil) when no expectation is registered (CAS race-lost path).
+func (m *MockConfigStore) CancelLadderRun(ctx context.Context, id string, fromStatuses []ladder.RunStatus, cancelledBy string) (*config.LadderRunDB, error) {
+	m.record("CancelLadderRun", ctx, id, fromStatuses, cancelledBy)
+	if !isExpected(&m.Mock, "CancelLadderRun") {
+		return nil, nil
+	}
+	args := m.Called(ctx, id, fromStatuses, cancelledBy)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	v, ok := args.Get(0).(*config.LadderRunDB)
+	if !ok {
+		m.reporter.wrongReturnType("CancelLadderRun", "*config.LadderRunDB", args.Get(0))
+	}
+	return v, args.Error(1)
+}
+
+// TransitionLadderRunStatus mocks the TransitionLadderRunStatus operation.
+// Returns (nil, nil) when no expectation is registered (CAS race-lost path).
+func (m *MockConfigStore) TransitionLadderRunStatus(ctx context.Context, id string, fromStatuses []ladder.RunStatus, toStatus ladder.RunStatus) (*config.LadderRunDB, error) {
+	m.record("TransitionLadderRunStatus", ctx, id, fromStatuses, toStatus)
+	if !isExpected(&m.Mock, "TransitionLadderRunStatus") {
+		return nil, nil
+	}
+	args := m.Called(ctx, id, fromStatuses, toStatus)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	v, ok := args.Get(0).(*config.LadderRunDB)
+	if !ok {
+		m.reporter.wrongReturnType("TransitionLadderRunStatus", "*config.LadderRunDB", args.Get(0))
+	}
+	return v, args.Error(1)
+}
+
+// CountLadderRunTrancheStatuses mocks the CountLadderRunTrancheStatuses operation.
+// Defaults to an empty count when no expectation is registered.
+func (m *MockConfigStore) CountLadderRunTrancheStatuses(ctx context.Context, runID string) (map[ladder.TrancheStatus]int, error) {
+	m.record("CountLadderRunTrancheStatuses", ctx, runID)
+	if !isExpected(&m.Mock, "CountLadderRunTrancheStatuses") {
+		return map[ladder.TrancheStatus]int{}, nil
+	}
+	args := m.Called(ctx, runID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	v, ok := args.Get(0).(map[ladder.TrancheStatus]int)
+	if !ok {
+		m.reporter.wrongReturnType("CountLadderRunTrancheStatuses", "map[ladder.TrancheStatus]int", args.Get(0))
 	}
 	return v, args.Error(1)
 }
