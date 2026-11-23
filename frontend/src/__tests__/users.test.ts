@@ -370,7 +370,8 @@ describe('group toggle re-validation after confirm (issue #736)', () => {
     userState.setAvailableGroups([viewOnly, writer] as any);
     (api.updateUser as jest.Mock).mockReset().mockResolvedValue({});
     let release!: (v: boolean) => void;
-    mockConfirmDialog.mockReset().mockReturnValueOnce(new Promise<boolean>((r) => { release = r; }));
+    // mockClear, not mockReset: reset would wipe the harness default (resolves true) for later tests (#1973).
+    mockConfirmDialog.mockClear().mockReturnValueOnce(new Promise<boolean>((r) => { release = r; }));
     userList.renderUsers([user] as any);
     document.querySelector<HTMLButtonElement>('.user-expand-btn[data-user-id="2"]')!.click();
     const cb = document.querySelector<HTMLInputElement>('.group-assign-checkbox[data-user-id="2"][data-group-id="w1"]')!;
