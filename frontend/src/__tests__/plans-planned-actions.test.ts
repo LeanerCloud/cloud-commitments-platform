@@ -11,6 +11,7 @@ import {
 } from './plans-harness';
 import {
   loadPlans,
+  savePlan,
   _resetRampHandlersForTest,
 } from '../plans';
 
@@ -231,6 +232,116 @@ describe('Plans Module', () => {
       // reflects the backend's new enabled=false. getPlans is the API call
       // that loadPlans() fires to repopulate the Plans list.
       expect(api.getPlans).toHaveBeenCalledTimes(1);
+    });
+
+    test('disable action cancelled by user', async () => {
+      // confirm() replaced by confirmDialog() (11-L2); control via mockConfirmDialog.
+      mockConfirmDialog.mockResolvedValue(false);
+
+      const disableBtn = document.querySelector('[data-action="disable"]') as HTMLButtonElement;
+      disableBtn?.click();
+
+      await flushPromises();
+
+      expect(api.deletePlannedPurchase).not.toHaveBeenCalled();
+    });
+
+    test('declined cancel confirm refocuses the re-rendered row control (#1666)', async () => {
+      mockConfirmDialog.mockResolvedValue(false);
+      const oldBtn = document.querySelector('[data-action="disable"]') as HTMLButtonElement;
+      oldBtn.click();
+      await flushPromises();
+
+      const newBtn = document.querySelector('[data-action="disable"][data-id="purchase-1"]') as HTMLButtonElement;
+      expect(newBtn).not.toBe(oldBtn);
+      expect(document.activeElement).toBe(newBtn);
+    });
+
+    test('declined cancel confirm falls back to the section heading when the row is gone (#1666)', async () => {
+      mockConfirmDialog.mockResolvedValue(false);
+      const header = document.createElement('div');
+      header.id = 'planned-purchases-header';
+      header.innerHTML = '<h2>Planned purchases</h2>';
+      document.body.appendChild(header);
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+
+      (document.querySelector('[data-action="disable"]') as HTMLButtonElement).click();
+      await flushPromises();
+
+      expect(document.activeElement).toBe(header.querySelector('h2'));
+      header.remove();
+    });
+
+    test('accepted cancel confirm does not move focus to the row or heading (#1666)', async () => {
+      mockConfirmDialog.mockResolvedValue(true);
+      (api.deletePlannedPurchase as jest.Mock).mockResolvedValue({});
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+      const header = document.createElement('div');
+      header.id = 'planned-purchases-header';
+      header.innerHTML = '<h2>Planned purchases</h2>';
+      document.body.appendChild(header);
+
+      (document.querySelector('[data-action="disable"]') as HTMLButtonElement).click();
+      await flushPromises();
+
+      expect(document.activeElement).not.toBe(header.querySelector('h2'));
+      header.remove();
+    });
+
+    test('action shows error on failure', async () => {
+      (api.pausePlannedPurchase as jest.Mock).mockRejectedValue(new Error('API Error'));
+      console.error = jest.fn();
+
+      const pauseBtn = document.querySelector('[data-action="pause"]') as HTMLButtonElement;
+      pauseBtn?.click();
+
+      await flushPromises();
+
+      expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({ message: 'Failed to pause purchase: API Error' }));
+    });
+
+    test('edit form shows the stored plan coverage (#523)', async () => {
+      (api.getPlan as jest.Mock).mockResolvedValue({
+        id: 'plan-1',
+        name: 'Test Plan',
+        enabled: true,
+        auto_purchase: false,
+        notification_days_before: 3,
+        services: {
+          ec2: { provider: 'aws', service: 'ec2', enabled: true, term: 1, payment: 'all-upfront', coverage: 55 },
+        },
+        ramp_schedule: { type: 'immediate', percent_per_step: 100, step_interval_days: 0 },
+      });
+
+      (document.querySelector('[data-action="edit"]') as HTMLButtonElement)?.click();
+      await flushPromises();
+
+      expect((document.getElementById('plan-coverage') as HTMLInputElement).value).toBe('55');
+    });
+
+    test('editing a bound plan sends plan-level fields only (#1746)', async () => {
+      (api.getPlan as jest.Mock).mockResolvedValue({
+        id: 'plan-bound', name: 'Bound', enabled: true, auto_purchase: false, notification_days_before: 3,
+        services: { 'aws/ec2#g1': { provider: 'aws', service: 'ec2', enabled: true, term: 3, payment: 'all-upfront', coverage: 70, group_id: 'g1', bound_count: 2 } },
+        ramp_schedule: { type: 'immediate', percent_per_step: 100, step_interval_days: 0, current_step: 0, total_steps: 1, allocation_mode: 'bound_groups' },
+      });
+      (api.updatePlan as jest.Mock).mockResolvedValue({});
+      (api.setPlanAccounts as jest.Mock).mockResolvedValue(undefined);
+      (api.getPlans as jest.Mock).mockResolvedValue({ plans: [] });
+      (api.getPlannedPurchases as jest.Mock).mockResolvedValue({ purchases: [] });
+      (document.querySelector('[data-action="edit"]') as HTMLButtonElement)?.click();
+      await flushPromises();
+      (document.getElementById('plan-account-ids') as HTMLInputElement).value = '11111111-1111-1111-1111-111111111111';
+      (document.getElementById('plan-name') as HTMLInputElement).value = 'Renamed';
+
+      expect((document.getElementById('plan-service') as HTMLSelectElement).disabled).toBe(true);
+      await savePlan({ preventDefault: jest.fn() } as unknown as Event);
+
+      const sent = (api.updatePlan as jest.Mock).mock.calls[0][1];
+      expect(sent.name).toBe('Renamed');
+      for (const field of ['provider', 'service', 'term', 'payment', 'target_coverage', 'groups']) {
+        expect(sent).not.toHaveProperty(field);
+      }
     });
   });
 });
