@@ -265,7 +265,7 @@ repos:
         entry: bash -c 'go run ./cmd/gen-permissions && git diff --exit-code -- frontend/src/permissions.generated.ts || { echo "permissions.generated.ts is stale. Run go run ./cmd/gen-permissions and commit the result."; exit 1; }'
         language: system
         pass_filenames: false
-        files: ^(internal/auth/types\.go|cmd/gen-permissions/.*\.go|frontend/src/permissions\.generated\.ts)$
+        files: ^(internal/auth/types(_defaults)?\.go|cmd/gen-permissions/.*\.go|frontend/src/permissions\.generated\.ts)$
 
   # Heavy test execution: pre-push stage only.
   #
