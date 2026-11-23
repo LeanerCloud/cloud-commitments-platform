@@ -4,13 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"slices"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/provider"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/credentials"
+	"github.com/LeanerCloud/cloud-commitments-platform/internal/providerfactory"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
 
@@ -181,4 +185,156 @@ func (s *Scheduler) collectAzureAmbient(ctx context.Context, subscriptionID stri
 		return nil, nil, fmt.Errorf("get Azure recommendations: %w", err)
 	}
 	return s.convertRecommendations(recs, "azure"), gap, nil
+}
+
+// collectGCPAmbient collects GCP recommendations using Application Default
+// Credentials. Used by the ambient fallback path in collectGCPRecommendations
+// when no accounts are registered.
+func (s *Scheduler) collectGCPAmbient(ctx context.Context, planTerm bool) ([]config.RecommendationRecord, *sweepGap, error) {
+	prov, err := s.providerFactory.CreateAndValidateProvider(ctx, "gcp", nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("create ambient GCP provider: %w", err)
+	}
+	recClient, err := prov.GetRecommendationsClient(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("get GCP recommendations client: %w", err)
+	}
+	recs, err := fetchGCPRecommendations(ctx, recClient, planTerm)
+	gap, err := tolerateIncompleteSweep("gcp", err)
+	if err != nil {
+		return nil, nil, fmt.Errorf("get GCP recommendations: %w", err)
+	}
+	return s.convertRecommendations(recs, "gcp"), gap, nil
+}
+
+// fetchGCPRecommendations collects every GCP recommendation. With planTerm it
+// passes RecommendationParams.ExperimentalGCPPlanTerm so Compute CUD terms come
+// from the recommendation's root plan; otherwise it keeps GetAllRecommendations.
+func fetchGCPRecommendations(ctx context.Context, rc provider.RecommendationsClient, planTerm bool) ([]common.Recommendation, error) {
+	if !planTerm {
+		return rc.GetAllRecommendations(ctx)
+	}
+	return rc.GetRecommendations(ctx, &common.RecommendationParams{ExperimentalGCPPlanTerm: true})
+}
+
+func (s *Scheduler) collectAWSForAccount(ctx context.Context, globalCfg *config.GlobalConfig, acct config.CloudAccount) ([]config.RecommendationRecord, *sweepGap, error) {
+	// Self-account: role_arn mode with no role ARN means "use the CUDly
+	// Lambda's own (ambient) credentials to access this account" -- see
+	// credentials.resolveRoleARNProvider, which documents the identical
+	// shape. Any OTHER auth mode with an empty AWSRoleARN -- including the
+	// empty string org-discovery persists on newly-discovered member
+	// accounts pending operator review (handler_accounts_discover.go,
+	// persistDiscoveredMembers) -- must NOT take this branch: it must fall
+	// through to ResolveAWSCredentialProvider below so its switch fails
+	// loud ("unsupported aws_auth_mode") instead of silently collecting the
+	// HOST account's data and tagging it with this account's UUID
+	// (issue #107). A role_arn account that is not the host fails the
+	// host-identity check instead (issue #402).
+	if acct.AWSAuthMode == "role_arn" && acct.AWSRoleARN == "" {
+		if err := credentials.VerifyHostAccount(ctx, &acct, s.stsClient); err != nil {
+			return nil, nil, err
+		}
+		prov, err := s.providerFactory.CreateAndValidateProvider(ctx, "aws", nil)
+		if err != nil {
+			return nil, nil, fmt.Errorf("create ambient provider: %w", err)
+		}
+		return s.fetchAndConvert(ctx, prov, "aws", &acct.ID, acct.ExternalID, globalCfg)
+	}
+	awsCreds, err := credentials.ResolveAWSCredentialProviderWithOpts(ctx, &acct, s.credStore, s.assumeRoleSTS, s.awsResolveOptions())
+	if err != nil {
+		return nil, nil, fmt.Errorf("resolve credentials: %w", err)
+	}
+	cfg := &provider.Config{Name: "aws", AWSCredentialsProvider: awsCreds}
+	prov, err := s.providerFactory.CreateAndValidateProvider(ctx, "aws", cfg)
+	if err != nil {
+		return nil, nil, fmt.Errorf("create provider: %w", err)
+	}
+	return s.fetchAndConvert(ctx, prov, "aws", &acct.ID, acct.ExternalID, globalCfg)
+}
+
+// awsResolveOptions returns the resolver options for per-account AWS
+// collection: the config-store bastion lookup and bastion STS factory, plus
+// the host credentials for a bastion that is the host account itself.
+func (s *Scheduler) awsResolveOptions() credentials.AWSResolveOptions {
+	return credentials.AWSResolveOptions{
+		AccountLookup:    credentials.AccountLookupFromStore(s.config),
+		STSClientFactory: s.bastionSTS,
+		AmbientProvider:  s.ambientAWSCreds,
+		AmbientSTS:       s.stsClient,
+	}
+}
+
+// collectAzureRecommendations fans out across all enabled Azure accounts,
+// resolving per-account federated credentials via the KMS signer.
+// When no accounts are registered but AZURE_SUBSCRIPTION_ID is set (CUDly
+// running natively on Azure with managed identity), falls back to ambient
+// credentials and tags recommendations with the registered subscription's
+// UUID if found in cloud_accounts.
+func (s *Scheduler) collectAzureRecommendations(ctx context.Context, _ *config.GlobalConfig) ([]config.RecommendationRecord, []string, *sweepGap, error) {
+	accounts, err := s.enabledAccounts(ctx, "azure")
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if len(accounts) == 0 {
+		// Issue #662: mirror the AWS ambient-path tagging fix for Azure.
+		// When the host subscription matches a registered cloud_accounts row,
+		// tag recs with that account's UUID instead of returning nil.
+		// Best-effort: env lookup or store errors must not fail the collection.
+		subscriptionID := os.Getenv("AZURE_SUBSCRIPTION_ID")
+		if subscriptionID == "" {
+			logging.Info("No enabled Azure accounts — skipping Azure recommendations")
+			return nil, nil, nil, nil
+		}
+		recs, gap, err := s.collectAzureAmbient(ctx, subscriptionID)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if acctID := s.resolveAmbientAccountID(ctx, "azure", subscriptionID); acctID != "" {
+			recs = s.tagAccount(recs, acctID)
+			return recs, ambientEvictionRoster(!gap.holdsEviction(), acctID), gap.forAccount().withHeld(acctID), nil
+		}
+		return recs, ambientEvictionRoster(!gap.holdsEviction(), ""), gap.forAccount(), nil
+	}
+
+	recs, outcome := fanOutPerAccount(ctx, "Azure", accounts, s.collectAzureForAccount)
+	if outcome.FailedCount == len(accounts) && len(accounts) > 0 {
+		return nil, nil, nil, errAllAccountsFailed("Azure", outcome)
+	}
+	return recs, outcome.SucceededAccountIDs, outcome.Gap, nil
+}
+
+func (s *Scheduler) collectAzureForAccount(ctx context.Context, acct config.CloudAccount) ([]config.RecommendationRecord, *sweepGap, error) {
+	// Every recommendation returned below is tagged with THIS account's UUID
+	// (see tagAccount at the end of this function), so the provider must be
+	// pinned to this account's subscription. An empty AzureSubscriptionID
+	// leaves the provider unpinned, and an unpinned provider now fans out
+	// across every subscription the credential can see -- which would file
+	// other subscriptions' recommendations under this account and expose them
+	// to anyone authorized for it. Fail loud instead; the row is misconfigured.
+	if acct.AzureSubscriptionID == "" {
+		return nil, nil, fmt.Errorf("cloud account %s has no azure_subscription_id configured", acct.ID)
+	}
+
+	azCred, err := credentials.ResolveAzureTokenCredentialWithOpts(ctx, &acct, s.credStore, credentials.AzureResolveOptions{
+		Signer:    s.oidcSigner,
+		IssuerURL: s.oidcIssuerURL,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("resolve credentials: %w", err)
+	}
+	azProv, err := providerfactory.NewAzure(acct.AzureSubscriptionID, azCred)
+	if err != nil {
+		return nil, nil, fmt.Errorf("create provider: %w", err)
+	}
+
+	recClient, err := azProv.GetRecommendationsClient(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("get recommendations client: %w", err)
+	}
+	recs, err := recClient.GetAllRecommendations(ctx)
+	gap, err := tolerateIncompleteSweep("azure", err)
+	if err != nil {
+		return nil, nil, fmt.Errorf("get recommendations: %w", err)
+	}
+	return s.tagAccount(s.convertRecommendations(recs, "azure"), acct.ID), gap, nil
 }
