@@ -114,4 +114,82 @@ jest.mock('../archera', () => ({
   openArcheraOfferModal: jest.fn(),
 }));
 
-export {};
+// ── imports ───────────────────────────────────────────────────────────────────
+
+import { setupEventListeners } from '../app';
+
+// ── helpers ───────────────────────────────────────────────────────────────────
+
+export function buildMinimalRec() {
+  return {
+    id: 'rec-1',
+    provider: 'aws' as const,
+    service: 'ec2',
+    region: 'us-east-1',
+    resource_type: 't3.medium',
+    count: 1,
+    term: 1,
+    payment: 'all-upfront',
+    upfront_cost: 100,
+    monthly_cost: 10,
+    savings: 20,
+    selected: true,
+    purchased: false,
+  };
+}
+
+/**
+ * Mount a minimal DOM using safe DOM API methods and wire up event listeners.
+ * Returns the execute-purchase button so tests can click it.
+ */
+export function setup(): HTMLButtonElement {
+  const modal = document.createElement('div');
+  modal.id = 'purchase-modal';
+  document.body.appendChild(modal);
+
+  const btn = document.createElement('button');
+  btn.id = 'execute-purchase-btn';
+  btn.textContent = 'Send for approval';
+  document.body.appendChild(btn);
+
+  const capacityInput = document.createElement('input');
+  capacityInput.id = 'bulk-purchase-capacity';
+  capacityInput.value = '100';
+  document.body.appendChild(capacityInput);
+
+  setupEventListeners();
+  return btn;
+}
+
+/** Return the text content of the most-recently rendered toast message node. */
+export function lastToastMessage(): string | null {
+  const container = document.getElementById('toast-container');
+  if (!container) return null;
+  const toasts = container.querySelectorAll('.toast');
+  if (toasts.length === 0) return null;
+  const last = toasts[toasts.length - 1];
+  return last?.querySelector('.toast-message')?.textContent ?? last?.textContent ?? null;
+}
+
+/** Return the text of every rendered toast, oldest first. */
+export function allToastMessages(): string[] {
+  const container = document.getElementById('toast-container');
+  if (!container) return [];
+  return Array.from(container.querySelectorAll('.toast')).map(
+    (t) => t.querySelector('.toast-message')?.textContent ?? t.textContent ?? '',
+  );
+}
+
+/** Return the kind class of the most recently rendered toast (success/error/warning). */
+export function lastToastKind(): string | null {
+  const container = document.getElementById('toast-container');
+  if (!container) return null;
+  const toasts = container.querySelectorAll('.toast');
+  if (toasts.length === 0) return null;
+  const last = toasts[toasts.length - 1];
+  for (const cls of Array.from(last?.classList ?? [])) {
+    const m = cls.match(/^toast--(.+)$/);
+    if (m) return m[1] ?? null;
+  }
+  return null;
+}
