@@ -162,6 +162,15 @@ const (
 	redriveReasonAzureSavingsPlan = "Azure savings plans have no provider-side duplicate guard, so re-driving this purchase would buy a second savings plan that cannot be canceled"
 )
 
+// azureRedriveRefusedSavingsPlansSlugs is the single list of Azure service
+// spellings whose re-drive is refused. "savings-plans" no longer dispatches
+// (#7), but a legacy row may still carry it and a possibly-landed Azure
+// savings plan is non-cancellable (#1668), so refusing is the safe direction.
+var azureRedriveRefusedSavingsPlansSlugs = map[string]bool{
+	"savingsplans":  true,
+	"savings-plans": true,
+}
+
 // recRedriveRefusalReason returns why one recommendation cannot be safely re-driven, or ""
 // when it can; split out of RedriveRefusalReason for the gocyclo budget.
 func recRedriveRefusalReason(rec config.RecommendationRecord) string {
@@ -181,7 +190,7 @@ func recRedriveRefusalReason(rec config.RecommendationRecord) string {
 		// collapse onto the first order (see RedriveRefusalReason), so a
 		// re-drive may create a duplicate. All other Azure services use
 		// DoIdempotentPurchaseTwoStep (#729).
-		if rec.Service == "savingsplans" {
+		if azureRedriveRefusedSavingsPlansSlugs[rec.Service] {
 			return redriveReasonAzureSavingsPlan
 		}
 		return ""

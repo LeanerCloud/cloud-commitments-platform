@@ -42,11 +42,16 @@ import (
 func TestRedriveGuardReachMatchesDispatchReach(t *testing.T) {
 	m := NewManager(ManagerConfig{})
 
+	// Spellings refused by the guard although they no longer dispatch: legacy
+	// rows may still carry them and refusing is the safe direction. Guard reach
+	// is a superset of dispatch reach; these are the only extra members.
+	legacyRefusedOnlySlugs := map[string]bool{"savings-plans": true}
+
 	candidates := []string{
 		// Every key of mapSavingsPlansSlug (execution.go). Only "savingsplans"
 		// maps to ServiceSavingsPlansAll; the rest are AWS plan-type slugs.
-		// "savings-plans" (the dropped legacy umbrella, #7) must now dispatch
-		// nowhere and so be refused nowhere.
+		// "savings-plans" (the legacy umbrella, #7) no longer dispatches but
+		// is still refused; see legacyRefusedOnlySlugs.
 		"savings-plans", "savingsplans",
 		"savings-plans-compute", "savingsplans-compute",
 		"savings-plans-ec2instance", "savingsplans-ec2instance",
@@ -92,8 +97,9 @@ func TestRedriveGuardReachMatchesDispatchReach(t *testing.T) {
 			// Does the money guard refuse it?
 			guardRefuses := recRedriveRefusalReason(rec) != ""
 
-			assert.Equal(t, dispatchesToSavingsPlans, guardRefuses,
-				"guard reach and dispatch reach must be identical for %q: dispatchesToSavingsPlans=%v guardRefuses=%v. "+
+			wantRefused := dispatchesToSavingsPlans || legacyRefusedOnlySlugs[service]
+			assert.Equal(t, wantRefused, guardRefuses,
+				"guard reach must be dispatch reach plus the legacy allowlist for %q: dispatchesToSavingsPlans=%v guardRefuses=%v. "+
 					"A value that dispatches but is not refused is a double-purchase hole; a value that is refused but "+
 					"cannot dispatch is an unretryable row for no reason",
 				service, dispatchesToSavingsPlans, guardRefuses)
@@ -114,6 +120,10 @@ func TestRedriveGuardRefusalSetIsExactlyTheDispatchableSpellings(t *testing.T) {
 		assert.NotEmpty(t, recRedriveRefusalReason(config.RecommendationRecord{Provider: "azure", Service: service}),
 			"%q dispatches to a savings-plans purchase, so the re-drive guard must refuse it", service)
 	}
+
+	// The legacy umbrella no longer dispatches but is still refused.
+	require.NotEqual(t, common.ServiceSavingsPlansAll, m.mapServiceType("savings-plans"))
+	assert.NotEmpty(t, recRedriveRefusalReason(config.RecommendationRecord{Provider: "azure", Service: "savings-plans"}))
 
 	// Azure reservations must stay retryable: the guard has to be as narrow as
 	// the provider gap, or legitimate retries are stranded.
