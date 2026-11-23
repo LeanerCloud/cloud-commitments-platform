@@ -16,7 +16,7 @@ import (
 
 // Issue #1586: unpriced terminal listings are polled until
 // MarketplaceTerminalPollCutoffDays after terminal_at, the time the listing
-// first became closed or cancelled, never after its (possibly much older)
+// first became closed or canceled, never after its (possibly much older)
 // AWS creation date. All instants are relative to now().
 func TestMarketplaceTerminalPollCutoff_Postgres(t *testing.T) {
 	ctx := context.Background()
@@ -28,9 +28,9 @@ func TestMarketplaceTerminalPollCutoff_Postgres(t *testing.T) {
 	t.Run("BoundaryAroundCutoff", func(t *testing.T) { checkCutoffBoundary(ctx, t, store, pool) })
 	t.Run("NullTerminalAtIsPolled", func(t *testing.T) { checkNullTerminalAtPolled(ctx, t, store, pool) })
 	t.Run("ActiveAndPendingNeverCutOff", func(t *testing.T) { checkActivePendingNeverCutOff(ctx, t, store, pool) })
-	t.Run("PricedTerminalNotPolled", func(t *testing.T) { checkPricedTerminalNotPolled(ctx, t, store, pool) })
+	t.Run("PricedTerminalNotPolled", func(t *testing.T) { checkPricedTerminalNotPolled(ctx, t, store) })
 	t.Run("RelistedListingGetsFreshClock", func(t *testing.T) { checkRelistFreshClock(ctx, t, store, pool) })
-	t.Run("InsertedTerminalRowsAreStamped", func(t *testing.T) { checkInsertStamped(ctx, t, store, pool) })
+	t.Run("InsertedTerminalRowsAreStamped", func(t *testing.T) { checkInsertStamped(ctx, t, pool) })
 	t.Run("SupersededListingCutOffAndUnsettledInTotals", func(t *testing.T) { checkSupersededCutOff(ctx, t, store, pool) })
 }
 
@@ -142,7 +142,7 @@ func checkActivePendingNeverCutOff(ctx context.Context, t *testing.T, store *Pos
 	assert.Contains(t, pollListings(ctx, t, store, "tc-pending"), "ril-tc-pending")
 }
 
-func checkPricedTerminalNotPolled(ctx context.Context, t *testing.T, store *PostgresStore, pool *pgxpool.Pool) {
+func checkPricedTerminalNotPolled(ctx context.Context, t *testing.T, store *PostgresStore) {
 	const id = "tc-priced"
 	seedListing(ctx, t, store, "aws", id, "ril-tc-priced", ListingStateActive)
 	applied, err := store.SettleMarketplaceListing(ctx, closedSettlement(id, "ril-tc-priced", 88, 12))
@@ -194,7 +194,7 @@ func checkRelistFreshClock(ctx context.Context, t *testing.T, store *PostgresSto
 }
 
 // Rows inserted already terminal are stamped now(), in both tables.
-func checkInsertStamped(ctx context.Context, t *testing.T, store *PostgresStore, pool *pgxpool.Pool) {
+func checkInsertStamped(ctx context.Context, t *testing.T, pool *pgxpool.Pool) {
 	_, err := pool.Exec(ctx, `INSERT INTO purchase_history (account_id, purchase_id, timestamp, provider, service, region,
 		resource_type, count, term, payment, listing_id, listing_state)
 		VALUES ('acct', 'tc-ins', now(), 'aws', 'ec2', 'us-east-1', 't3.micro', 1, 1, 'all-upfront', 'ril-tc-ins', 'closed')`)

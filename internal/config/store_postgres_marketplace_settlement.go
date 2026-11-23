@@ -27,9 +27,9 @@ import (
 // for without an account scope, so the read never covers every account.
 var ErrMarketplaceTotalsScopeRequired = errors.New("marketplace listing proceeds totals require an account scope")
 
-// MarketplaceTerminalPollCutoffDays bounds how long a closed or cancelled
+// MarketplaceTerminalPollCutoffDays bounds how long a closed or canceled
 // listing whose sale price was never determined is polled, counted from
-// terminal_at (when it first became closed or cancelled, migration 000179).
+// terminal_at (when it first became closed or canceled, migration 000179).
 // Proceeds settle within the AWS Marketplace disbursement cycle (days to
 // weeks), so 180 days is a deliberately conservative upper bound. Past it the
 // listing keeps its terminal state and no proceeds, so totals count it as

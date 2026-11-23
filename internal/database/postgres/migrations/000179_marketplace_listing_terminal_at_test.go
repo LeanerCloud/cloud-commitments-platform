@@ -17,7 +17,7 @@ import (
 const migration179Version = 179
 
 // TestMigration179_MarketplaceListingTerminalAt locks down migration 000179
-// (issue #1586): existing closed and cancelled listings are backfilled with a
+// (issue #1586): existing closed and canceled listings are backfilled with a
 // fresh terminal_at and active ones stay NULL; afterwards terminal_at is
 // stamped once on the first transition to a terminal state, kept by later
 // writes, carried to the superseded-listing row on a relist; the rollback
