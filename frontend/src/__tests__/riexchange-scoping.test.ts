@@ -3,7 +3,7 @@
  */
 
 import { _accountListeners, _providerListeners, createModal } from './riexchange-harness';
-import { loadRIExchange, openExchangeModal } from '../riexchange';
+import { loadRIExchange, openExchangeModal, setupRIExchangeHandlers } from '../riexchange';
 import * as api from '../api';
 
 // issue #871: RI Exchange must honour the Main Header global Provider/Account
@@ -197,5 +197,109 @@ describe('RI Exchange global filter scoping (issue #871)', () => {
     expect(api.listAccountsMinimal).not.toHaveBeenCalledWith();
     expect(api.listAccountsMinimal).toHaveBeenCalledWith({ provider: 'aws' });
     expect(api.listConvertibleRIs).toHaveBeenCalledWith(undefined);
+  });
+
+  it('drops a superseded load when the account chip changes mid-lookup', async () => {
+    let release: (v: unknown) => void = () => undefined;
+    (api.listAccountsMinimal as jest.Mock).mockReturnValueOnce(new Promise(r => { release = r; }));
+    stateMod().getCurrentAccountIDs.mockReturnValue(['uuid-1']);
+    const first = loadRIExchange();
+    stateMod().getCurrentAccountIDs.mockReturnValue(['uuid-2']);
+    const second = loadRIExchange();
+    await second;
+    release([{ id: 'uuid-1', name: 'Prod', external_id: '123456789012', provider: 'aws' }]);
+    await first;
+    expect(api.listConvertibleRIs).toHaveBeenCalledTimes(1);
+    expect(api.listConvertibleRIs).toHaveBeenCalledWith('210987654321');
+  });
+
+  it('does not forward an account id when more than one account is selected', async () => {
+    stateMod().getCurrentAccountIDs.mockReturnValue(['111111111111', '222222222222']);
+    await loadRIExchange();
+    expect(api.listConvertibleRIs).toHaveBeenCalledWith(undefined);
+  });
+
+  it('renders a scoped empty-state naming the AWS account', async () => {
+    stateMod().getCurrentAccountIDs.mockReturnValue(['uuid-1']);
+    (api.listConvertibleRIs as jest.Mock).mockResolvedValue([]);
+    await loadRIExchange();
+    expect(instancesEl.textContent).toContain('123456789012');
+  });
+
+  it('loads Azure reservations (not AWS RIs) when provider is azure', async () => {
+    stateMod().getCurrentProvider.mockReturnValue('azure');
+    (api.listExchangeableAzureRIs as jest.Mock).mockResolvedValue([
+      { reservation_order_id: 'o1', reservation_id: 'r1', sku: 'Standard_D2s_v3', quantity: 2, region: 'eastus', term: 'P1Y', instance_flexibility: 'On', display_name: 'web-rsv' },
+    ]);
+    await loadRIExchange();
+    expect(api.listExchangeableAzureRIs).toHaveBeenCalled();
+    expect(api.listConvertibleRIs).not.toHaveBeenCalled();
+    expect(instancesEl.textContent).toContain('Standard_D2s_v3');
+    expect(instancesEl.textContent).toContain('web-rsv');
+    // Reshape recommendations are AWS-only -> provider-aware not-applicable copy.
+    expect(recsEl.textContent).toContain('not available for Azure');
+  });
+
+  it('lets a user who can preview purchases select Azure reservations for an exchange (issue #81)', async () => {
+    stateMod().getCurrentProvider.mockReturnValue('azure');
+    // An Administrators-group member (admin:* covers view:purchases).
+    (jest.requireMock('../state') as { getCurrentUser: jest.Mock }).getCurrentUser
+      .mockReturnValue({ id: 'u', email: 'u@example.com', groups: ['00000000-0000-5000-8000-000000000001'] });
+    (api.listExchangeableAzureRIs as jest.Mock).mockResolvedValue([
+      { reservation_order_id: 'o1', reservation_id: 'r1', sku: 'Standard_D2s_v3', quantity: 2, region: 'eastus', term: 'P1Y', instance_flexibility: 'On', billing_scope_id: '/subscriptions/s1' },
+      { reservation_order_id: 'o2', reservation_id: 'r2', sku: 'Standard_E2s_v3', quantity: 1, region: 'eastus', term: 'P1Y', instance_flexibility: 'On', billing_scope_id: '/subscriptions/s1' },
+    ]);
+    await loadRIExchange();
+    expect(instancesEl.querySelectorAll('tbody input.azure-ri-select')).toHaveLength(2);
+    expect(instancesEl.querySelectorAll('thead th')).toHaveLength(7);
+    // The checkbox column's header has an accessible name, visually hidden.
+    const selectHeader = instancesEl.querySelector('thead th')!;
+    expect(selectHeader.querySelector('.sr-only')?.textContent).toBe('Select for exchange');
+    const btn = instancesEl.querySelector<HTMLButtonElement>('#azure-exchange-selected-btn')!;
+    expect(btn.disabled).toBe(true);
+  });
+
+  it('shows a provider-aware empty state for Azure with no reservations', async () => {
+    stateMod().getCurrentProvider.mockReturnValue('azure');
+    stateMod().getCurrentAccountIDs.mockReturnValue(['uuid-az']);
+    (api.listExchangeableAzureRIs as jest.Mock).mockResolvedValue([]);
+    await loadRIExchange();
+    expect(api.listExchangeableAzureRIs).toHaveBeenCalledWith('aaaaaaaa-0000-0000-0000-bbbbbbbbbbbb');
+    expect(instancesEl.textContent).toContain('No exchangeable reservations for Azure subscription aaaaaaaa-0000-0000-0000-bbbbbbbbbbbb');
+  });
+
+  it('shows the not-available empty state for GCP and calls no list endpoint', async () => {
+    stateMod().getCurrentProvider.mockReturnValue('gcp');
+    await loadRIExchange();
+    expect(api.listConvertibleRIs).not.toHaveBeenCalled();
+    expect(api.listExchangeableAzureRIs).not.toHaveBeenCalled();
+    expect(instancesEl.textContent).toContain("isn't available for GCP");
+    expect(recsEl.textContent).toContain("isn't available for GCP");
+    expect(historyEl.textContent).toContain("isn't available for GCP");
+  });
+
+  it('does not leave stale AWS rows when switching to GCP', async () => {
+    // First load AWS with a row present.
+    (api.listConvertibleRIs as jest.Mock).mockResolvedValue([{
+      reserved_instance_id: 'ri-1', instance_type: 'm5.large', availability_zone: 'us-east-1a',
+      instance_count: 1, start: '2026-01-01T00:00:00Z', end: '2027-01-01T00:00:00Z',
+      offering_type: 'Convertible', fixed_price: 0, usage_price: 0, state: 'active', normalization_factor: 4,
+    }]);
+    await loadRIExchange();
+    expect(instancesEl.textContent).toContain('m5.large');
+    // Switch to GCP -> table must be replaced by the empty state.
+    stateMod().getCurrentProvider.mockReturnValue('gcp');
+    await loadRIExchange();
+    expect(instancesEl.textContent).not.toContain('m5.large');
+    expect(instancesEl.textContent).toContain("isn't available for GCP");
+  });
+
+  it('closes an in-progress exchange modal when the filter changes', async () => {
+    const modal = createModal();
+    modal.classList.remove('hidden'); // simulate an open exchange modal
+    setupRIExchangeHandlers();
+    _providerListeners.forEach(cb => cb());
+    // Modal is closed synchronously on the chip event.
+    expect(modal.classList.contains('hidden')).toBe(true);
   });
 });
