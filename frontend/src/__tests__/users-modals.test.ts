@@ -383,5 +383,84 @@ describe('users/userModals', () => {
       expect(api.listUsers).toHaveBeenCalled();
       jest.useRealTimers();
     });
+
+    it('should show success message on create', async () => {
+      jest.useFakeTimers();
+      userModals.openCreateUserModal();
+
+      (document.getElementById('user-email') as HTMLInputElement).value = 'new@test.com';
+      (document.getElementById('user-password') as HTMLInputElement).value = 'SecurePass123!';
+
+      const gs4 = document.getElementById('user-groups') as HTMLSelectElement;
+      if (gs4.options.length > 0) gs4.options[0]!.selected = true;
+
+      const event = new Event('submit');
+      event.preventDefault = jest.fn();
+
+      await userModals.saveUser(event);
+
+      expect(document.querySelector('.toast-success')).toBeTruthy();
+      jest.useRealTimers();
+    });
+
+    it('should show success message on update', async () => {
+      jest.useFakeTimers();
+      await userModals.openEditUserModal('1');
+
+      const event = new Event('submit');
+      event.preventDefault = jest.fn();
+
+      await userModals.saveUser(event);
+
+      expect(document.querySelector('.toast-success')).toBeTruthy();
+      jest.useRealTimers();
+    });
+
+    it('should handle save error', async () => {
+      (api.createUser as jest.Mock).mockRejectedValue(new Error('Create failed'));
+
+      userModals.openCreateUserModal();
+
+      (document.getElementById('user-email') as HTMLInputElement).value = 'new@test.com';
+      (document.getElementById('user-password') as HTMLInputElement).value = 'SecurePass123!';
+
+      // PR #912: select a group so the required-group check passes and
+      // the error comes from the API call, not the validation.
+      const gs6 = document.getElementById('user-groups') as HTMLSelectElement;
+      if (gs6.options.length > 0) gs6.options[0]!.selected = true;
+
+      const event = new Event('submit');
+      event.preventDefault = jest.fn();
+
+      await userModals.saveUser(event);
+
+      expect(document.querySelector('.toast-error')).toBeTruthy();
+      expect(document.querySelector('.toast-error')?.textContent).toContain('Create failed');
+    });
+
+    it('should include selected groups', async () => {
+      jest.useFakeTimers();
+      userModals.openCreateUserModal();
+
+      (document.getElementById('user-email') as HTMLInputElement).value = 'new@test.com';
+      (document.getElementById('user-password') as HTMLInputElement).value = 'SecurePass123!';
+
+      const groupsSelect = document.getElementById('user-groups') as HTMLSelectElement;
+      if (groupsSelect.options[0]) {
+        groupsSelect.options[0].selected = true; // Select 'admins'
+      }
+
+      const event = new Event('submit');
+      event.preventDefault = jest.fn();
+
+      await userModals.saveUser(event);
+
+      expect(api.createUser).toHaveBeenCalledWith(
+        expect.objectContaining({
+          groups: ['admins']
+        })
+      );
+      jest.useRealTimers();
+    });
   });
 });
