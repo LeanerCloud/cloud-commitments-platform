@@ -6,6 +6,7 @@
 
 // The harness registers the module mocks, so it must be imported first.
 import {
+  mockShowToast,
   buildAccountsDOM,
 } from './settings-accounts-harness';
 import {
@@ -243,5 +244,147 @@ describe('Account modal via setupSettingsHandlers', () => {
     // index.html does), so we only assert on the generated value here.
     expect(extID.value).not.toBe('');
     expect(extID.value.length).toBeGreaterThanOrEqual(16);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Account form submit
+// ---------------------------------------------------------------------------
+
+describe('Account form submit', () => {
+  beforeEach(() => {
+    buildAccountsDOM();
+    jest.clearAllMocks();
+    (api.listAccounts as jest.Mock).mockResolvedValue([]);
+    setupSettingsHandlers();
+  });
+
+  test('creates new account when account-id is empty', async () => {
+    (api.createAccount as jest.Mock).mockResolvedValue({
+      id: 'new-id', name: 'Acct', provider: 'aws', external_id: '123456789012', enabled: true
+    });
+
+    document.getElementById('add-aws-account-btn')!.click();
+    (document.getElementById('account-name') as HTMLInputElement).value = 'Acct';
+    (document.getElementById('account-external-id') as HTMLInputElement).value = '123456789012';
+
+    document.getElementById('account-form')!.dispatchEvent(new Event('submit'));
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(api.createAccount).toHaveBeenCalled();
+    expect(api.updateAccount).not.toHaveBeenCalled();
+    expect(api.listAccounts).toHaveBeenCalled(); // list refreshed
+  });
+
+  test('disables the Save button while the account request is in flight (issue #735)', async () => {
+    const btn = document.createElement('button');
+    btn.type = 'submit';
+    document.getElementById('account-form')!.appendChild(btn);
+    let resolve!: (v: unknown) => void;
+    (api.createAccount as jest.Mock).mockReturnValue(new Promise((r) => { resolve = r; }));
+
+    document.getElementById('add-aws-account-btn')!.click();
+    (document.getElementById('account-name') as HTMLInputElement).value = 'Acct';
+    (document.getElementById('account-external-id') as HTMLInputElement).value = '123456789012';
+    document.getElementById('account-form')!.dispatchEvent(new Event('submit'));
+    await new Promise(r => setTimeout(r, 0));
+    expect(btn.disabled).toBe(true);
+
+    resolve({ id: 'new-id', name: 'Acct', provider: 'aws', external_id: '123456789012', enabled: true });
+    await new Promise(r => setTimeout(r, 0));
+    expect(btn.disabled).toBe(false);
+  });
+
+  test('updates existing account when account-id is set', async () => {
+    (api.updateAccount as jest.Mock).mockResolvedValue({
+      id: 'existing-id', name: 'Updated', provider: 'aws', external_id: '123456789012', enabled: true
+    });
+
+    document.getElementById('add-aws-account-btn')!.click();
+    (document.getElementById('account-id') as HTMLInputElement).value = 'existing-id';
+    (document.getElementById('account-name') as HTMLInputElement).value = 'Updated';
+    (document.getElementById('account-external-id') as HTMLInputElement).value = '123456789012';
+
+    document.getElementById('account-form')!.dispatchEvent(new Event('submit'));
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(api.updateAccount).toHaveBeenCalledWith('existing-id', expect.any(Object));
+    expect(api.createAccount).not.toHaveBeenCalled();
+  });
+
+  test('saves AWS access_key credentials when key fields are filled', async () => {
+    (api.createAccount as jest.Mock).mockResolvedValue({
+      id: 'new-id', name: 'Acct', provider: 'aws', external_id: '123456789012', enabled: true
+    });
+    (api.saveAccountCredentials as jest.Mock).mockResolvedValue(undefined);
+
+    document.getElementById('add-aws-account-btn')!.click();
+    (document.getElementById('account-name') as HTMLInputElement).value = 'Acct';
+    (document.getElementById('account-external-id') as HTMLInputElement).value = '123456789012';
+    (document.getElementById('account-aws-auth-mode') as HTMLSelectElement).value = 'access_keys';
+    (document.getElementById('account-aws-access-key-id') as HTMLInputElement).value = 'AKID';
+    (document.getElementById('account-aws-secret-access-key') as HTMLInputElement).value = 'SECRET';
+
+    document.getElementById('account-form')!.dispatchEvent(new Event('submit'));
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(api.saveAccountCredentials).toHaveBeenCalledWith('new-id', {
+      credential_type: 'aws_access_keys',
+      payload: { access_key_id: 'AKID', secret_access_key: 'SECRET' }
+    });
+  });
+
+  test('skips credential save when key fields are empty', async () => {
+    (api.createAccount as jest.Mock).mockResolvedValue({
+      id: 'new-id', name: 'Acct', provider: 'aws', external_id: '123456789012', enabled: true
+    });
+
+    document.getElementById('add-aws-account-btn')!.click();
+    (document.getElementById('account-name') as HTMLInputElement).value = 'Acct';
+    (document.getElementById('account-external-id') as HTMLInputElement).value = '123456789012';
+    (document.getElementById('account-aws-auth-mode') as HTMLSelectElement).value = 'access_keys';
+    // leave key fields empty
+
+    document.getElementById('account-form')!.dispatchEvent(new Event('submit'));
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(api.saveAccountCredentials).not.toHaveBeenCalled();
+  });
+
+  test('shows alert on create failure', async () => {
+    (api.createAccount as jest.Mock).mockRejectedValue(new Error('Server error'));
+    mockShowToast.mockClear();
+
+    document.getElementById('add-aws-account-btn')!.click();
+    (document.getElementById('account-name') as HTMLInputElement).value = 'Acct';
+    (document.getElementById('account-external-id') as HTMLInputElement).value = '123456789012';
+
+    document.getElementById('account-form')!.dispatchEvent(new Event('submit'));
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining('Failed to save account'),
+      kind: 'error'
+    }));
+  });
+
+  test('saves azure credentials when secret field is filled', async () => {
+    (api.createAccount as jest.Mock).mockResolvedValue({
+      id: 'az-id', name: 'AzureAcct', provider: 'azure', external_id: 'sub-id', enabled: true
+    });
+    (api.saveAccountCredentials as jest.Mock).mockResolvedValue(undefined);
+
+    document.getElementById('add-azure-account-btn')!.click();
+    (document.getElementById('account-name') as HTMLInputElement).value = 'AzureAcct';
+    (document.getElementById('account-external-id') as HTMLInputElement).value = 'sub-id';
+    (document.getElementById('account-azure-client-secret') as HTMLInputElement).value = 'mysecret';
+
+    document.getElementById('account-form')!.dispatchEvent(new Event('submit'));
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(api.saveAccountCredentials).toHaveBeenCalledWith('az-id', {
+      credential_type: 'azure_client_secret',
+      payload: { client_secret: 'mysecret' }
+    });
   });
 });
