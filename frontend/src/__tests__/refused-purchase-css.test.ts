@@ -2,7 +2,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-const css = fs.readFileSync(path.join(__dirname, '../styles/components.css'), 'utf8');
+const stylesDir = path.join(__dirname, '../styles');
+const css = fs.readdirSync(stylesDir).filter((f) => /^components.*\.css$/.test(f)).sort().map((f) => fs.readFileSync(path.join(stylesDir, f), 'utf8')).join('\n');
 const rule = (sel: string): string => {
   const m = css.match(new RegExp(`(?:^|\\n)${sel.replace('.', '\\.')}\\s*\\{([^}]*)\\}`));
   return m?.[1] ?? '';

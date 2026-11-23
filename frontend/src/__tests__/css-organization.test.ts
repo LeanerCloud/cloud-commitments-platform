@@ -27,7 +27,12 @@ describe('CSS File Organization', () => {
   });
 
   test('components.css contains cards and buttons', () => {
-    const components = readCssFile('components.css');
+    const components = fs
+      .readdirSync(stylesDir)
+      .filter((f) => /^components.*\.css$/.test(f))
+      .sort()
+      .map(readCssFile)
+      .join('\n');
     expect(components).toMatch(/\.card\s*\{/);
     expect(components).toMatch(/button\s*\{/);
     expect(components).toMatch(/button\.primary\s*\{/);

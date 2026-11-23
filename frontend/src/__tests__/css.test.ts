@@ -18,7 +18,7 @@ describe('CSS Styles', () => {
       .map(file => fs.readFileSync(path.join(stylesDir, file), 'utf8'));
     css = cssFiles.join('\n');
     responsiveCss = fs.readFileSync(path.join(stylesDir, 'responsive.css'), 'utf8');
-    componentsCss = fs.readFileSync(path.join(stylesDir, 'components.css'), 'utf8');
+    componentsCss = fs.readdirSync(stylesDir).filter((f) => /^components.*\.css$/.test(f)).sort().map((f) => fs.readFileSync(path.join(stylesDir, f), 'utf8')).join('\n');
   });
 
   describe('Required CSS Rules', () => {
