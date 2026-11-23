@@ -195,4 +195,131 @@ describe('Bulk override modal (issue #119)', () => {
     const modal = document.getElementById('override-modal') as HTMLElement;
     expect(modal.classList.contains('hidden')).toBe(false);
   });
+
+  test('submit without any box checked shows inline error, never calls API', async () => {
+    (api.listAccountServiceOverrides as jest.Mock).mockResolvedValue([]);
+    (api.saveAccountServiceOverride as jest.Mock).mockResolvedValue({});
+
+    const { form } = await openBulkModal();
+
+    (document.getElementById('override-payment') as HTMLSelectElement).value = 'no-upfront';
+    // No checkboxes checked.
+    form.dispatchEvent(new Event('submit', { cancelable: true }));
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(api.saveAccountServiceOverride).not.toHaveBeenCalled();
+    const errEl = document.getElementById('override-form-error') as HTMLElement;
+    expect(errEl.textContent).toMatch(/Select at least one/i);
+  });
+
+  test('already-overridden services are excluded from the checkbox list', async () => {
+    (api.listAccounts as jest.Mock).mockResolvedValue([
+      { id: 'acc-1', name: 'Prod', external_id: '111', enabled: true, provider: 'aws' },
+    ]);
+    (api.listAccountServiceOverrides as jest.Mock).mockResolvedValue([
+      { id: 'o1', account_id: 'acc-1', provider: 'aws', service: 'ec2', term: 1 },
+      { id: 'o2', account_id: 'acc-1', provider: 'aws', service: 'rds',  term: 1 },
+    ]);
+    await loadAccountsForProvider('aws');
+
+    const overridesBtn = document.querySelector(
+      `button[aria-label="Service overrides for Prod (111)"]`,
+    ) as HTMLButtonElement;
+    // Panel has existing overrides so the modal is not auto-opened; open manually.
+    const panel = document.getElementById('account-overrides-modal-body') as HTMLElement;
+    overridesBtn.click();
+    await new Promise(r => setTimeout(r, 0));
+
+    const addBtn = Array.from(panel.querySelectorAll('button')).find(b => b.textContent === 'Add override');
+    expect(addBtn).toBeDefined();
+    addBtn!.click();
+
+    const bulkToggle = document.getElementById('override-bulk-toggle') as HTMLInputElement;
+    bulkToggle.checked = true;
+    bulkToggle.dispatchEvent(new Event('change'));
+
+    const bulkList = document.getElementById('override-bulk-services-list') as HTMLElement;
+    const values = Array.from(bulkList.querySelectorAll('input[type="checkbox"]')).map(
+      cb => (cb as HTMLInputElement).value,
+    );
+    expect(values).not.toContain('ec2');
+    expect(values).not.toContain('rds');
+    expect(values).toContain('elasticache');
+  });
+
+  test('closing the modal resets bulk toggle to off', async () => {
+    const { bulkToggle } = await openBulkModal();
+    expect(bulkToggle.checked).toBe(true);
+
+    (document.getElementById('close-override-modal-btn') as HTMLButtonElement).click();
+
+    expect(bulkToggle.checked).toBe(false);
+    const singleRow = document.getElementById('override-single-service-row') as HTMLElement;
+    expect(singleRow.classList.contains('hidden')).toBe(false);
+  });
+
+  // Preventive conflict gating (issue #119): selecting an incompatible
+  // term/payment combo must disable the conflicting service checkbox BEFORE
+  // the user hits Save, so the all-or-nothing submit block is unreachable in
+  // normal use.  The only AWS hard restriction is rds + 3yr + no-upfront.
+  test('selecting 3yr/no-upfront disables rds checkbox and API is never called', async () => {
+    (api.listAccountServiceOverrides as jest.Mock).mockResolvedValue([]);
+    (api.saveAccountServiceOverride as jest.Mock).mockResolvedValue({});
+
+    const { bulkList, form } = await openBulkModal();
+
+    // Check rds first so it is "selected" before the conflict appears.
+    const rdsCb = bulkList.querySelector<HTMLInputElement>('input[value="rds"]');
+    expect(rdsCb).not.toBeNull();
+    rdsCb!.checked = true;
+    rdsCb!.dispatchEvent(new Event('change'));
+    expect(rdsCb!.disabled).toBe(false);
+
+    // Set term = 3, then payment = no-upfront (the invalid combo for rds).
+    const termSel = document.getElementById('override-term') as HTMLSelectElement;
+    termSel.value = '3';
+    termSel.dispatchEvent(new Event('change'));
+
+    const paymentSel = document.getElementById('override-payment') as HTMLSelectElement;
+    paymentSel.value = 'no-upfront';
+    paymentSel.dispatchEvent(new Event('change'));
+
+    // rds must now be disabled and unchecked.
+    expect(rdsCb!.disabled).toBe(true);
+    expect(rdsCb!.checked).toBe(false);
+
+    // A service with no restriction (e.g. ec2) stays enabled.
+    const ec2Cb = bulkList.querySelector<HTMLInputElement>('input[value="ec2"]');
+    expect(ec2Cb!.disabled).toBe(false);
+
+    // Attempting to submit with rds disabled (nothing checked) must not call
+    // the API and must show an inline error.
+    form.dispatchEvent(new Event('submit', { cancelable: true }));
+    await new Promise(r => setTimeout(r, 0));
+    expect(api.saveAccountServiceOverride).not.toHaveBeenCalled();
+  });
+
+  test('switching back to a compatible combo re-enables the rds checkbox', async () => {
+    (api.listAccountServiceOverrides as jest.Mock).mockResolvedValue([]);
+
+    const { bulkList } = await openBulkModal();
+
+    // Trigger the invalid combo.
+    const termSel = document.getElementById('override-term') as HTMLSelectElement;
+    termSel.value = '3';
+    termSel.dispatchEvent(new Event('change'));
+    const paymentSel = document.getElementById('override-payment') as HTMLSelectElement;
+    paymentSel.value = 'no-upfront';
+    paymentSel.dispatchEvent(new Event('change'));
+
+    const rdsCb = bulkList.querySelector<HTMLInputElement>('input[value="rds"]');
+    expect(rdsCb!.disabled).toBe(true);
+
+    // Switch payment to a valid combo (partial-upfront).
+    paymentSel.value = 'partial-upfront';
+    paymentSel.dispatchEvent(new Event('change'));
+
+    // rds should be re-enabled.
+    expect(rdsCb!.disabled).toBe(false);
+  });
 });
