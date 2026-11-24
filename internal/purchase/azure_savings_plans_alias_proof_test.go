@@ -96,8 +96,8 @@ func azureSavingsPlansExec(t *testing.T, service, lineage string) *config.Purcha
 		return raw
 	}
 	recs := []config.RecommendationRecord{
-		{ID: "rec-a", Provider: "azure", Service: service, ResourceType: "sp-a", Region: "westeurope", Count: 1, Term: 1, Selected: true, Details: details(1.5)},
-		{ID: "rec-b", Provider: "azure", Service: service, ResourceType: "sp-b", Region: "westeurope", Count: 1, Term: 3, Selected: true, Details: details(2.5)},
+		{ID: "rec-a", Provider: "azure", Service: service, ResourceType: "sp-a", Region: "westeurope", Count: 1, Term: 1, Payment: "upfront", Selected: true, Details: details(1.5)},
+		{ID: "rec-b", Provider: "azure", Service: service, ResourceType: "sp-b", Region: "westeurope", Count: 1, Term: 3, Payment: "monthly", Selected: true, Details: details(2.5)},
 	}
 	return &config.PurchaseExecution{ExecutionID: "exec-" + lineage, IdempotencyKey: lineage, Recommendations: recs}
 }
