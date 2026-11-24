@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/auth"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/commitmentopts"
@@ -278,7 +279,7 @@ func (h *Handler) requireGlobalPermission(ctx context.Context, req *events.Lambd
 // combination we've dynamically confirmed the cloud doesn't sell. Returns
 // nil when: no probe service is wired, the service hasn't persisted data
 // yet (absent data → fall through to the frontend's hardcoded rules),
-// the save isn't AWS, or the combo is valid.
+// the save is neither AWS nor an Azure Savings Plan, or the combo is valid.
 //
 // Any other Validate error (a store read failing, a timeout) fails the save
 // with a 503 instead of letting it through: the check exists for API
@@ -286,8 +287,11 @@ func (h *Handler) requireGlobalPermission(ctx context.Context, req *events.Lambd
 // error would persist an unsupported combo that fails only at purchase time
 // (issue #243, audit finding A02-022). The caller can retry.
 func (h *Handler) checkCommitmentOptionCombo(ctx context.Context, cfg config.ServiceConfig) error {
-	if h.commitmentOpts == nil || cfg.Provider != "aws" || cfg.Term <= 0 || cfg.Payment == "" {
+	if h.commitmentOpts == nil || !commitmentGated(cfg) {
 		return nil
+	}
+	if cfg.Provider == "azure" {
+		return h.prefetchCommitmentOptions(ctx, cfg.Provider).check(cfg)
 	}
 	ok, err := h.commitmentOpts.Validate(ctx, cfg.Provider, cfg.Service, cfg.Term, cfg.Payment)
 	if errors.Is(err, commitmentopts.ErrNoData) {
@@ -300,6 +304,32 @@ func (h *Handler) checkCommitmentOptionCombo(ctx context.Context, cfg config.Ser
 		return commitmentComboUnsupported(cfg)
 	}
 	return nil
+}
+
+// commitmentGated reports whether a save of cfg is checked against probe data:
+// AWS services, and the Azure Savings Plan. Every other Azure service stays
+// ungated. Like the rest of the platform it assumes Azure bills in USD.
+func commitmentGated(cfg config.ServiceConfig) bool {
+	if cfg.Term <= 0 || cfg.Payment == "" {
+		return false
+	}
+	switch cfg.Provider {
+	case "aws":
+		return true
+	case "azure":
+		_, ok := azureGateService(cfg.Service)
+		return ok
+	}
+	return false
+}
+
+// azureGateService maps an Azure service name to the key its probe row is
+// stored under, routing retired Savings Plans spellings to the same row.
+func azureGateService(service string) (string, bool) {
+	if _, ok := common.NormalizeSavingsPlansServiceType(common.ServiceType(service)); !ok {
+		return "", false
+	}
+	return string(common.ServiceSavingsPlansAll), true
 }
 
 // commitmentComboUnverifiable is the 503 a save gets when the commitment
@@ -337,26 +367,40 @@ type commitmentOptsSnapshot struct {
 // read error is kept rather than returned, so it fails only a save whose
 // merged row actually needs the check, as checkCommitmentOptionCombo does.
 func (h *Handler) prefetchCommitmentOptions(ctx context.Context, provider string) commitmentOptsSnapshot {
-	if h.commitmentOpts == nil || provider != "aws" {
+	if h.commitmentOpts == nil {
 		return commitmentOptsSnapshot{}
 	}
-	opts, err := h.commitmentOpts.Get(ctx)
-	if errors.Is(err, commitmentopts.ErrNoData) {
-		return commitmentOptsSnapshot{}
+	switch provider {
+	case "aws":
+		opts, err := h.commitmentOpts.Get(ctx)
+		if errors.Is(err, commitmentopts.ErrNoData) {
+			return commitmentOptsSnapshot{}
+		}
+		return commitmentOptsSnapshot{opts: opts, err: err, loaded: true}
+	case "azure":
+		byService, ok, err := h.commitmentOpts.FreshAzureOptions(ctx)
+		if err == nil && !ok {
+			return commitmentOptsSnapshot{}
+		}
+		return commitmentOptsSnapshot{opts: commitmentopts.Options{"azure": byService}, err: err, loaded: true}
 	}
-	return commitmentOptsSnapshot{opts: opts, err: err, loaded: true}
+	return commitmentOptsSnapshot{}
 }
 
 // check applies checkCommitmentOptionCombo's rules to cfg against the
 // snapshot, without touching the database or the network.
 func (s commitmentOptsSnapshot) check(cfg config.ServiceConfig) error {
-	if !s.loaded || cfg.Provider != "aws" || cfg.Term <= 0 || cfg.Payment == "" {
+	if !s.loaded || !commitmentGated(cfg) {
 		return nil
 	}
 	if s.err != nil {
 		return commitmentComboUnverifiable(s.err)
 	}
-	if !commitmentopts.ValidateCombo(s.opts, cfg.Provider, cfg.Service, cfg.Term, cfg.Payment) {
+	service := cfg.Service
+	if cfg.Provider == "azure" {
+		service, _ = azureGateService(cfg.Service)
+	}
+	if !commitmentopts.ValidateCombo(s.opts, cfg.Provider, service, cfg.Term, cfg.Payment) {
 		return commitmentComboUnsupported(cfg)
 	}
 	return nil

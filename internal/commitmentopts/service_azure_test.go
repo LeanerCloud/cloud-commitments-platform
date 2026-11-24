@@ -544,3 +544,61 @@ func TestService_RefreshAzure_TTLIsSevenDays(t *testing.T) {
 		})
 	}
 }
+
+func TestService_FreshAzureOptions(t *testing.T) {
+	cases := map[string]struct {
+		age    time.Duration
+		seeded bool
+		wantOK bool
+	}{
+		"fresh row is served":       {age: 6 * 24 * time.Hour, seeded: true, wantOK: true},
+		"exactly the TTL is stale":  {age: azureOptionsTTL, seeded: true},
+		"older row is stale":        {age: 8 * 24 * time.Hour, seeded: true},
+		"future probed_at is stale": {age: -time.Hour, seeded: true},
+		"no row is unprobed":        {},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			store := newProviderStore()
+			clock := time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC)
+			if c.seeded {
+				seedAzureRow(store, clock, c.age)
+			}
+			svc := ttlService(store, &azureHarness{}, &clock)
+
+			opts, ok, err := svc.FreshAzureOptions(context.Background())
+			require.NoError(t, err)
+			assert.Equal(t, c.wantOK, ok)
+			if c.wantOK {
+				assert.Len(t, opts["savingsplans"], 1)
+			} else {
+				assert.Nil(t, opts)
+			}
+		})
+	}
+}
+
+func TestService_FreshAzureOptions_WithoutWithAzureIsUnavailable(t *testing.T) {
+	store := newProviderStore()
+	seedAzureRow(store, time.Now(), 0)
+	svc := New(store, &fakeAccounts{}, noopBuildConfig, nil)
+
+	_, ok, err := svc.FreshAzureOptions(context.Background())
+	require.NoError(t, err)
+	assert.False(t, ok)
+}
+
+func TestService_FreshAzureOptions_StoreErrorPropagates(t *testing.T) {
+	store := &erroringProbedAt{providerStore: newProviderStore()}
+	svc := New(store, &fakeAccounts{}, noopBuildConfig, nil).WithAzure(nil, nil, nil)
+
+	_, ok, err := svc.FreshAzureOptions(context.Background())
+	require.Error(t, err)
+	assert.False(t, ok)
+}
+
+type erroringProbedAt struct{ *providerStore }
+
+func (erroringProbedAt) ProbedAt(context.Context, string) (time.Time, bool, error) {
+	return time.Time{}, false, errors.New("boom")
+}

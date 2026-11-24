@@ -99,6 +99,21 @@ func (s *Service) RefreshAzure(ctx context.Context) error {
 	return nil
 }
 
+// FreshAzureOptions returns the stored Azure combos by service only while the
+// row is younger than azureOptionsTTL, reading the store alone. ok is false
+// for an absent or stale row, and without WithAzure, so callers treat the
+// provider as unprobed instead of gating on data that may have gone out of date.
+func (s *Service) FreshAzureOptions(ctx context.Context) (byService map[string][]Combo, ok bool, err error) {
+	if s.azure == nil {
+		return nil, false, nil
+	}
+	fresh, err := s.azureFresh(ctx)
+	if err != nil || !fresh {
+		return nil, false, err
+	}
+	return s.CachedOptions(ctx, providerAzure)
+}
+
 // azureFresh reports whether the azure row exists and is younger than
 // azureOptionsTTL. A row exactly azureOptionsTTL old, or dated in the future, is stale.
 func (s *Service) azureFresh(ctx context.Context) (bool, error) {

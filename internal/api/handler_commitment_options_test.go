@@ -17,6 +17,14 @@ type stubCommitmentOpts struct {
 	getFn      func(ctx context.Context) (commitmentopts.Options, error)
 	validateFn func(ctx context.Context, provider, service string, term int, payment string) (bool, error)
 	cachedFn   func(ctx context.Context, provider string) (map[string][]commitmentopts.Combo, bool, error)
+	freshFn    func(ctx context.Context) (map[string][]commitmentopts.Combo, bool, error)
+}
+
+func (s *stubCommitmentOpts) FreshAzureOptions(ctx context.Context) (map[string][]commitmentopts.Combo, bool, error) {
+	if s.freshFn == nil {
+		return nil, false, nil
+	}
+	return s.freshFn(ctx)
 }
 
 func (s *stubCommitmentOpts) CachedOptions(ctx context.Context, provider string) (map[string][]commitmentopts.Combo, bool, error) {
