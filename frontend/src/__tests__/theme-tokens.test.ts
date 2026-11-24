@@ -108,17 +108,17 @@ describe('dark palette tokens', () => {
     expect(darkBody).toMatch(/color-scheme:\s*dark;/);
   });
 
-  it('is inert without the data-theme attribute', () => {
+  it('applies dark only via data-theme="dark" or the OS preference unless data-theme="light"', () => {
     // Every rule that sets a themed token must be the base :root or require data-theme="dark".
     const sheets = fs.readdirSync(STYLES).filter((f) => f.endsWith('.css'))
       .map((f) => fs.readFileSync(path.join(STYLES, f), 'utf8')).join('\n');
-    expect(sheets).not.toMatch(/prefers-color-scheme/);
+    expect(sheets.match(/prefers-color-scheme/g)).toHaveLength(1);
     const themed = [...dark.keys()];
     const rules = [...sheets.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)];
     const offenders = rules
       .filter(([, , body]) => themed.some((k) => new RegExp(`(^|[\\s;])${k}\\s*:`).test(body!)))
       .map(([, sel]) => sel!.trim())
-      .filter((sel) => sel !== ':root' && !/^:root\[data-theme="dark"\]$/.test(sel));
+      .filter((sel) => sel !== ':root' && !/^:root\[data-theme="dark"\]$/.test(sel) && sel !== ':root:not([data-theme="light"])');
     expect(offenders).toEqual([]);
   });
 });
