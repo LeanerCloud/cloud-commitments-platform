@@ -44,10 +44,11 @@ func commitmentTypeFor(provider, service string) string {
 
 // isSavingsPlanService recognizes every Savings Plans service slug persisted in
 // purchase_history.service: the umbrella "savingsplans", the four per-plan-type
-// slugs, and the pre-#85 "savings-plans" spelling.
+// slugs, and the legacy spellings (pre-#85 "savings-plans", dash-free per-type
+// forms), which the library normalizer owns.
 func isSavingsPlanService(service string) bool {
-	s := strings.ToLower(service)
-	return common.IsSavingsPlan(common.ServiceType(s)) || s == "savings-plans"
+	_, ok := common.NormalizeSavingsPlansServiceType(common.ServiceType(strings.ToLower(service)))
+	return ok
 }
 
 // validateCommitmentType rejects a commitment_type that the savings_snapshots
