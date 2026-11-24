@@ -8,7 +8,8 @@ import (
 )
 
 // TestIsSavingsPlanServiceAcceptsEverySpelling pins the Savings Plans slugs the
-// purchase_history writers emit (#7): umbrella, hyphenated per-type, and the pre-#85 form.
+// purchase_history writers emit (#7): umbrella, hyphenated per-type, the dash-free
+// per-type spellings, and the pre-#85 form.
 func TestIsSavingsPlanServiceAcceptsEverySpelling(t *testing.T) {
 	planTypes := common.SavingsPlansPlanTypes()
 	slugs := make([]string, 0, len(planTypes)+7)

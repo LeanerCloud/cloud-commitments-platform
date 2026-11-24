@@ -7315,10 +7315,9 @@ components:
             (`savingsplans`), read from the stored probe row with no live
             probing. Payments use the Azure vocabulary (`upfront`,
             `monthly`). Omitted when no Azure probe row exists. `status` is
-            `ok` when either `aws` or `azure` is present. Monthly combos are
-            validated by the probe, but the platform's purchase path cannot
-            produce a monthly Azure plan yet, so clients must not offer
-            monthly as purchasable on this data alone.
+            `ok` when either `aws` or `azure` is present. The probe validates
+            monthly combos with the same BillingPlan the purchase path sends;
+            clients still must not treat this data alone as purchasable.
           additionalProperties:
             type: array
             items:

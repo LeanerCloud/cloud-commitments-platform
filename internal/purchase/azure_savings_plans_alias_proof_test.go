@@ -53,6 +53,7 @@ import (
 // test can check each PUT was preceded by a lookup of the same alias.
 type aliasRecorder struct {
 	names    map[float64][]string
+	plans    map[float64]*armbillingbenefits.BillingPlan
 	looked   map[string]bool
 	unlooked []string
 	mu       sync.Mutex
@@ -73,6 +74,7 @@ func (r *aliasRecorder) BeginCreate(_ context.Context, name string, body armbill
 	}
 	amount := *body.Properties.Commitment.Amount
 	r.names[amount] = append(r.names[amount], name)
+	r.plans[amount] = body.Properties.BillingPlan
 	id := "/providers/Microsoft.BillingBenefits/savingsPlanOrderAliases/" + name
 	return aliasPoller{id: id}, nil
 }
@@ -108,7 +110,7 @@ func azureSavingsPlansExec(t *testing.T, service, lineage string) *config.Purcha
 func purchaseThroughPinnedAzureClient(t *testing.T, exec *config.PurchaseExecution) map[float64][]string {
 	t.Helper()
 	ctx := context.Background()
-	recorder := &aliasRecorder{names: map[float64][]string{}, looked: map[string]bool{}}
+	recorder := &aliasRecorder{names: map[float64][]string{}, plans: map[float64]*armbillingbenefits.BillingPlan{}, looked: map[string]bool{}}
 	client := savingsplans.NewClient(nil, "sub-placeholder", "westeurope")
 	client.SetOrderAliasClient(recorder)
 
@@ -131,6 +133,12 @@ func purchaseThroughPinnedAzureClient(t *testing.T, exec *config.PurchaseExecuti
 		require.True(t, rec.Purchased, "recommendation %d must reach the fake alias API and succeed", i)
 	}
 	require.Empty(t, recorder.unlooked, "each alias must be looked up (Get) before it is created")
+	// rec-a is upfront (no BillingPlan), rec-b monthly (P1M): the payment option
+	// must reach the order alias or Azure bills the wrong schedule.
+	assert.Nil(t, recorder.plans[1.5], "upfront must send no BillingPlan")
+	if plan := recorder.plans[2.5]; assert.NotNil(t, plan, "monthly must send a BillingPlan") {
+		assert.Equal(t, armbillingbenefits.BillingPlanP1M, *plan)
+	}
 	return recorder.names
 }
 
