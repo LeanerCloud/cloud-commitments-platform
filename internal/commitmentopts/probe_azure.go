@@ -54,11 +54,6 @@ var azureCurrencyCodePattern = regexp.MustCompile(`^[A-Za-z]{3}$`)
 // The payment names are the Azure vocabulary config.ValidPaymentOptions
 // accepts ("upfront", "monthly"); "all-upfront" is AWS-only.
 //
-// monthly is validated here as the Azure API's real value, but the pinned
-// cloud-commitments-go purchase body (savingsplans purchaseOrderBody) never
-// sets BillingPlan, so the purchase path cannot produce it. Consumers must not
-// treat monthly as purchasable until the library sets BillingPlan.
-//
 // Azure currently offers 1-year and 3-year terms for Compute SPs; P5Y is
 // defined in the SDK constants but is not sold in practice. The probe
 // includes P5Y and drops it if ValidatePurchase rejects it, so the persisted
