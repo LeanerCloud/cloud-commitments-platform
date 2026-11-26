@@ -284,7 +284,7 @@ func TestPlanFormServiceValuesMatchStoredServices(t *testing.T) {
 	stored := map[string][]common.ServiceType{
 		"aws": {common.ServiceEC2, common.ServiceRDS, common.ServiceElastiCache, common.ServiceOpenSearch, common.ServiceMemoryDB, common.ServiceRedshift,
 			common.ServiceSavingsPlansCompute, common.ServiceSavingsPlansEC2Instance, common.ServiceSavingsPlansSageMaker, common.ServiceSavingsPlansDatabase},
-		"azure": {common.ServiceCompute, common.ServiceRelationalDB, common.ServiceCache, common.ServiceSearch},
+		"azure": {common.ServiceCompute, common.ServiceRelationalDB, common.ServiceCache, common.ServiceSearch, common.ServiceSavingsPlansAll},
 		"gcp":   {common.ServiceCompute, common.ServiceRelationalDB, common.ServiceCache},
 	}
 	groups := regexp.MustCompile(`(?s)<optgroup[^>]*data-provider="(\w+)"[^>]*>(.*?)</optgroup>`)
@@ -301,8 +301,9 @@ func TestPlanFormServiceValuesMatchStoredServices(t *testing.T) {
 			assert.Contains(t, want, o[1], "plan form offers %s/%s but no rec is stored with that Service", provider, o[1])
 		}
 	}
-	assert.Equal(t, map[string]int{"aws": 10, "azure": 4, "gcp": 3}, seen)
-	// The legacy umbrella is still a Savings Plan, but no form value equals it.
+	assert.Equal(t, map[string]int{"aws": 10, "azure": 5, "gcp": 3}, seen)
+	// The umbrella "savingsplans" slug is used by Azure Savings Plans (#17),
+	// never by AWS (which uses the four per-plan-type slugs).
 	assert.True(t, common.IsSavingsPlan("savingsplans"))
-	assert.NotContains(t, string(html), `<option value="savingsplans"`)
+	assert.NotContains(t, string(html), `<option value="savings-plans"`)
 }
