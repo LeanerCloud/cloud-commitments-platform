@@ -24,8 +24,10 @@ function declarations(body: string): Map<string, string> {
 
 const rootBody = /^:root\s*\{([\s\S]*?)\n\}/m.exec(baseCss)![1]!;
 const darkBody = /^:root\[data-theme="dark"\]\s*\{([\s\S]*?)\n\}/m.exec(baseCss)![1]!;
+const mediaDarkBody = /@media\s*\(prefers-color-scheme:\s*dark\)\s*\{\s*:root:not\(\[data-theme="light"\]\)\s*\{([\s\S]*?)\n\s*\}\n\}/m.exec(baseCss)![1]!;
 const light = declarations(rootBody);
 const dark = declarations(darkBody);
+const mediaDark = declarations(mediaDarkBody);
 const isColour = (v: string): boolean => /#[0-9a-f]{3,8}\b|\brgba?\(/i.test(v);
 
 function luminance(hex: string): number {
@@ -61,6 +63,8 @@ const PAIRS: ReadonlyArray<readonly [string, string]> = [
 /** Non-text contrast (WCAG 1.4.11): control borders against the surface they sit on. */
 const BORDER_PAIRS: ReadonlyArray<readonly [string, string]> = [
   ['--cudly-border-strong', '--cudly-surface'],
+  ['--cudly-border-strong', '--cudly-surface-header'],
+  ['--cudly-border-strong', '--cudly-surface-subtle'],
 ];
 
 describe('dark palette tokens', () => {
@@ -92,6 +96,25 @@ describe('dark palette tokens', () => {
     expect(contrast(tokens.get(fg)!, tokens.get(bg)!)).toBeGreaterThanOrEqual(3);
   });
 
+  it('reaches dark contrast targets for text-subtle on border/neutral-hover and on-primary-50 on primary', () => {
+    expect(contrast(dark.get('--cudly-text-subtle')!, dark.get('--cudly-border')!)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(dark.get('--cudly-text-subtle')!, dark.get('--cudly-neutral-hover-bg')!)).toBeGreaterThanOrEqual(4.5);
+    const m = /^rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([0-9.]+)\s*\)$/.exec(dark.get('--cudly-on-primary-50')!)!;
+    const alpha = parseFloat(m[4]!);
+    const bgHex = dark.get('--cudly-primary')!.slice(1);
+    const blend = [1, 2, 3].map((idx, i) => {
+      const fgC = parseInt(m[idx]!, 10);
+      const bgC = parseInt(bgHex.slice(i * 2, i * 2 + 2), 16);
+      return Math.round(alpha * fgC + (1 - alpha) * bgC).toString(16).padStart(2, '0');
+    }).join('');
+    expect(contrast(`#${blend}`, dark.get('--cudly-primary')!)).toBeGreaterThanOrEqual(3);
+  });
+
+  it('keeps the prefers-color-scheme dark block identical to data-theme="dark"', () => {
+    expect(mediaDarkBody).toMatch(/color-scheme:\s*dark;/);
+    expect(mediaDark).toEqual(dark);
+  });
+
   it('leaves no literal white in any stylesheet (use a token)', () => {
     const sheets = fs.readdirSync(STYLES).filter((f) => f.endsWith('.css'));
     // Token definitions (--name: value;) are where white may live; every other declaration must use a token.
@@ -108,17 +131,18 @@ describe('dark palette tokens', () => {
     expect(darkBody).toMatch(/color-scheme:\s*dark;/);
   });
 
-  it('is inert without the data-theme attribute', () => {
-    // Every rule that sets a themed token must be the base :root or require data-theme="dark".
+  it('applies dark only via data-theme="dark" or the OS preference unless data-theme="light"', () => {
+    // Every rule that sets a themed token must be the base :root, :root[data-theme="dark"], or :root:not([data-theme="light"]).
     const sheets = fs.readdirSync(STYLES).filter((f) => f.endsWith('.css'))
-      .map((f) => fs.readFileSync(path.join(STYLES, f), 'utf8')).join('\n');
-    expect(sheets).not.toMatch(/prefers-color-scheme/);
+      .map((f) => fs.readFileSync(path.join(STYLES, f), 'utf8')).join('\n')
+      .replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(sheets.match(/prefers-color-scheme/g)).toHaveLength(1);
     const themed = [...dark.keys()];
-    const rules = [...sheets.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)];
+    const rules = [...sheets.matchAll(/([^{}]+)\{([^{}]*)\}/g)];
     const offenders = rules
       .filter(([, , body]) => themed.some((k) => new RegExp(`(^|[\\s;])${k}\\s*:`).test(body!)))
       .map(([, sel]) => sel!.trim())
-      .filter((sel) => sel !== ':root' && !/^:root\[data-theme="dark"\]$/.test(sel));
+      .filter((sel) => sel !== ':root' && !/^:root\[data-theme="dark"\]$/.test(sel) && sel !== ':root:not([data-theme="light"])');
     expect(offenders).toEqual([]);
   });
 });
