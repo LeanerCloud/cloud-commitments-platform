@@ -37,8 +37,13 @@ function backendServiceSlugs(): string[] {
   const src = fs.readFileSync(path.join(dir, file), 'utf-8');
   const block = /func mapServiceSlug\(service string\)[\s\S]*?slugs := map\[string\]common\.ServiceType\{([\s\S]*?)\n\t\}/.exec(src);
   if (!block) throw new Error(`mapServiceSlug slug map not found in ${file}`);
-  const slugs = [...block[1]!.matchAll(/"([\w-]+)":/g)].map(m => m[1]!);
-  if (!slugs.includes('compute')) throw new Error(`unexpected mapServiceSlug parse: ${JSON.stringify(slugs)}`);
+  const spBlock = /var savingsPlansSlugs = map\[string\]common\.ServiceType\{([\s\S]*?)\n\}/.exec(src);
+  if (!spBlock) throw new Error(`savingsPlansSlugs map not found in ${file}`);
+  const slugs = [
+    ...[...block[1]!.matchAll(/"([\w-]+)":/g)].map(m => m[1]!),
+    ...[...spBlock[1]!.matchAll(/"([\w-]+)":/g)].map(m => m[1]!),
+  ];
+  if (!slugs.includes('compute') || !slugs.includes('savingsplans')) throw new Error(`unexpected mapServiceSlug parse: ${JSON.stringify(slugs)}`);
   return slugs;
 }
 
@@ -216,6 +221,36 @@ describe('Settings Azure/GCP service ids (issue #613)', () => {
     (panel.querySelector('button') as HTMLButtonElement).click();
     await flush();
     const options = Array.from((document.getElementById('override-service') as HTMLSelectElement).options).map(o => o.value);
-    expect(options).toEqual(['compute', 'nosql', 'cache', 'search']);
+    expect(options).toEqual(['compute', 'nosql', 'cache', 'search', 'savingsplans']);
+  });
+
+  it('syncs Azure Savings Plans payment constraints when /api/commitment-options narrows combinations (issue #17)', async () => {
+    const { fetchAndPopulateCommitmentOptions } = await import('../commitmentOptions');
+    const { setupSettingsHandlers } = await import('../modules/settings-handlers');
+    const respond = (body: unknown) =>
+      jest.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(body) } as Response);
+    try {
+      await fetchAndPopulateCommitmentOptions(
+        respond({ status: 'ok', azure: { savingsplans: [{ term: 1, payment: 'upfront' }, { term: 3, payment: 'upfront' }, { term: 3, payment: 'monthly' }] } }),
+      );
+      await loadGlobalSettings();
+      setupSettingsHandlers();
+
+      const termEl = document.getElementById('azure-savingsplans-term') as HTMLSelectElement;
+      const paymentEl = document.getElementById('azure-savingsplans-payment') as HTMLSelectElement;
+      expect(termEl.value).toBe('3');
+      expect(paymentEl.value).toBe('monthly');
+
+      // Switching term to 1 Year disables & hides 'monthly' and clamps payment to 'upfront'.
+      termEl.value = '1';
+      termEl.dispatchEvent(new Event('change'));
+      const monthlyOpt = Array.from(paymentEl.options).find(o => o.value === 'monthly')!;
+      expect(monthlyOpt.disabled).toBe(true);
+      expect(monthlyOpt.hidden).toBe(true);
+      expect(paymentEl.value).toBe('upfront');
+    } finally {
+      const full = [1, 3].flatMap(term => ['upfront', 'monthly'].map(payment => ({ term, payment })));
+      await fetchAndPopulateCommitmentOptions(respond({ status: 'ok', azure: { savingsplans: full } }));
+    }
   });
 });

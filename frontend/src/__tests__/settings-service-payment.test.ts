@@ -91,7 +91,7 @@ describe('Settings Save payment tokens (issue #545)', () => {
 
     const valid = validPaymentsByProvider();
     const calls = serviceCalls();
-    expect(calls.filter(c => c.provider === 'azure')).toHaveLength(5);
+    expect(calls.filter(c => c.provider === 'azure')).toHaveLength(6);
     expect(calls.filter(c => c.provider === 'gcp')).toHaveLength(3);
     for (const c of calls) {
       expect({ ...c, valid: valid[c.provider]!.includes(c.payment) }).toEqual({ ...c, valid: true });
@@ -155,7 +155,7 @@ describe('Settings Save payment tokens (issue #545)', () => {
     expect((document.getElementById('azure-vm-payment') as HTMLSelectElement).value).toBe('monthly');
   });
 
-  it.each(['vm', 'sql', 'cosmosdb', 'redis', 'search'])(
+  it.each(['vm', 'sql', 'cosmosdb', 'redis', 'search', 'savingsplans'])(
     'the Azure %s payment select starts on monthly, never upfront (issue #1758)',
     svc => {
       expect((document.getElementById(`azure-${svc}-payment`) as HTMLSelectElement).value).toBe('monthly');
@@ -246,7 +246,7 @@ describe('Settings Save payment tokens (issue #545)', () => {
     await saveGlobalSettings(new Event('submit'));
 
     const { message } = mockShowToast.mock.calls[0]![0] as { message: string };
-    expect(message).toMatch(/^Failed to save settings: 17 services failed: /);
+    expect(message).toMatch(/^Failed to save settings: 18 services failed: /);
     expect(message).toContain('aws/ec2: boom');
     consoleError.mockRestore();
   });
@@ -263,7 +263,7 @@ describe('Settings Save payment tokens (issue #545)', () => {
 
     expect(api.updateConfig).toHaveBeenCalledTimes(1);
     const { message } = mockShowToast.mock.calls[0]![0] as { message: string };
-    expect(message).toMatch(/^Settings saved, but 17 services failed: /);
+    expect(message).toMatch(/^Settings saved, but 18 services failed: /);
     consoleError.mockRestore();
   });
 

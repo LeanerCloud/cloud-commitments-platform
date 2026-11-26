@@ -314,10 +314,9 @@ function overlayAws(aws: NonNullable<ServerCommitmentOptions['aws']>): void {
 
 // The Azure probe covers Savings Plans only, so only that entry is overlaid
 // (never `_default`: VM reservations stay hardcoded). The overlay only
-// narrows the hardcoded terms x payments; it never adds an option. No UI
-// consumer reads this yet and none is planned: the purchase-path gates
-// are still AWS-only, so a selector would offer a capability the purchase
-// path does not honor. Kept for a future consumer once they cover Azure. A
+// narrows the hardcoded terms x payments; it never adds an option. Consumed
+// by the Azure Savings Plans Settings card, account service overrides, and
+// plan form (#17). A
 // later response without savingsplans keeps an earlier narrowing: it resets
 // only on page reload.
 function overlayAzureSavingsPlans(azure: ServerCommitmentOptions['azure']): void {

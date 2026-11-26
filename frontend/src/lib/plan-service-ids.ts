@@ -1,7 +1,7 @@
 export const CANONICAL_PLAN_SERVICES: Readonly<Record<'aws' | 'azure' | 'gcp', readonly string[]>> = {
   aws: ['ec2', 'rds', 'elasticache', 'opensearch', 'memorydb', 'redshift',
     'savings-plans-compute', 'savings-plans-ec2instance', 'savings-plans-sagemaker', 'savings-plans-database'],
-  azure: ['compute', 'relational-db', 'cache', 'search'],
+  azure: ['compute', 'relational-db', 'cache', 'search', 'savingsplans'],
   gcp: ['compute', 'relational-db', 'cache'],
 };
 
@@ -22,7 +22,8 @@ const own = <T>(record: Readonly<Record<string, T>>, key: string): T | undefined
   Object.prototype.hasOwnProperty.call(record, key) ? record[key] : undefined;
 
 export const isSavingsPlanService = (service: string): boolean =>
-  CANONICAL_PLAN_SERVICES.aws.includes(service) && service.startsWith('savings-plans-');
+  (CANONICAL_PLAN_SERVICES.aws.includes(service) && service.startsWith('savings-plans-')) ||
+  (CANONICAL_PLAN_SERVICES.azure.includes(service) && service === 'savingsplans');
 
 export const resolvePlanService = (provider: string, service: string): PlanServiceResolution => {
   if (own(CANONICAL_PLAN_SERVICES, provider)?.includes(service)) return { state: 'canonical', canonical: service };

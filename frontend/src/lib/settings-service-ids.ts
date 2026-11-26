@@ -11,7 +11,7 @@
 
 /** Service ids the Settings page writes for Azure and GCP, per provider. */
 export const SETTINGS_SERVICE_IDS: Readonly<Record<'azure' | 'gcp', readonly string[]>> = {
-  azure: ['compute', 'relational-db', 'nosql', 'cache', 'search'],
+  azure: ['compute', 'relational-db', 'nosql', 'cache', 'search', 'savingsplans'],
   gcp: ['compute', 'relational-db', 'cache'],
 };
 

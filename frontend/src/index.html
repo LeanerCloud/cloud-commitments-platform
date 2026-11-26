@@ -763,7 +763,7 @@
                         <!-- Collapsed by default to keep the page short (issue #190); the
                              fields stay in the form, so Save still reads them. -->
                         <details class="service-defaults-details">
-                        <summary class="subsection-title">Per-service term and payment (5 services)</summary>
+                        <summary class="subsection-title">Per-service term and payment (6 services)</summary>
                         <div class="service-defaults-grid">
                             <div class="service-default-card">
                                 <h5>Virtual Machine Reservations</h5>
@@ -789,6 +789,14 @@
                                 <h5>Cognitive Search Reservations</h5>
                                 <label>Term: <select id="azure-search-term"><option value="1">1 Year</option><option value="3" selected>3 Years</option></select></label>
                                 <label>Payment: <select id="azure-search-payment"><option value="upfront">Upfront</option><option value="monthly" selected>Monthly</option></select></label>
+                            </div>
+                            <div class="service-default-card">
+                                <h5>Azure Savings Plans</h5>
+                                <p class="service-default-hint">Compute commitment across VM families and regions (USD pricing)</p>
+                                <label>Term: <select id="azure-savingsplans-term"><option value="1">1 Year</option><option value="3" selected>3 Years</option></select></label>
+                                <label>Payment: <select id="azure-savingsplans-payment"><option value="upfront">Upfront</option><option value="monthly" selected>Monthly</option></select></label>
+                                <label>Dashboard coverage %: <input type="number" id="azure-savingsplans-coverage" min="0" max="100" value="80" inputmode="decimal" autocomplete="off"></label>
+                                <label class="toggle-label"><input type="checkbox" id="azure-savingsplans-enabled" checked> Enabled</label>
                             </div>
                         </div>
                         </details>
@@ -1048,6 +1056,7 @@
                                             <option value="relational-db">SQL Database</option>
                                             <option value="cache">Cache for Redis</option>
                                             <option value="search">AI Search</option>
+                                            <option value="savingsplans">Savings Plans</option>
                                         </optgroup>
                                         <optgroup label="GCP" id="plan-service-gcp" data-provider="gcp" class="hidden">
                                             <option value="compute">Compute Engine</option>

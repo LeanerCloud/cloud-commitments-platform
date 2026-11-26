@@ -86,6 +86,7 @@ describe('plan modal service ids (#608)', () => {
     ['relational-db', 'SQL Database'],
     ['cache', 'Cache for Redis'],
     ['search', 'AI Search'],
+    ['savingsplans', 'Savings Plans'],
   ])('prefill from an Azure %s recommendation selects the Azure option', (service, label) => {
     setupPlanHandlers();
     openCreatePlanModal([

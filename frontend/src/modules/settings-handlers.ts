@@ -89,7 +89,7 @@ export function setupSettingsHandlers(signal?: AbortSignal): void {
   // term. The initial sync runs after loadGlobalSettings populates the
   // form with persisted values.
   SERVICE_FIELDS.forEach(field => {
-    if (field.provider !== 'aws' || !field.paymentId) return;
+    if (!field.paymentId) return;
     const termEl = document.getElementById(field.termId) as HTMLSelectElement | null;
     termEl?.addEventListener('change', () => syncPaymentConstraintsForService(field), { signal });
   });

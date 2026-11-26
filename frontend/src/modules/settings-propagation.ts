@@ -50,12 +50,12 @@ function propagatePaymentToServices(payment: string): void {
  * a term change, it auto-clamps to the first valid option so the form
  * never holds an unsavable value.
  *
- * Azure and GCP service-default cards are out of scope here — Azure has
- * only two payment options (neither restricted by term) and GCP has no
- * payment selector at all.
+ * GCP service-default cards have no payment selector at all. Azure VM
+ * reservations support both payment options at both terms, while Azure
+ * Savings Plans may be narrowed by `/api/commitment-options` (#17).
  */
 export function syncPaymentConstraintsForService(field: typeof SERVICE_FIELDS[number]): void {
-  if (field.provider !== 'aws' || !field.paymentId) return;
+  if (!field.paymentId) return;
   const termEl = document.getElementById(field.termId) as HTMLSelectElement | null;
   const paymentEl = document.getElementById(field.paymentId) as HTMLSelectElement | null;
   if (!termEl || !paymentEl) return;
@@ -115,6 +115,7 @@ const SERVICE_DISPLAY_NAMES: Record<string, Record<string, string>> = {
     'nosql': 'CosmosDB Reservations',
     'cache': 'Redis Cache Reservations',
     'search': 'Cognitive Search Reservations',
+    'savingsplans': 'Azure Savings Plans',
   },
   gcp: {
     'compute': 'Compute Engine CUDs',

@@ -285,6 +285,7 @@ describe('HTML Structure', () => {
       for (const sp of ['compute', 'ec2instance', 'sagemaker', 'database']) {
         expect(labelFor(`aws-savings-plans-${sp}-coverage`)).toBe('Dashboard coverage %:');
       }
+      expect(labelFor('azure-savingsplans-coverage')).toBe('Dashboard coverage %:');
       expect(labelFor('override-coverage')).toBe('Dashboard coverage (%):');
 
       const help = document.getElementById('coverage-display-only-help');

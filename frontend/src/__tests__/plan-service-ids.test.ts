@@ -28,9 +28,9 @@ test.each([
   expect(resolvePlanService(provider, service)).toEqual({ state: 'unsupported', canonical: null });
 });
 
-test('identifies exactly the four Savings Plans slugs', () => {
+test('identifies exactly the five Savings Plans slugs (4 AWS + 1 Azure)', () => {
   const flagged = Object.values(CANONICAL_PLAN_SERVICES).flat().filter(isSavingsPlanService);
-  expect(flagged).toEqual(['savings-plans-compute', 'savings-plans-ec2instance', 'savings-plans-sagemaker', 'savings-plans-database']);
+  expect(flagged).toEqual(['savings-plans-compute', 'savings-plans-ec2instance', 'savings-plans-sagemaker', 'savings-plans-database', 'savingsplans']);
   expect(isSavingsPlanService('ec2')).toBe(false);
   expect(isSavingsPlanService('savings-plans-unknown')).toBe(false);
 });

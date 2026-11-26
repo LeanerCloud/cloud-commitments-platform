@@ -32,6 +32,7 @@ const AZURE_OVERRIDE_SERVICES: ReadonlyArray<{ value: string; label: string }> =
   { value: 'nosql',         label: 'Cosmos DB' },
   { value: 'cache',         label: 'Cache for Redis' },
   { value: 'search',        label: 'AI Search' },
+  { value: 'savingsplans',  label: 'Savings Plans' },
 ];
 
 const GCP_OVERRIDE_SERVICES: ReadonlyArray<{ value: string; label: string }> = [

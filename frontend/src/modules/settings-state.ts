@@ -30,6 +30,7 @@ export const SERVICE_FIELDS = [
   { provider: 'azure', service: 'nosql',         termId: 'azure-cosmosdb-term',   paymentId: 'azure-cosmosdb-payment' },
   { provider: 'azure', service: 'cache',         termId: 'azure-redis-term',      paymentId: 'azure-redis-payment' },
   { provider: 'azure', service: 'search',        termId: 'azure-search-term',     paymentId: 'azure-search-payment' },
+  { provider: 'azure', service: 'savingsplans',  termId: 'azure-savingsplans-term', paymentId: 'azure-savingsplans-payment', coverageId: 'azure-savingsplans-coverage', enabledId: 'azure-savingsplans-enabled' },
   { provider: 'gcp',   service: 'compute',       termId: 'gcp-compute-term',      paymentId: null },
   { provider: 'gcp',   service: 'relational-db', termId: 'gcp-sql-term',          paymentId: null },
   { provider: 'gcp',   service: 'cache',         termId: 'gcp-memorystore-term',  paymentId: null },
