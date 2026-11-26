@@ -351,8 +351,10 @@ jobs:
             echo "log_group=$(terraform output -raw lambda_log_group_name 2>/dev/null | grep -v '::' || echo "")"
           } >> "$GITHUB_OUTPUT"
 
-      # Second, idempotent migration runner (#31): the lazy ensureDB path stays
-      # on and the golang-migrate advisory lock serializes the two. Same job as
+      # Second, idempotent migration runner (#31): runs migrations at deploy
+      # time on dev and staging (where github-{dev,staging}.tfvars turn the lazy
+      # ensureDB path off); if DB_AUTO_MIGRATE is still enabled on a standalone
+      # apply, the golang-migrate advisory lock serializes the two. Same job as
       # the apply, so it shares the aws-tfstate-<env> serialization and the
       # job's credentials. `--cli-read-timeout 0` keeps the CLI from retrying an
       # invoke that is still running. `aws lambda invoke` exits 0 on a function

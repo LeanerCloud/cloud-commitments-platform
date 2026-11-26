@@ -195,8 +195,11 @@ module "compute_fargate" {
   admin_email               = var.admin_email
   admin_password_secret_arn = coalesce(module.secrets.admin_password_secret_arn, "")
 
-  # Auto-migrate on startup
-  auto_migrate = var.database_auto_migrate
+  # Auto-migrate on startup. deploy-aws-fargate.yml has no deploy-time migrate
+  # step (#31 only covers deploy-aws-lambda.yml), so non-prod Fargate keeps
+  # startup auto-migration enabled even though github-{dev,staging}.tfvars set
+  # database_auto_migrate = false for Lambda.
+  auto_migrate = var.environment != "prod" ? true : var.database_auto_migrate
 
   # Networking
   vpc_id                = module.networking.vpc_id

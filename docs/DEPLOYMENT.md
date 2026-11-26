@@ -426,7 +426,7 @@ Run job with `gcloud run jobs execute --wait`, and `deploy-azure.yml` starts a
 Container Apps job execution and polls it. Both steps ("Run database
 migrations") fail the deploy unless the execution succeeds, skip production
 like the AWS step, and time out after 25 minutes (the job itself after 20).
-The Azure deploy identity needs `Microsoft.App/jobs/*`, added to
+The Azure deploy identity needs the `Microsoft.App/jobs` actions added to
 `terraform/environments/azure/ci-cd-permissions/locals_compute.tf`; a human
 must re-apply that bootstrap stack before the first deploy that creates the
 job. The GCP deploy identity already holds `roles/run.admin`. These workflows
@@ -436,8 +436,11 @@ after a verified apply (#31 D4), and until then the lazy path below still
 runs there.
 
 The lazy path still exists as a safety net. When `DB_AUTO_MIGRATE=true`
-(Terraform variable `database_auto_migrate`: `true` in `github-dev.tfvars` and
-`github-staging.tfvars`, `false` in `github-prod.tfvars`), `ensureDB` also
+(Terraform variable `database_auto_migrate`: `false` in `github-dev.tfvars`,
+`github-staging.tfvars` and `github-prod.tfvars` for Lambda; non-prod Fargate
+keeps `auto_migrate = true` in `compute.tf` because `deploy-aws-fargate.yml`
+has no deploy-time migrate step; defaults to `true` for standalone applies),
+`ensureDB` also
 runs the migrations on the first database connection of each instance. The
 golang-migrate advisory lock serializes the two paths. The lazy path is
 fail-open: a migration error is logged, reported by the `migrations` check of

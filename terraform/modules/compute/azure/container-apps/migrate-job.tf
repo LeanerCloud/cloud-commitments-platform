@@ -7,7 +7,7 @@
 # secrets, so no role assignment is added here. The deploy workflow starts one
 # execution after `terraform apply` (the job then points at the new image),
 # waits for it and fails the deploy when it does not succeed. The deploy
-# identity needs Microsoft.App/jobs/* for that, which lives in
+# identity needs the Microsoft.App/jobs actions in
 # ci-cd-permissions/locals_compute.tf (a human bootstrap re-apply).
 #
 # The command bypasses /entrypoint.sh on purpose: the entrypoint starts the

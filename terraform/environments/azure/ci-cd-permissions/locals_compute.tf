@@ -4,7 +4,12 @@ locals {
     # Migration runner job (#1966): create/update and start executions.
     # Needs a human re-apply of this bootstrap stack before the first deploy
     # that creates the job; the deploy SP must never get this by other means.
-    "Microsoft.App/jobs/*",
+    "Microsoft.App/jobs/read",
+    "Microsoft.App/jobs/write",
+    "Microsoft.App/jobs/delete",
+    "Microsoft.App/jobs/start/action",
+    "Microsoft.App/jobs/listSecrets/action",
+    "Microsoft.App/jobs/executions/read",
     "Microsoft.App/managedEnvironments/*",
     "Microsoft.App/locations/*",
     "Microsoft.ContainerRegistry/registries/*",
