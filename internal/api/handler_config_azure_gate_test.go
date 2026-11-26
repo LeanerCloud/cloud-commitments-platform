@@ -59,7 +59,12 @@ func TestAzureGate_ServiceConfigSave(t *testing.T) {
 			cfg:     azureSave("savingsplans"),
 			wantErr: 503, wantMsg: "could not validate",
 		},
-		"non Savings Plan Azure service is ungated": {fresh: freshRows(azureSPRows()), cfg: azureSave("compute")},
+		"non Savings Plan Azure service is ungated": {
+			fresh: func(context.Context) (map[string][]commitmentopts.Combo, bool, error) {
+				return nil, false, errors.New("db down")
+			},
+			cfg: azureSave("compute"),
+		},
 		"retired spelling is gated": {
 			fresh: freshRows(azureSPRows()), cfg: azureSave("savings-plans"),
 			wantErr: 400, wantMsg: "does not support 3yr monthly",
@@ -70,6 +75,9 @@ func TestAzureGate_ServiceConfigSave(t *testing.T) {
 		},
 		"empty payment is not checked": {
 			fresh: freshRows(azureSPRows()), cfg: func() config.ServiceConfig { c := azureSave("savingsplans"); c.Payment = ""; return c }(),
+		},
+		"zero term is not checked": {
+			fresh: freshRows(azureSPRows()), cfg: func() config.ServiceConfig { c := azureSave("savingsplans"); c.Term = 0; return c }(),
 		},
 	}
 	for name, c := range cases {

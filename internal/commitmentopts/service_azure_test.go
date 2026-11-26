@@ -589,16 +589,37 @@ func TestService_FreshAzureOptions_WithoutWithAzureIsUnavailable(t *testing.T) {
 }
 
 func TestService_FreshAzureOptions_StoreErrorPropagates(t *testing.T) {
-	store := &erroringProbedAt{providerStore: newProviderStore()}
-	svc := New(store, &fakeAccounts{}, noopBuildConfig, nil).WithAzure(nil, nil, nil)
+	t.Run("probed_at error", func(t *testing.T) {
+		store := &erroringProbedAt{providerStore: newProviderStore()}
+		svc := New(store, &fakeAccounts{}, noopBuildConfig, nil).WithAzure(nil, nil, nil)
 
-	_, ok, err := svc.FreshAzureOptions(context.Background())
-	require.Error(t, err)
-	assert.False(t, ok)
+		_, ok, err := svc.FreshAzureOptions(context.Background())
+		require.Error(t, err)
+		assert.False(t, ok)
+	})
+
+	t.Run("cached_options error on fresh row", func(t *testing.T) {
+		base := newProviderStore()
+		clock := time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC)
+		seedAzureRow(base, clock, time.Hour)
+		store := &erroringGetStore{providerStore: base}
+		svc := ttlService(base, &azureHarness{}, &clock)
+		svc.store = store
+
+		_, ok, err := svc.FreshAzureOptions(context.Background())
+		require.Error(t, err)
+		assert.False(t, ok)
+	})
 }
 
 type erroringProbedAt struct{ *providerStore }
 
 func (erroringProbedAt) ProbedAt(context.Context, string) (time.Time, bool, error) {
 	return time.Time{}, false, errors.New("boom")
+}
+
+type erroringGetStore struct{ *providerStore }
+
+func (erroringGetStore) Get(context.Context) (Options, bool, error) {
+	return nil, false, errors.New("get boom")
 }

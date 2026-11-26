@@ -359,7 +359,7 @@ type commitmentOptsSnapshot struct {
 	opts commitmentopts.Options
 	err  error
 	// loaded is false when there is nothing to check against: no service is
-	// wired, the save is not AWS, or no probe data exists (ErrNoData).
+	// wired, the provider is neither AWS nor Azure, or no fresh probe data exists.
 	loaded bool
 }
 
