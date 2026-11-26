@@ -157,6 +157,8 @@ run "opt_in" {
     enable_cleanup_schedule                     = true
     enable_ri_exchange_schedule                 = true
     enable_ladder_run_schedule                  = true
+    enable_ladder_fire_schedule                 = true
+    enable_ladder_reshape_schedule              = true
   }
 
   plan_options {
@@ -164,8 +166,8 @@ run "opt_in" {
   }
 
   assert {
-    condition     = toset(keys(kubernetes_cron_job_v1.sweep)) == toset(["analytics_collect", "cleanup", "collect_recommendations", "finalize_revocations", "fire_scheduled_purchases", "ladder_reconcile", "ladder_run", "process_scheduled_purchases", "reap_stuck_purchases", "ri_exchange_reshape", "send_notifications"])
-    error_message = "Opting in must schedule the nine required tasks plus the opt-in ri_exchange_reshape and ladder_run."
+    condition     = toset(keys(kubernetes_cron_job_v1.sweep)) == toset(["analytics_collect", "cleanup", "collect_recommendations", "finalize_revocations", "fire_scheduled_purchases", "ladder_fire", "ladder_reconcile", "ladder_reshape", "ladder_run", "process_scheduled_purchases", "reap_stuck_purchases", "ri_exchange_reshape", "send_notifications"])
+    error_message = "Opting in must schedule the nine required tasks plus the opt-in ri_exchange_reshape, ladder_run, ladder_fire and ladder_reshape."
   }
   assert {
     condition = alltrue([
@@ -177,12 +179,12 @@ run "opt_in" {
   assert {
     condition = alltrue([
       for k, j in kubernetes_cron_job_v1.sweep :
-      j.spec[0].schedule == { collect_recommendations = var.recommendation_schedule, reap_stuck_purchases = var.reap_stuck_purchases_schedule, analytics_collect = var.analytics_collect_schedule, fire_scheduled_purchases = var.fire_scheduled_purchases_schedule, process_scheduled_purchases = var.process_scheduled_purchases_schedule, send_notifications = var.send_notifications_schedule, finalize_revocations = var.finalize_revocations_schedule, cleanup = var.cleanup_schedule, ri_exchange_reshape = var.ri_exchange_schedule, ladder_run = var.ladder_run_schedule, ladder_reconcile = var.ladder_reconcile_schedule }[k]
+      j.spec[0].schedule == { collect_recommendations = var.recommendation_schedule, reap_stuck_purchases = var.reap_stuck_purchases_schedule, analytics_collect = var.analytics_collect_schedule, fire_scheduled_purchases = var.fire_scheduled_purchases_schedule, process_scheduled_purchases = var.process_scheduled_purchases_schedule, send_notifications = var.send_notifications_schedule, finalize_revocations = var.finalize_revocations_schedule, cleanup = var.cleanup_schedule, ri_exchange_reshape = var.ri_exchange_schedule, ladder_run = var.ladder_run_schedule, ladder_fire = var.ladder_fire_schedule, ladder_reshape = var.ladder_reshape_schedule, ladder_reconcile = var.ladder_reconcile_schedule }[k]
     ])
     error_message = "Each schedule must come from its variable."
   }
   assert {
-    condition     = length(distinct([for j in kubernetes_cron_job_v1.sweep : j.metadata[0].name])) == 11
+    condition     = length(distinct([for j in kubernetes_cron_job_v1.sweep : j.metadata[0].name])) == 13
     error_message = "CronJob names must be distinct."
   }
 }

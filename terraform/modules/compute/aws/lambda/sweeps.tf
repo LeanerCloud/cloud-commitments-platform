@@ -11,6 +11,8 @@ locals {
     send_notifications          = { rule = "notify", enabled = var.enable_send_notifications_schedule, schedule = var.send_notifications_schedule }
     finalize_revocations        = { rule = "finalize", enabled = var.enable_finalize_revocations_schedule, schedule = var.finalize_revocations_schedule }
     ladder_reconcile            = { rule = "reconcile", enabled = var.enable_ladder_reconcile_schedule, schedule = var.ladder_reconcile_schedule }
+    ladder_fire                 = { rule = "ladder-fire", enabled = var.enable_ladder_fire_schedule, schedule = var.ladder_fire_schedule }
+    ladder_reshape              = { rule = "ladder-reshape", enabled = var.enable_ladder_reshape_schedule, schedule = var.ladder_reshape_schedule }
     cleanup                     = { rule = "cleanup", enabled = var.enable_cleanup_schedule, schedule = var.cleanup_schedule }
   }
   active_sweeps = { for k, v in local.sweep_tasks : k => v if v.enabled }

@@ -373,6 +373,30 @@ variable "ladder_run_schedule" {
   default     = "0 2 * * *"
 }
 
+variable "enable_ladder_fire_schedule" {
+  description = "Schedule the ladder_fire task (claims due ladder tranches into scheduled executions). Opt-in: default false, as on AWS."
+  type        = bool
+  default     = false
+}
+
+variable "ladder_fire_schedule" {
+  description = "Cron schedule for ladder_fire."
+  type        = string
+  default     = "*/15 * * * *"
+}
+
+variable "enable_ladder_reshape_schedule" {
+  description = "Schedule the ladder_reshape task (commitment-laddering RI-exchange reshape). Opt-in: default false, as on AWS."
+  type        = bool
+  default     = false
+}
+
+variable "ladder_reshape_schedule" {
+  description = "Cron schedule for ladder_reshape."
+  type        = string
+  default     = "0 */6 * * *"
+}
+
 variable "task_timeout" {
   description = "Seconds a scheduled task may run (TASK_TIMEOUT). The Job is killed 300 seconds after that."
   type        = number

@@ -27,6 +27,7 @@ var taskVars = map[string]taskVar{
 	"fire_scheduled_purchases":    {"enable_fire_scheduled_purchases_schedule", "fire_scheduled_purchases_schedule"},
 	"ladder_run":                  {"enable_ladder_run_schedule", "ladder_run_schedule"},
 	"ladder_fire":                 {"enable_ladder_fire_schedule", "ladder_fire_schedule"},
+	"ladder_reshape":              {"enable_ladder_reshape_schedule", "ladder_reshape_schedule"},
 	"ladder_reconcile":            {"enable_ladder_reconcile_schedule", "ladder_reconcile_schedule"},
 	"ri_exchange_reshape":         {"enable_ri_exchange_schedule", "ri_exchange_schedule"},
 	"process_scheduled_purchases": {"enable_process_scheduled_purchases_schedule", "process_scheduled_purchases_schedule"},

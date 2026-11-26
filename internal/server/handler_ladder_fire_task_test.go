@@ -110,8 +110,6 @@ func TestLadderFireTask_IsRoutableAndUnknownTypesStillError(t *testing.T) {
 
 	_, _, err = ParseScheduledEvent([]byte(`{"action":"ladder_fire_now"}`))
 	require.Error(t, err)
-	_, err = ParseScheduledTaskType("ladder_reshape")
-	require.Error(t, err, "ladder_reshape is not registered by this slice")
 	_, err = (&Application{}).runScheduledTask(context.Background(), ScheduledTaskType("nope"), ScheduledTaskParams{})
 	require.Error(t, err)
 }

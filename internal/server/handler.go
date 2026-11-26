@@ -83,6 +83,11 @@ const (
 	// is gated by laddering_enabled, ladder_execution_enabled and each config's
 	// auto_approve mode, and no schedule sends it by default.
 	TaskLadderFire ScheduledTaskType = "ladder_fire"
+	// TaskLadderReshape runs the commitment-laddering RI-exchange reshape for
+	// eligible configs (laddering_enabled, ladder_execution_enabled,
+	// ri_exchange_enabled, !require_different_approver, auto_approve, own
+	// account). Off by default.
+	TaskLadderReshape ScheduledTaskType = "ladder_reshape"
 )
 
 // scheduledEventActions maps a raw scheduled-event action string to its
@@ -103,6 +108,7 @@ var scheduledEventActions = map[string]ScheduledTaskType{
 	"ladder_run":                  TaskLadderRun,
 	"ladder_reconcile":            TaskLadderReconcile,
 	"ladder_fire":                 TaskLadderFire,
+	"ladder_reshape":              TaskLadderReshape,
 }
 
 // runScheduledTask runs a scheduled task by type.
@@ -216,6 +222,7 @@ func (app *Application) dispatchTask(ctx context.Context, taskType ScheduledTask
 		TaskLadderRun:           func(c context.Context, _ ScheduledTaskParams) (any, error) { return app.handleLadderRun(c) },
 		TaskLadderReconcile:     func(c context.Context, _ ScheduledTaskParams) (any, error) { return app.handleLadderReconcile(c) },
 		TaskLadderFire:          func(c context.Context, _ ScheduledTaskParams) (any, error) { return app.handleLadderFire(c) },
+		TaskLadderReshape:       func(c context.Context, _ ScheduledTaskParams) (any, error) { return app.handleLadderReshape(c) },
 	}
 	handler, ok := handlers[taskType]
 	if !ok {

@@ -453,6 +453,30 @@ variable "ladder_reconcile_schedule" {
   default     = "rate(1 hour)"
 }
 
+variable "enable_ladder_fire_schedule" {
+  description = "Enable the scheduled ladder_fire sweep (claims due ladder tranches into scheduled executions). Opt-in, default false."
+  type        = bool
+  default     = false
+}
+
+variable "ladder_fire_schedule" {
+  description = "EventBridge schedule for the ladder_fire sweep (default rate(15 minutes))."
+  type        = string
+  default     = "rate(15 minutes)"
+}
+
+variable "enable_ladder_reshape_schedule" {
+  description = "Enable the scheduled ladder_reshape sweep (commitment-laddering RI-exchange reshape). Opt-in, default false."
+  type        = bool
+  default     = false
+}
+
+variable "ladder_reshape_schedule" {
+  description = "EventBridge schedule for the ladder_reshape sweep (default rate(6 hours))."
+  type        = string
+  default     = "rate(6 hours)"
+}
+
 variable "enable_reap_stuck_purchases_schedule" {
   description = "Enable the scheduled stuck-purchase reaper sweep (issue #678 backstop)."
   type        = bool

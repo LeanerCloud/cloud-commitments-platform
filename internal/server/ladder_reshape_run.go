@@ -41,15 +41,26 @@ func redactAccountIDs(s string) string {
 	return accountIDInText.ReplaceAllString(s, "<account-id>")
 }
 
+// handleLadderReshape resolves the caller's AWS account and region via STS and
+// runs the commitment-laddering RI-exchange reshape sweep under the per-task
+// advisory lock acquired by runScheduledTask.
+func (app *Application) handleLadderReshape(ctx context.Context) (ladderReshapeResult, error) {
+	accountID, region, err := app.resolveLadderAccount(ctx)
+	if err != nil {
+		return ladderReshapeResult{}, fmt.Errorf("ladder_reshape: could not resolve caller AWS account for the single-account gate: %w", err)
+	}
+	return app.runLadderReshape(ctx, accountID, region)
+}
+
 // runLadderReshape runs the ladder RI-exchange reshape for the config whose
-// latest run passes ladderReshapeEligible. It is deliberately not registered
-// as a scheduled task (S15 does that): nothing in production can call it.
+// latest run passes ladderReshapeEligible.
 //
-// Caller contract (S15): ownAccountID is the account the process runs in,
+// Caller contract: ownAccountID is the account the process runs in,
 // resolved via STS (resolveLadderAccount), and region the process's AWS
 // region; the exchange adapter works on the process's default credentials and
 // region, and the eligibility gate refuses any config whose account is not
-// ownAccountID. Exactly one sweep may run at a time: there is no lock here.
+// ownAccountID. Exactly one sweep may run at a time (serialized by the
+// TaskLadderReshape advisory lock in runScheduledTask).
 // At most one reshape runs per (account, region) per sweep, the first eligible
 // config by ID, because every reshape cancels the earlier ones' pending
 // exchanges (reshapeSkipDuplicateAccount); the others count as Refused.

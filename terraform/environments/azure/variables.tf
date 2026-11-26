@@ -527,6 +527,30 @@ variable "ladder_run_schedule" {
   default     = "0 2 * * *"
 }
 
+variable "enable_ladder_fire_schedule" {
+  description = "Schedule the ladder_fire task (claims due ladder tranches into scheduled executions) on AKS. Opt-in: default false, as on AWS."
+  type        = bool
+  default     = false
+}
+
+variable "ladder_fire_schedule" {
+  description = "Cron schedule for ladder_fire on AKS."
+  type        = string
+  default     = "*/15 * * * *"
+}
+
+variable "enable_ladder_reshape_schedule" {
+  description = "Schedule the ladder_reshape task (commitment-laddering RI-exchange reshape) on AKS. Opt-in: default false, as on AWS."
+  type        = bool
+  default     = false
+}
+
+variable "ladder_reshape_schedule" {
+  description = "Cron schedule for ladder_reshape on AKS."
+  type        = string
+  default     = "0 */6 * * *"
+}
+
 variable "enable_ri_exchange_schedule" {
   description = "Enable scheduled RI exchange automation (a Logic App on Container Apps, a CronJob on AKS)"
   type        = bool

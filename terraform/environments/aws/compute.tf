@@ -103,6 +103,10 @@ module "compute_lambda" {
   finalize_revocations_schedule               = var.finalize_revocations_schedule
   enable_ladder_reconcile_schedule            = var.enable_ladder_reconcile_schedule
   ladder_reconcile_schedule                   = var.ladder_reconcile_schedule
+  enable_ladder_fire_schedule                 = var.enable_ladder_fire_schedule
+  ladder_fire_schedule                        = var.ladder_fire_schedule
+  enable_ladder_reshape_schedule              = var.enable_ladder_reshape_schedule
+  ladder_reshape_schedule                     = var.ladder_reshape_schedule
   enable_reap_stuck_purchases_schedule        = var.enable_reap_stuck_purchases_schedule
   reap_stuck_purchases_schedule               = var.reap_stuck_purchases_schedule
   enable_analytics_collect_schedule           = var.enable_analytics_collect_schedule
@@ -249,6 +253,10 @@ module "compute_fargate" {
   finalize_revocations_schedule               = var.finalize_revocations_schedule
   enable_ladder_reconcile_schedule            = var.enable_ladder_reconcile_schedule
   ladder_reconcile_schedule                   = var.ladder_reconcile_schedule
+  enable_ladder_fire_schedule                 = var.enable_ladder_fire_schedule
+  ladder_fire_schedule                        = var.ladder_fire_schedule
+  enable_ladder_reshape_schedule              = var.enable_ladder_reshape_schedule
+  ladder_reshape_schedule                     = var.ladder_reshape_schedule
   enable_reap_stuck_purchases_schedule        = var.enable_reap_stuck_purchases_schedule
   reap_stuck_purchases_schedule               = var.reap_stuck_purchases_schedule
   enable_analytics_collect_schedule           = var.enable_analytics_collect_schedule

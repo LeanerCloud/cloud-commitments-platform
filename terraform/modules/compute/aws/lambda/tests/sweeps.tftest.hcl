@@ -81,12 +81,14 @@ run "opt_in" {
     enable_process_scheduled_purchases_schedule = true
     enable_send_notifications_schedule          = true
     enable_fire_scheduled_purchases_schedule    = true
+    enable_ladder_fire_schedule                 = true
+    enable_ladder_reshape_schedule              = true
     enable_cleanup_schedule                     = true
   }
 
   assert {
-    condition     = toset(keys(aws_cloudwatch_event_rule.sweep)) == toset(["cleanup", "finalize_revocations", "ladder_reconcile", "process_scheduled_purchases", "send_notifications"])
-    error_message = "Opting in must add process, send_notifications and cleanup."
+    condition     = toset(keys(aws_cloudwatch_event_rule.sweep)) == toset(["cleanup", "finalize_revocations", "ladder_fire", "ladder_reconcile", "ladder_reshape", "process_scheduled_purchases", "send_notifications"])
+    error_message = "Opting in must add process, send_notifications, ladder_fire, ladder_reshape and cleanup."
   }
   assert {
     condition     = length(aws_cloudwatch_event_rule.fire_scheduled_purchases) == 1
@@ -95,7 +97,7 @@ run "opt_in" {
   assert {
     condition = alltrue([
       for k, r in aws_cloudwatch_event_rule.sweep :
-      length(r.name) <= 64 && startswith(r.name, "cudly-") && endswith(r.name, "-sweep-${ { process_scheduled_purchases = "process", send_notifications = "notify", finalize_revocations = "finalize", ladder_reconcile = "reconcile", cleanup = "cleanup" }[k]}")
+      length(r.name) <= 64 && startswith(r.name, "cudly-") && endswith(r.name, "-sweep-${ { process_scheduled_purchases = "process", send_notifications = "notify", finalize_revocations = "finalize", ladder_reconcile = "reconcile", ladder_fire = "ladder-fire", ladder_reshape = "ladder-reshape", cleanup = "cleanup" }[k]}")
     ])
     error_message = "Rule names must be <= 64 chars, keep the cudly- prefix and end with -sweep-<rule>."
   }
@@ -104,13 +106,13 @@ run "opt_in" {
     error_message = "Sweep rule names must be distinct."
   }
   assert {
-    condition     = length(aws_cloudwatch_event_target.sweep) == 5
+    condition     = length(aws_cloudwatch_event_target.sweep) == 7
     error_message = "Every opted-in sweep needs a target."
   }
   assert {
     condition = alltrue([
       for k, r in aws_cloudwatch_event_rule.sweep :
-      r.schedule_expression == { process_scheduled_purchases = var.process_scheduled_purchases_schedule, send_notifications = var.send_notifications_schedule, finalize_revocations = var.finalize_revocations_schedule, ladder_reconcile = var.ladder_reconcile_schedule, cleanup = var.cleanup_schedule }[k]
+      r.schedule_expression == { process_scheduled_purchases = var.process_scheduled_purchases_schedule, send_notifications = var.send_notifications_schedule, finalize_revocations = var.finalize_revocations_schedule, ladder_reconcile = var.ladder_reconcile_schedule, ladder_fire = var.ladder_fire_schedule, ladder_reshape = var.ladder_reshape_schedule, cleanup = var.cleanup_schedule }[k]
     ])
     error_message = "Schedule must come from the variable."
   }

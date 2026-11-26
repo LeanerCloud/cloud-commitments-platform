@@ -54,12 +54,14 @@ func (s *reshapeStore) GetLadderRun(_ context.Context, id string) (*config.Ladde
 
 type reshapeFake struct {
 	fakeLadderCapability
-	errFor   map[string]error // by LadderRunID
-	onCall   func()
-	scopes   []pkgladder.Scope
-	reshapes []pkgladder.BufferReshapeConfig
-	summary  pkgladder.ReshapeSummary
-	purchase int
+	errFor      map[string]error // by LadderRunID
+	onCall      func()
+	scopes      []pkgladder.Scope
+	reshapes    []pkgladder.BufferReshapeConfig
+	regions     []string
+	factoryAcct []string
+	summary     pkgladder.ReshapeSummary
+	purchase    int
 }
 
 func (f *reshapeFake) ReshapeBuffer(_ context.Context, sc pkgladder.Scope, cfg pkgladder.BufferReshapeConfig) (pkgladder.ReshapeSummary, error) {
@@ -90,7 +92,9 @@ func reshapeApp(t *testing.T, n int) (*Application, *reshapeStore, *reshapeFake)
 		st.accts["acct-"+id] = acct
 		st.runs["cfg-"+id] = run
 	}
-	app := &Application{Config: st, LadderCapabilityFactory: func(context.Context, string, string) (pkgladder.LadderCapability, error) {
+	app := &Application{Config: st, LadderCapabilityFactory: func(_ context.Context, region, accountID string) (pkgladder.LadderCapability, error) {
+		fake.regions = append(fake.regions, region)
+		fake.factoryAcct = append(fake.factoryAcct, accountID)
 		return fake, nil
 	}}
 	return app, st, fake
@@ -215,4 +219,36 @@ func TestRunLadderReshape_CtxCancelStops(t *testing.T) {
 	_, err = app2.runLadderReshape(pre, reshapeOwnAcct, "us-east-1")
 	require.ErrorIs(t, err, context.Canceled)
 	assert.Empty(t, fake2.reshapes)
+}
+
+func TestLadderReshapeTask_IsRoutableAndDispatchesViaSTSResolver(t *testing.T) {
+	t.Parallel()
+	taskType, _, err := ParseScheduledEvent([]byte(`{"action":"ladder_reshape"}`))
+	require.NoError(t, err)
+	assert.Equal(t, TaskLadderReshape, taskType)
+	assert.Contains(t, ScheduledTaskNames(), "ladder_reshape")
+
+	app, _, fake := reshapeApp(t, 1)
+	app.LadderAccountResolver = func(context.Context) (string, string, error) {
+		return reshapeOwnAcct, "us-east-1", nil
+	}
+	res, err := app.runScheduledTask(context.Background(), TaskLadderReshape, ScheduledTaskParams{})
+	require.NoError(t, err)
+	assert.Equal(t, ladderReshapeResult{Configs: 1, Reshaped: 1}, res)
+	require.Len(t, fake.reshapes, 1)
+	assert.Equal(t, "run-1", *fake.reshapes[0].LadderRunID)
+	assert.Equal(t, []string{"us-east-1"}, fake.regions)
+	assert.Equal(t, []string{reshapeOwnAcct}, fake.factoryAcct)
+}
+
+func TestLadderReshapeTask_STSResolverFailureAbortsBeforeSweep(t *testing.T) {
+	t.Parallel()
+	app, _, fake := reshapeApp(t, 1)
+	app.Config = nil // must not be touched when STS account resolution fails
+	app.LadderAccountResolver = func(context.Context) (string, string, error) {
+		return "", "", errors.New("sts down")
+	}
+	_, err := app.runScheduledTask(context.Background(), TaskLadderReshape, ScheduledTaskParams{})
+	require.ErrorContains(t, err, "ladder_reshape: could not resolve caller AWS account for the single-account gate: sts down")
+	assert.Empty(t, fake.reshapes)
 }

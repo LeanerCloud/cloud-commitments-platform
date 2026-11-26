@@ -32,6 +32,8 @@ locals {
     cleanup                     = { job = "cleanup", enabled = var.enable_cleanup_schedule, schedule = var.cleanup_schedule }
     ri_exchange_reshape         = { job = "ri-exchange", enabled = var.enable_ri_exchange_schedule, schedule = var.ri_exchange_schedule }
     ladder_run                  = { job = "ladder", enabled = var.enable_ladder_run_schedule, schedule = var.ladder_run_schedule }
+    ladder_fire                 = { job = "ladder-fire", enabled = var.enable_ladder_fire_schedule, schedule = var.ladder_fire_schedule }
+    ladder_reshape              = { job = "ladder-reshape", enabled = var.enable_ladder_reshape_schedule, schedule = var.ladder_reshape_schedule }
   }
   active_sweeps = var.deploy_kubernetes_resources ? { for k, v in local.sweep_tasks : k => v if v.enabled } : {}
 

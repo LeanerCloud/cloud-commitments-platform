@@ -311,6 +311,30 @@ variable "ladder_reconcile_schedule" {
   default     = "rate(1 hour)"
 }
 
+variable "enable_ladder_fire_schedule" {
+  description = "Enable the scheduled ladder_fire sweep (claims due ladder tranches into scheduled executions). Opt-in: default false."
+  type        = bool
+  default     = false
+}
+
+variable "ladder_fire_schedule" {
+  description = "EventBridge schedule for the ladder_fire sweep (default rate(15 minutes))."
+  type        = string
+  default     = "rate(15 minutes)"
+}
+
+variable "enable_ladder_reshape_schedule" {
+  description = "Enable the scheduled ladder_reshape sweep (commitment-laddering RI-exchange reshape). Opt-in: default false."
+  type        = bool
+  default     = false
+}
+
+variable "ladder_reshape_schedule" {
+  description = "EventBridge schedule for the ladder_reshape sweep (default rate(6 hours))."
+  type        = string
+  default     = "rate(6 hours)"
+}
+
 variable "enable_cleanup_schedule" {
   description = "Enable the scheduled server cleanup sweep. Opt-in: default false. It deletes expired sessions and, via CleanupOldExecutions(30), purchase_executions that are completed with scheduled_date older than 30 days, canceled with updated_at older than 30 days, or in a status outside failed/canceled with expires_at older than 30 days. The first run deletes the whole backlog, so export any history you want to keep first."
   type        = bool

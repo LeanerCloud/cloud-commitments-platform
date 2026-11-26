@@ -244,6 +244,10 @@ module "compute_aks" {
   cleanup_schedule                            = var.cleanup_schedule
   enable_ladder_run_schedule                  = var.enable_ladder_run_schedule
   ladder_run_schedule                         = var.ladder_run_schedule
+  enable_ladder_fire_schedule                 = var.enable_ladder_fire_schedule
+  ladder_fire_schedule                        = var.ladder_fire_schedule
+  enable_ladder_reshape_schedule              = var.enable_ladder_reshape_schedule
+  ladder_reshape_schedule                     = var.ladder_reshape_schedule
 
   tags = local.common_tags
 

@@ -73,19 +73,21 @@ run "opt_in" {
   variables {
     enable_process_scheduled_purchases_schedule = true
     enable_send_notifications_schedule          = true
+    enable_ladder_fire_schedule                 = true
+    enable_ladder_reshape_schedule              = true
     enable_cleanup_schedule                     = true
   }
 
   assert {
-    condition     = toset(keys(aws_cloudwatch_event_rule.sweep)) == toset(["analytics_collect", "cleanup", "finalize_revocations", "ladder_reconcile", "process_scheduled_purchases", "reap_stuck_purchases", "send_notifications"])
-    error_message = "Opting in must add process, send_notifications and cleanup."
+    condition     = toset(keys(aws_cloudwatch_event_rule.sweep)) == toset(["analytics_collect", "cleanup", "finalize_revocations", "ladder_fire", "ladder_reconcile", "ladder_reshape", "process_scheduled_purchases", "reap_stuck_purchases", "send_notifications"])
+    error_message = "Opting in must add process, send_notifications, ladder_fire, ladder_reshape and cleanup."
   }
   assert {
-    condition     = length(aws_cloudwatch_event_target.sweep) == 7 && length(aws_iam_role.eventbridge_sweeps) == 1
+    condition     = length(aws_cloudwatch_event_target.sweep) == 9 && length(aws_iam_role.eventbridge_sweeps) == 1
     error_message = "Every opted-in sweep needs a target; all share one invoker role."
   }
   assert {
-    condition     = length(distinct([for r in aws_cloudwatch_event_rule.sweep : r.name])) == 7
+    condition     = length(distinct([for r in aws_cloudwatch_event_rule.sweep : r.name])) == 9
     error_message = "Sweep rule names must be distinct."
   }
   assert {
