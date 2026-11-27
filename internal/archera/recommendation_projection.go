@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/insurance"
 	"github.com/LeanerCloud/cloud-commitments-platform/internal/config"
@@ -56,14 +57,35 @@ func ProjectRecommendation(r *config.RecommendationRecord) (*RecommendationIdent
 	if r.CloudAccountID != nil {
 		out.CloudAccountID = *r.CloudAccountID
 	}
-	if !validRecommendation(out) {
+	if !validProjectedIdentity(out) {
 		return nil, ErrRecommendationIdentity
 	}
 	return out, nil
 }
 
-// Equal reports whether both identities are non-nil and agree on every projected field.
-func (r *RecommendationIdentity) Equal(o *RecommendationIdentity) bool {
+func validProjectedIdentity(r *RecommendationIdentity) bool {
+	if r.Provider != "aws" || r.Service != "savings-plans-ec2instance" || r.PlanType != "EC2Instance" {
+		return false
+	}
+	for _, value := range []string{r.SourceAccountID, r.OfferingID, r.Region, r.InstanceFamily} {
+		if value == "" {
+			return false
+		}
+	}
+	return usableProjectedSource(r.SourceAccountID) && (r.TopLevelRegion == "" || r.TopLevelRegion == r.Region)
+}
+
+func usableProjectedSource(source string) bool {
+	for _, ch := range source {
+		if unicode.IsSpace(ch) || unicode.IsControl(ch) || unicode.In(ch, unicode.Cf) {
+			return false
+		}
+	}
+	return true
+}
+
+// EqualRecommendationIdentity reports whether both identities are non-nil and agree on every projected field.
+func EqualRecommendationIdentity(r, o *RecommendationIdentity) bool {
 	if r == nil || o == nil {
 		return false
 	}

@@ -169,8 +169,8 @@ func TestRecommendationIdentityEqual(t *testing.T) {
 	same := project(func(r *config.RecommendationRecord) {
 		r.Details = json.RawMessage(strings.Replace(string(r.Details), fixtureHourly, "0.500000000000000000010", 1))
 	})
-	require.True(t, base.Equal(same), "numerically equal hourly amounts are equal")
-	require.True(t, base.Equal(base))
+	require.True(t, EqualRecommendationIdentity(base, same), "numerically equal hourly amounts are equal")
+	require.True(t, EqualRecommendationIdentity(base, base))
 	other := "other"
 	changed := map[string]*RecommendationIdentity{
 		"hourly": project(func(r *config.RecommendationRecord) {
@@ -195,8 +195,8 @@ func TestRecommendationIdentityEqual(t *testing.T) {
 		"top_region": project(func(r *config.RecommendationRecord) { r.Region = "" }),
 	}
 	for name, got := range changed {
-		require.False(t, base.Equal(got), name)
-		require.False(t, got.Equal(base), name)
+		require.False(t, EqualRecommendationIdentity(base, got), name)
+		require.False(t, EqualRecommendationIdentity(got, base), name)
 	}
 	noHourly := *base
 	noHourly.HourlyCommitment = nil
@@ -204,7 +204,7 @@ func TestRecommendationIdentityEqual(t *testing.T) {
 		"nil_receiver": {nil, base}, "nil_arg": {base, nil}, "both_nil": {nil, nil},
 		"nil_hourly_recv": {&noHourly, base}, "nil_hourly_arg": {base, &noHourly},
 	} {
-		require.False(t, pair[0].Equal(pair[1]), name)
+		require.False(t, EqualRecommendationIdentity(pair[0], pair[1]), name)
 	}
-	require.True(t, noHourly.Equal(&noHourly))
+	require.True(t, EqualRecommendationIdentity(&noHourly, &noHourly))
 }
