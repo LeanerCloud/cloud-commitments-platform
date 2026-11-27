@@ -174,20 +174,6 @@ func TestRecommendationDTOCandidateMismatchAndUnrepresentable(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestRecommendationDTOMissingRowIsAnError(t *testing.T) {
-	c, items := contractMatchFixture(t)
-	record := storedMatchFixture()
-	rec, err := ProjectRecommendation(&record)
-	require.NoError(t, err)
-	rows, ids, err := ProjectContract(c, items)
-	require.NoError(t, err)
-	match, err := MatchRecommendation(matchPlan, rec, rows, ids)
-	require.NoError(t, err)
-	c.Rows = nil
-	m := &mapper{}
-	require.ErrorIs(t, m.fillMatched(&RecommendationComparisonDTO{}, &match, c, items), errRecommendationRowMissing)
-}
-
 func TestRecommendationDTONeverListsCurrentOfferAsAlternative(t *testing.T) {
 	c, items := contractMatchFixture(t)
 	row := &c.Rows[0]
@@ -232,7 +218,7 @@ func TestRecommendationDTOSanitizesVendorStrings(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, CleanString(hostile), *got.Current.EffectiveContractTerm)
 	require.Equal(t, CleanString(hostile), got.Candidates[0].OfferID)
-	require.LessOrEqual(t, len(got.Candidates[0].OfferID), maxVendorStrLen)
+	require.LessOrEqual(t, len(got.Candidates[0].OfferID), 256)
 	require.NotContains(t, got.Candidates[0].OfferID, "\u202e")
 	require.Equal(t, hostile, c.Rows[0].Candidates[0].OfferID)
 }

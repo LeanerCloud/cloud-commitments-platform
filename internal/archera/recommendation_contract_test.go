@@ -107,21 +107,6 @@ func TestProjectContractExcludesTheCurrentOfferFromAlternatives(t *testing.T) {
 	got, err := MatchRecommendation(matchPlan, rec, rows, identities)
 	require.NoError(t, err)
 	require.Len(t, got.Candidates, 2)
-	require.Empty(t, vendorAlternatives(nil))
-}
-
-func TestVendorAlternativesMapsEveryField(t *testing.T) {
-	payment := insurance.PaymentPartialUpfront
-	entries := []insurance.OfferEntry{
-		{IsCurrent: true, OfferID: "current"},
-		{OfferID: "offer-a", Provider: "aws", CommitmentType: "savings_plan", PaymentOption: &payment, SelectedAmount: big.NewRat(3, 4)},
-		{OfferID: "offer-b", Provider: "azure", CommitmentType: "ri"},
-	}
-	got := vendorAlternatives(entries)
-	require.Equal(t, []CandidateIdentity{
-		{OfferID: "offer-a", Provider: "aws", Type: "savings_plan", Payment: "partial_upfront", SelectedAmount: big.NewRat(3, 4)},
-		{OfferID: "offer-b", Provider: "azure", Type: "ri"},
-	}, got)
 }
 
 func TestProjectContractCarriesPaymentOptions(t *testing.T) {

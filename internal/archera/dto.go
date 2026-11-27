@@ -1,12 +1,8 @@
 package archera
 
 import (
-	"errors"
 	"math/big"
-	"strings"
 	"time"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/insurance"
@@ -14,13 +10,12 @@ import (
 
 // ErrUnrepresentable is returned when a vendor number has no exact finite
 // decimal form (the DTO never rounds or converts to float).
-var ErrUnrepresentable = errors.New("archera value has no exact decimal representation")
+var ErrUnrepresentable = insurance.ErrUnrepresentable
 
 const (
 	dtoTitle         = "Archera commitment plan comparison (read-only)"
 	currencyNote     = "currency not provided by Archera"
 	unknownVerdict   = "unknown"
-	maxVendorStrLen  = 256
 	offerNameCaveat  = "Archera's name for this offer; a plan comparison is a hypothetical rollup, not a bindable quote, and an insured target is subject to Archera underwriting allowances, not a guarantee."
 	basisNote        = "Monthly figures are 730-hour monthly rates; the Archera premium is already included in commitment cost totals; upfront figures are one-time amounts and are never summed with monthly rates."
 	deltaBasisNote   = "Hypothetical deltas compare against the current plan, not against on-demand."
@@ -28,47 +23,15 @@ const (
 )
 
 // Decimal renders r as the shortest exact decimal string. nil (unknown) stays
-// nil. The denominator of a reduced rational is finite in decimal exactly when
-// it has no prime factor other than 2 and 5, and the digits needed equal
-// max(power of 2, power of 5).
+// nil.
 func Decimal(r *big.Rat) (*string, error) {
-	if r == nil {
-		return nil, nil
-	}
-	d := new(big.Int).Set(r.Denom())
-	two, five, zero := big.NewInt(2), big.NewInt(5), new(big.Int)
-	count := func(p *big.Int) int {
-		n, m := 0, new(big.Int)
-		for {
-			q, rem := new(big.Int).QuoRem(d, p, m)
-			if rem.Cmp(zero) != 0 {
-				return n
-			}
-			d, n = q, n+1
-		}
-	}
-	c2, c5 := count(two), count(five)
-	if d.Cmp(big.NewInt(1)) != 0 {
-		return nil, ErrUnrepresentable
-	}
-	s := r.FloatString(max(c2, c5))
-	return &s, nil
+	return insurance.Decimal(r)
 }
 
 // CleanString removes control, format and line/paragraph-separator characters
 // from vendor text and caps it at 256 bytes on a rune boundary.
 func CleanString(s string) string {
-	var b strings.Builder
-	for _, r := range s {
-		if unicode.IsControl(r) || unicode.In(r, unicode.Cf, unicode.Zl, unicode.Zp) {
-			continue
-		}
-		if b.Len()+utf8.RuneLen(r) > maxVendorStrLen {
-			break
-		}
-		b.WriteRune(r)
-	}
-	return b.String()
+	return insurance.CleanString(s)
 }
 
 // ProductSupportDTO is the documentation-derived verdict for one offer.
@@ -83,14 +46,7 @@ type ProductSupportDTO struct {
 }
 
 // FinancialsDTO carries the 730-hour monthly rate block.
-type FinancialsDTO struct {
-	CommitmentCostTotal *string `json:"monthly_730h_commitment_cost_total"`
-	CloudProviderCost   *string `json:"monthly_730h_cloud_provider_cost"`
-	Premium             *string `json:"monthly_730h_archera_premium"`
-	GrossSavings        *string `json:"monthly_730h_gross_savings"`
-	NetSavings          *string `json:"monthly_730h_net_savings"`
-	CoveredOnDemandCost *string `json:"monthly_730h_covered_on_demand_cost"`
-}
+type FinancialsDTO = insurance.FinancialsDTO
 
 // TotalsDTO is a plan-wide rollup.
 type TotalsDTO struct {
